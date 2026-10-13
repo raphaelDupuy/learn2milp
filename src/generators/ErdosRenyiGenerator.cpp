@@ -2,8 +2,9 @@
 
 #include <random>
 #include <stdexcept>
+#include <utility>
 
-MISInstance ErdosRenyiGenerator::generate(
+GeneratedMISInstance ErdosRenyiGenerator::generate(
     const ErdosRenyiConfig& config
 ) const
 {
@@ -21,23 +22,33 @@ MISInstance ErdosRenyiGenerator::generate(
         );
     }
 
-    MISInstance instance;
-    instance.n = config.n;
+    MISInstance graph;
+    graph.n = config.n;
 
     std::mt19937 rng(config.seed);
-    std::bernoulli_distribution edge_distribution(config.p);
+    std::bernoulli_distribution edgeDistribution(config.p);
 
-    // Generate each possible edge exactly once.
     for (int u = 0; u < config.n; ++u)
     {
         for (int v = u + 1; v < config.n; ++v)
         {
-            if (edge_distribution(rng))
+            if (edgeDistribution(rng))
             {
-                instance.edges.emplace_back(u, v);
+                graph.edges.emplace_back(u, v);
             }
         }
     }
 
-    return instance;
+    MISGenerationMetadata metadata{
+        "erdos_renyi",
+        config.seed,
+        config.n,
+        config.p,
+        "1.0"
+    };
+
+    return GeneratedMISInstance{
+        std::move(graph),
+        std::move(metadata)
+    };
 }

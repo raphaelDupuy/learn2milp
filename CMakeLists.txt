@@ -25,12 +25,31 @@ target_link_libraries(learn2milp
     scip
 )
 
+add_executable(mis-generator
+    src/tools/mis_generator_main.cpp
+    src/generators/ErdosRenyiGenerator.cpp
+    src/io/MISInstanceIO.cpp
+)
+
+target_include_directories(mis-generator
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
     add_executable(test_MISInstanceIO
         tests/test_MISInstanceIO.cpp
         src/io/MISInstanceIO.cpp
+    )
+
+    add_test(
+        NAME MISGeneratorCLI
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_mis_generator.sh
+            $<TARGET_FILE:mis-generator>
+            ${PROJECT_BINARY_DIR}/test_mis_generator
     )
 
     target_include_directories(test_MISInstanceIO

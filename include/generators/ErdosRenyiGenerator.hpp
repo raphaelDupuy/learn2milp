@@ -1,6 +1,6 @@
 #pragma once
 
-#include "problems/MIS.hpp"
+#include "generators/GeneratedMISInstance.hpp"
 
 struct ErdosRenyiConfig
 {
@@ -12,5 +12,7 @@ struct ErdosRenyiConfig
 class ErdosRenyiGenerator
 {
 public:
-    MISInstance generate(const ErdosRenyiConfig& config) const;
+    GeneratedMISInstance generate(
+        const ErdosRenyiConfig& config
+    ) const;
 };

@@ -30,7 +30,10 @@ int main()
     };
 
     ErdosRenyiGenerator generator;
-    MISInstance instance = generator.generate(config);
+    GeneratedMISInstance generated = generator.generate(config);
+
+    const MISInstance& instance = generated.graph;
+    const MISGenerationMetadata& metadata = generated.metadata;
 
     const std::size_t m = instance.edges.size();
 
