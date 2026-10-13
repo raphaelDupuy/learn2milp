@@ -24,3 +24,22 @@ target_link_libraries(learn2milp
     PRIVATE
     scip
 )
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_executable(test_MISInstanceIO
+        tests/test_MISInstanceIO.cpp
+        src/io/MISInstanceIO.cpp
+    )
+
+    target_include_directories(test_MISInstanceIO
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME MISInstanceIO
+        COMMAND test_MISInstanceIO
+    )
+endif()
