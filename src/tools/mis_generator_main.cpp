@@ -11,18 +11,28 @@
 
 namespace
 {
+
 void printUsage(const char* program)
 {
     std::cerr
         << "Usage:\n"
         << "  " << program
-        << " single --n N --p P --seed S --output PATH\n\n"
-        << "Options:\n"
+        << " single --n N --p P --seed S --output PATH\n"
+        << "  " << program
+        << " batch --n-values N1,N2 --p-values P1,P2 "
+        << "--seeds S1,S2 --output-dir DIR\n\n"
+        << "Options for single:\n"
         << "  --n       Number of vertices (N >= 0)\n"
         << "  --p       Edge probability (0 <= P <= 1)\n"
         << "  --seed    Random seed (unsigned integer)\n"
-        << "  --output  Output path for the .mis instance\n";
+        << "  --output  Output path for the .mis instance\n\n"
+        << "Options for batch:\n"
+        << "  --n-values   Comma-separated vertex counts\n"
+        << "  --p-values   Comma-separated edge probabilities\n"
+        << "  --seeds      Comma-separated random seeds\n"
+        << "  --output-dir Output directory for the batch\n";
 }
+
 
 bool parseInt(const std::string& text, int& value)
 {
@@ -262,13 +272,28 @@ int runSingle(int argc, char* argv[])
 }
 }
 
+int runMISGeneratorBatch(int argc, char* argv[]);
+
 int main(int argc, char* argv[])
 {
-    if (argc < 2 || std::string(argv[1]) != "single")
+    if (argc < 2)
     {
         printUsage(argv[0]);
         return 2;
     }
 
-    return runSingle(argc, argv);
+    const std::string command = argv[1];
+
+    if (command == "single")
+    {
+        return runSingle(argc, argv);
+    }
+
+    if (command == "batch")
+    {
+        return runMISGeneratorBatch(argc, argv);
+    }
+
+    printUsage(argv[0]);
+    return 2;
 }

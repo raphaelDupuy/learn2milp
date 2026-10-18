@@ -27,6 +27,7 @@ target_link_libraries(learn2milp
 
 add_executable(mis-generator
     src/tools/mis_generator_main.cpp
+    src/tools/mis_generator_batch.cpp
     src/generators/ErdosRenyiGenerator.cpp
     src/io/MISInstanceIO.cpp
 )
@@ -50,6 +51,14 @@ if(BUILD_TESTING)
             ${PROJECT_SOURCE_DIR}/tests/test_mis_generator.sh
             $<TARGET_FILE:mis-generator>
             ${PROJECT_BINARY_DIR}/test_mis_generator
+    )
+
+    add_test(
+        NAME MISGeneratorBatch
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_mis_generator_batch.sh
+            $<TARGET_FILE:mis-generator>
+            ${PROJECT_BINARY_DIR}/test_mis_generator_batch
     )
 
     target_include_directories(test_MISInstanceIO
