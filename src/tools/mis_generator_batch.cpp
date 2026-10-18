@@ -353,6 +353,18 @@ int runBatch(int argc, char* argv[])
 
     const auto manifestPath = outputDir / "manifest.csv";
 
+    const auto temporaryManifest =
+        outputDir / "manifest.csv.tmp";
+
+    if (std::filesystem::exists(temporaryManifest))
+    {
+        throw std::runtime_error(
+            "Temporary manifest already exists: "
+            + temporaryManifest.string()
+            + ". Remove it manually or choose a new output directory."
+        );
+    }
+
     // Do not overwrite a previous batch.
     if (std::filesystem::exists(manifestPath))
     {
@@ -395,6 +407,7 @@ int runBatch(int argc, char* argv[])
         }
     }
 
+    BatchFileCleanup cleanup;
     ErdosRenyiGenerator generator;
     std::ostringstream manifest;
 
@@ -418,6 +431,7 @@ int runBatch(int argc, char* argv[])
         std::string errorMessage;
 
         {
+            cleanup.track(graphPath);
             std::ofstream graphFile(graphPath);
 
             if (!graphFile
@@ -444,6 +458,7 @@ int runBatch(int argc, char* argv[])
         }
 
         {
+            cleanup.track(metadataPath);
             std::ofstream metadataFile(metadataPath);
 
             if (!metadataFile)
@@ -492,10 +507,8 @@ int runBatch(int argc, char* argv[])
             << " (m=" << generated.graph.edges.size() << ")\n";
     }
 
-    const auto temporaryManifest =
-        outputDir / "manifest.csv.tmp";
-
     {
+        cleanup.track(temporaryManifest);
         std::ofstream manifestFile(temporaryManifest);
 
         if (!manifestFile)
@@ -517,6 +530,7 @@ int runBatch(int argc, char* argv[])
     }
 
     std::filesystem::rename(temporaryManifest, manifestPath);
+    cleanup.commit();
 
     std::cout
         << "\nBatch completed: " << total << " instances\n"

@@ -90,4 +90,25 @@ for malformed_list in "10," "10,,20" ","; do
     fi
 done
 
+# A pre-existing temporary manifest must be preserved.
+PREEXISTING="$WORK_DIR/preexisting-temp"
+mkdir -p "$PREEXISTING"
+printf 'keep this file\n' > "$PREEXISTING/manifest.csv.tmp"
+
+if "$GENERATOR" batch \
+    --n-values 10 \
+    --p-values 0.1 \
+    --seeds 1 \
+    --output-dir "$PREEXISTING" \
+    >"$WORK_DIR/preexisting.stdout" \
+    2>"$WORK_DIR/preexisting.stderr"; then
+    echo "ERROR: existing temporary manifest was accepted" >&2
+    exit 1
+fi
+
+test "$(cat "$PREEXISTING/manifest.csv.tmp")" = "keep this file"
+test ! -e "$PREEXISTING/manifest.csv"
+test "$(find "$PREEXISTING" -maxdepth 1 -name '*.mis' | wc -l)" -eq 0
+
+
 echo "All MIS generator batch tests passed."
