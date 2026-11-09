@@ -15,8 +15,8 @@ add_executable(learn2milp
     src/generators/ErdosRenyiGenerator.cpp
     src/io/MISInstanceIO.cpp
     src/services/MISGenerationService.cpp
+    src/services/MISSolvingService.cpp
     src/ui/TerminalUI.cpp
-
 )
 
 target_include_directories(learn2milp
@@ -47,6 +47,27 @@ if(BUILD_TESTING)
     add_executable(test_MISInstanceIO
         tests/test_MISInstanceIO.cpp
         src/io/MISInstanceIO.cpp
+    )
+
+        add_executable(test_MISSolvingService
+        tests/test_MISSolvingService.cpp
+        src/services/MISSolvingService.cpp
+        src/problems/MIS.cpp
+    )
+
+    target_include_directories(test_MISSolvingService
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(test_MISSolvingService
+        PRIVATE
+        scip
+    )
+
+    add_test(
+        NAME MISSolvingService
+        COMMAND test_MISSolvingService
     )
 
     add_test(

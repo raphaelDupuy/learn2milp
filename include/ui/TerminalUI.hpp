@@ -1,3 +1,4 @@
+
 #pragma once
 
 class TerminalUI
@@ -7,6 +8,11 @@ public:
 
 private:
     void displayMainMenu();
+
     void handleSingleGeneration();
     void handleBatchGeneration();
+
+    void handleSolveExisting();
+
+    void handleGenerateAndSolve();
 };

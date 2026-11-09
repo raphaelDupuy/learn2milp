@@ -1,7 +1,11 @@
 #include "ui/TerminalUI.hpp"
 
 #include "services/MISGenerationService.hpp"
+#include "services/MISSolvingService.hpp"
+#include "io/MISInstanceIO.hpp"
 
+#include <fstream>
+#include <iomanip>
 #include <cctype>
 #include <charconv>
 #include <system_error>
@@ -13,7 +17,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <iomanip>
 #include <utility>
 
 namespace
@@ -194,11 +197,11 @@ void TerminalUI::run()
                 break;
 
             case 3:
-                std::cout << "\nThis feature is not implemented yet.\n";
+                handleSolveExisting();
                 break;
 
             case 4:
-                std::cout << "\nThis feature is not implemented yet.\n";
+                handleGenerateAndSolve();
                 break;
 
             case 5:
@@ -420,4 +423,289 @@ void TerminalUI::handleBatchGeneration()
     std::cout << "Manifest: "
               << config.outputDirectory / "manifest.csv"
               << '\n';
+}
+
+
+void TerminalUI::handleSolveExisting()
+{
+    std::cout << "\n";
+    std::cout << "=== Solve an existing MIS instance ===\n\n";
+
+    // Read input file path.
+    std::string inputPath;
+
+    if (!readLine("Path to MIS instance (.mis): ", inputPath))
+        return;
+
+    if (inputPath.empty())
+    {
+        std::cout << "Input path cannot be empty.\n";
+        return;
+    }
+
+    // Open input file.
+    std::ifstream inputFile(inputPath);
+
+    if (!inputFile)
+    {
+        std::cout << "\nCannot open file: "
+                  << inputPath << '\n';
+        return;
+    }
+
+    // Read and validate MIS instance.
+    MISInstance instance;
+    std::string errorMessage;
+
+    if (!readMISInstance(inputFile, instance, errorMessage))
+    {
+        std::cout << "\nInvalid MIS instance: "
+                  << errorMessage << '\n';
+        return;
+    }
+
+    inputFile.close();
+
+    std::cout << "\nInstance loaded successfully.\n";
+    std::cout << "Number of vertices: "
+              << instance.n << '\n';
+    std::cout << "Number of edges: "
+              << instance.edges.size() << '\n';
+
+    // Solve the MIS instance.
+    MISResult result;
+
+    std::cout << "\nSolving MIS instance with SCIP...\n";
+
+    if (!solveMIS(instance, result))
+    {
+        std::cout << "\nSolving failed: "
+                  << result.errorMessage << '\n';
+        return;
+    }
+
+    // Display solver status.
+    std::cout << "\n========================================\n";
+    std::cout << "             SOLVING RESULTS\n";
+    std::cout << "========================================\n";
+
+    std::cout << "Status: "
+              << result.status << '\n';
+
+    if (!result.hasSolution)
+    {
+        std::cout << "No feasible solution was found.\n";
+    }
+    else
+    {
+        std::cout << std::fixed << std::setprecision(0);
+        std::cout << "Maximum independent set size: "
+                  << result.objectiveValue << '\n';
+
+        std::cout << "Selected vertices: ";
+
+        for (std::size_t i = 0;
+             i < result.selectedVertices.size();
+             ++i)
+        {
+            if (i > 0)
+                std::cout << ", ";
+
+            std::cout << result.selectedVertices[i];
+        }
+
+        std::cout << '\n';
+    }
+
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "Solving time: "
+              << result.solvingTimeSeconds << " seconds\n";
+
+    std::cout << "Explored nodes: "
+              << result.exploredNodes << '\n';
+
+    std::cout << "========================================\n";
+}
+
+
+void TerminalUI::handleGenerateAndSolve()
+{
+    std::cout << "\n";
+    std::cout << "=== Generate and solve an MIS instance ===\n\n";
+
+    int n = 0;
+    double p = 0.0;
+    unsigned int seed = 0;
+
+    // Read and validate the instance parameters.
+    if (!readInt("Number of vertices (n): ", n))
+        return;
+
+    if (n < 0)
+    {
+        std::cout << "The number of vertices must be non-negative.\n";
+        return;
+    }
+
+    if (!readDouble("Edge probability (p, between 0 and 1): ", p))
+        return;
+
+    if (p < 0.0 || p > 1.0)
+    {
+        std::cout << "Probability must be between 0 and 1.\n";
+        return;
+    }
+
+    if (!readSeed("Random seed: ", seed))
+        return;
+
+    // Build a deterministic filename.
+    char probabilityBuffer[64];
+
+    const auto conversion = std::to_chars(
+        probabilityBuffer,
+        probabilityBuffer + sizeof(probabilityBuffer),
+        p,
+        std::chars_format::general
+    );
+
+    if (conversion.ec != std::errc{})
+    {
+        std::cout << "\nError while formatting edge probability.\n";
+        return;
+    }
+
+    std::string probabilityToken(
+        probabilityBuffer,
+        conversion.ptr
+    );
+
+    std::replace(
+        probabilityToken.begin(),
+        probabilityToken.end(),
+        '.',
+        '_'
+    );
+
+    const std::string filename =
+        "mis_n" + std::to_string(n)
+        + "_p" + probabilityToken
+        + "_seed" + std::to_string(seed)
+        + ".mis";
+
+    const std::filesystem::path outputDirectory =
+        "data/instances/generated_and_solved";
+
+    const std::filesystem::path outputPath =
+        outputDirectory / filename;
+
+    // Create the output directory.
+    try
+    {
+        std::filesystem::create_directories(outputDirectory);
+    }
+    catch (const std::filesystem::filesystem_error& exception)
+    {
+        std::cout << "\nCannot create output directory: "
+                  << exception.what() << '\n';
+        return;
+    }
+
+    // Generate and save the instance.
+    const ErdosRenyiConfig config{n, p, seed};
+
+    std::string errorMessage;
+
+    std::cout << "\nGenerating instance...\n";
+
+    if (!generateSingleMIS(config, outputPath, errorMessage))
+    {
+        std::cout << "\nGeneration failed: "
+                  << errorMessage << '\n';
+        return;
+    }
+
+    std::cout << "Instance generated successfully.\n";
+    std::cout << "File: " << outputPath << '\n';
+    std::cout << "Metadata: " << outputPath.string() << ".meta\n";
+
+    // Reload the saved instance.
+    std::ifstream inputFile(outputPath);
+
+    if (!inputFile)
+    {
+        std::cout << "\nCannot reopen generated instance.\n";
+        return;
+    }
+
+    MISInstance instance;
+
+    if (!readMISInstance(inputFile, instance, errorMessage))
+    {
+        std::cout << "\nCannot read generated instance: "
+                  << errorMessage << '\n';
+        return;
+    }
+
+    inputFile.close();
+
+    std::cout << "\nInstance loaded successfully.\n";
+    std::cout << "Number of vertices: "
+              << instance.n << '\n';
+    std::cout << "Number of edges: "
+              << instance.edges.size() << '\n';
+
+    // Solve the generated instance.
+    MISResult result;
+
+    std::cout << "\nSolving MIS instance with SCIP...\n";
+
+    if (!solveMIS(instance, result))
+    {
+        std::cout << "\nSolving failed: "
+                  << result.errorMessage << '\n';
+        return;
+    }
+
+    // Display solver results.
+    std::cout << "\n========================================\n";
+    std::cout << "             SOLVING RESULTS\n";
+    std::cout << "========================================\n";
+
+    std::cout << "Status: "
+              << result.status << '\n';
+
+    if (!result.hasSolution)
+    {
+        std::cout << "No feasible solution was found.\n";
+    }
+    else
+    {
+        std::cout << std::fixed << std::setprecision(0);
+        std::cout << "Maximum independent set size: "
+                  << result.objectiveValue << '\n';
+
+        std::cout << "Selected vertices: ";
+
+        for (std::size_t i = 0;
+             i < result.selectedVertices.size();
+             ++i)
+        {
+            if (i > 0)
+                std::cout << ", ";
+
+            std::cout << result.selectedVertices[i];
+        }
+
+        std::cout << '\n';
+    }
+
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "Solving time: "
+              << result.solvingTimeSeconds << " seconds\n";
+
+    std::cout << "Explored nodes: "
+              << result.exploredNodes << '\n';
+
+    std::cout << "========================================\n";
 }
