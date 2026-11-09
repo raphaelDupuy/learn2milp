@@ -32,3 +32,6 @@ Thumbs.db
 # Temporary files
 *.log
 *.tmp
+
+# Generated MIS instances
+/data/instances/

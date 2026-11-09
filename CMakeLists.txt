@@ -13,6 +13,10 @@ add_executable(learn2milp
     src/main.cpp
     src/problems/MIS.cpp
     src/generators/ErdosRenyiGenerator.cpp
+    src/io/MISInstanceIO.cpp
+    src/services/MISGenerationService.cpp
+    src/ui/TerminalUI.cpp
+
 )
 
 target_include_directories(learn2milp
