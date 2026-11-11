@@ -15,6 +15,7 @@ add_executable(learn2milp
     src/generators/ErdosRenyiGenerator.cpp
     src/io/MISInstanceIO.cpp
     src/services/MISGenerationService.cpp
+    src/services/MISInstanceLoadingService.cpp
     src/services/MISSolvingService.cpp
     src/ui/TerminalUI.cpp
     src/io/InstanceMetadataIO.cpp
@@ -64,6 +65,23 @@ if(BUILD_TESTING)
     add_test(
         NAME InstanceMetadataIO
         COMMAND test_InstanceMetadataIO
+    )
+
+    add_executable(test_MISInstanceLoadingService
+        tests/test_MISInstanceLoadingService.cpp
+        src/services/MISInstanceLoadingService.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/InstanceMetadataIO.cpp
+    )
+
+    target_include_directories(test_MISInstanceLoadingService
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME MISInstanceLoadingService
+        COMMAND test_MISInstanceLoadingService
     )
 
     add_executable(test_MISSolvingService

@@ -1,8 +1,8 @@
 #include "ui/TerminalUI.hpp"
 
 #include "services/MISGenerationService.hpp"
+#include "services/MISInstanceLoadingService.hpp"
 #include "services/MISSolvingService.hpp"
-#include "io/MISInstanceIO.hpp"
 
 #include <fstream>
 #include <iomanip>
@@ -443,30 +443,33 @@ void TerminalUI::handleSolveExisting()
         return;
     }
 
-    // Open input file.
-    std::ifstream inputFile(inputPath);
-
-    if (!inputFile)
-    {
-        std::cout << "\nCannot open file: "
-                  << inputPath << '\n';
-        return;
-    }
-
-    // Read and validate MIS instance.
-    MISInstance instance;
+    // Load MIS instance and its metadata.
+    LoadedMISInstance loadedInstance;
     std::string errorMessage;
 
-    if (!readMISInstance(inputFile, instance, errorMessage))
+    if (!loadMISInstance(inputPath, loadedInstance, errorMessage))
     {
-        std::cout << "\nInvalid MIS instance: "
+        std::cout << "\nUnable to load MIS instance: "
                   << errorMessage << '\n';
         return;
     }
 
-    inputFile.close();
+    const MISInstance& instance = loadedInstance.instance;
+    const InstanceMetadata& metadata = loadedInstance.metadata;
 
     std::cout << "\nInstance loaded successfully.\n";
+    std::cout << "Problem type: "
+              << metadata.problemType << '\n';
+    std::cout << "Generator: "
+              << metadata.generatorType << '\n';
+    std::cout << "Generator version: "
+              << metadata.generatorVersion << '\n';
+
+    if (metadata.generatorSeed.has_value())
+    {
+        std::cout << "Generator seed: "
+                  << *metadata.generatorSeed << '\n';
+    }
     std::cout << "Number of vertices: "
               << instance.n << '\n';
     std::cout << "Number of edges: "
@@ -629,27 +632,32 @@ void TerminalUI::handleGenerateAndSolve()
     std::cout << "File: " << outputPath << '\n';
     std::cout << "Metadata: " << outputPath.string() << ".meta\n";
 
-    // Reload the saved instance.
-    std::ifstream inputFile(outputPath);
+    // Reload the generated instance and its metadata.
+    LoadedMISInstance loadedInstance;
 
-    if (!inputFile)
+    if (!loadMISInstance(outputPath, loadedInstance, errorMessage))
     {
-        std::cout << "\nCannot reopen generated instance.\n";
-        return;
-    }
-
-    MISInstance instance;
-
-    if (!readMISInstance(inputFile, instance, errorMessage))
-    {
-        std::cout << "\nCannot read generated instance: "
+        std::cout << "\nCannot load generated instance: "
                   << errorMessage << '\n';
         return;
     }
 
-    inputFile.close();
+    const MISInstance& instance = loadedInstance.instance;
+    const InstanceMetadata& metadata = loadedInstance.metadata;
 
     std::cout << "\nInstance loaded successfully.\n";
+    std::cout << "Problem type: "
+              << metadata.problemType << '\n';
+    std::cout << "Generator: "
+              << metadata.generatorType << '\n';
+    std::cout << "Generator version: "
+              << metadata.generatorVersion << '\n';
+
+    if (metadata.generatorSeed.has_value())
+    {
+        std::cout << "Generator seed: "
+                  << *metadata.generatorSeed << '\n';
+    }
     std::cout << "Number of vertices: "
               << instance.n << '\n';
     std::cout << "Number of edges: "
