@@ -38,7 +38,18 @@ test "$(
 
 # Check the CSV header.
 head -n 1 "$OUT1/manifest.csv" |
-    grep -qx 'instance_id,file,family,generator_version,seed,n,p,m'
+    grep -qx 'instance_id,file,generator_type,generator_version,seed,n,p,m'
+
+# Check the generic metadata format of a generated instance.
+FIRST_META="$(find "$OUT1" -maxdepth 1 -name '*.mis.meta' | sort | head -n 1)"
+
+grep -qx 'INSTANCE_METADATA 1' "$FIRST_META"
+grep -qx 'problem_type "MIS"' "$FIRST_META"
+grep -qx 'generator_type "erdos_renyi"' "$FIRST_META"
+grep -qx 'generator_version "1.0"' "$FIRST_META"
+grep -q '^seed [0-9]\+$' "$FIRST_META"
+grep -q '^parameter.n "' "$FIRST_META"
+grep -q '^parameter.p "' "$FIRST_META"
 
 # Repeating the batch in another directory must reproduce all outputs.
 generate_batch "$OUT2"

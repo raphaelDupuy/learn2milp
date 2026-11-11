@@ -1,8 +1,24 @@
 #include "generators/ErdosRenyiGenerator.hpp"
 
+#include <iomanip>
+#include <limits>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
+
+namespace
+{
+    std::string formatDouble(double value)
+    {
+        std::ostringstream output;
+        output << std::setprecision(
+            std::numeric_limits<double>::max_digits10
+        ) << value;
+
+        return output.str();
+    }
+}
 
 GeneratedMISInstance ErdosRenyiGenerator::generate(
     const ErdosRenyiConfig& config
@@ -39,12 +55,15 @@ GeneratedMISInstance ErdosRenyiGenerator::generate(
         }
     }
 
-    MISGenerationMetadata metadata{
+    InstanceMetadata metadata{
+        "MIS",
         "erdos_renyi",
+        "1.0",
         config.seed,
-        config.n,
-        config.p,
-        "1.0"
+        {
+            {"n", std::to_string(config.n)},
+            {"p", formatDouble(config.p)}
+        }
     };
 
     return GeneratedMISInstance{

@@ -31,10 +31,14 @@ cmp "$GRAPH1.meta" "$GRAPH2.meta"
 # Check the file headers and metadata.
 grep -qx 'MIS_INSTANCE 1' "$GRAPH1"
 grep -qx 'n 30' "$GRAPH1"
-grep -qx 'MIS_GENERATION_METADATA 1' "$GRAPH1.meta"
-grep -qx 'family erdos_renyi' "$GRAPH1.meta"
+
+grep -qx 'INSTANCE_METADATA 1' "$GRAPH1.meta"
+grep -qx 'problem_type "MIS"' "$GRAPH1.meta"
+grep -qx 'generator_type "erdos_renyi"' "$GRAPH1.meta"
+grep -qx 'generator_version "1.0"' "$GRAPH1.meta"
 grep -qx 'seed 123' "$GRAPH1.meta"
-grep -qx 'n 30' "$GRAPH1.meta"
+grep -qx 'parameter.n "30"' "$GRAPH1.meta"
+grep -q '^parameter.p "' "$GRAPH1.meta"
 
 # Invalid probability must be rejected.
 if "$GENERATOR" single \

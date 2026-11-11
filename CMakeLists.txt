@@ -17,6 +17,7 @@ add_executable(learn2milp
     src/services/MISGenerationService.cpp
     src/services/MISSolvingService.cpp
     src/ui/TerminalUI.cpp
+    src/io/InstanceMetadataIO.cpp
 )
 
 target_include_directories(learn2milp
@@ -34,6 +35,7 @@ add_executable(mis-generator
     src/tools/mis_generator_batch.cpp
     src/generators/ErdosRenyiGenerator.cpp
     src/io/MISInstanceIO.cpp
+    src/io/InstanceMetadataIO.cpp
 )
 
 target_include_directories(mis-generator
@@ -49,7 +51,22 @@ if(BUILD_TESTING)
         src/io/MISInstanceIO.cpp
     )
 
-        add_executable(test_MISSolvingService
+    add_executable(test_InstanceMetadataIO
+        tests/test_InstanceMetadataIO.cpp
+        src/io/InstanceMetadataIO.cpp
+    )
+
+    target_include_directories(test_InstanceMetadataIO
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME InstanceMetadataIO
+        COMMAND test_InstanceMetadataIO
+    )
+
+    add_executable(test_MISSolvingService
         tests/test_MISSolvingService.cpp
         src/services/MISSolvingService.cpp
         src/problems/MIS.cpp

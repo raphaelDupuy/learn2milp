@@ -1,5 +1,5 @@
-
 #include "generators/ErdosRenyiGenerator.hpp"
+#include "io/InstanceMetadataIO.hpp"
 #include "io/MISInstanceIO.hpp"
 
 #include <algorithm>
@@ -412,7 +412,7 @@ int runBatch(int argc, char* argv[])
     std::ostringstream manifest;
 
     manifest
-        << "instance_id,file,family,generator_version,"
+        << "instance_id,file,generator_type,generator_version,"
         << "seed,n,p,m\n";
 
     for (std::size_t i = 0; i < instances.size(); ++i)
@@ -470,15 +470,17 @@ int runBatch(int argc, char* argv[])
             }
 
             const auto& metadata = generated.metadata;
+            std::string metadataError;
 
-            metadataFile
-                << "MIS_GENERATION_METADATA 1\n"
-                << "family " << metadata.family << '\n'
-                << "seed " << metadata.seed << '\n'
-                << "n " << metadata.n << '\n'
-                << "p " << probabilityText(metadata.p) << '\n'
-                << "generator_version "
-                << metadata.generatorVersion << '\n';
+            if (!writeInstanceMetadata(
+                    metadataFile,
+                    metadata,
+                    metadataError))
+            {
+                throw std::runtime_error(
+                    "Failed to write metadata: " + metadataError
+                );
+            }
 
             metadataFile.close();
 
@@ -494,7 +496,7 @@ int runBatch(int argc, char* argv[])
         manifest
             << item.id << ','
             << item.filename << ','
-            << generated.metadata.family << ','
+            << generated.metadata.generatorType << ','
             << generated.metadata.generatorVersion << ','
             << item.seed << ','
             << item.n << ','

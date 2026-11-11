@@ -1,5 +1,5 @@
-
 #include "generators/ErdosRenyiGenerator.hpp"
+#include "io/InstanceMetadataIO.hpp"
 #include "io/MISInstanceIO.hpp"
 
 #include <fstream>
@@ -233,16 +233,17 @@ int runSingle(int argc, char* argv[])
         }
 
         const auto& metadata = generated.metadata;
+        std::string metadataError;
 
-        metadataFile
-            << "MIS_GENERATION_METADATA 1\n"
-            << "family " << metadata.family << '\n'
-            << "seed " << metadata.seed << '\n'
-            << "n " << metadata.n << '\n'
-            << "p " << std::setprecision(17)
-            << metadata.p << '\n'
-            << "generator_version "
-            << metadata.generatorVersion << '\n';
+        if (!writeInstanceMetadata(
+                metadataFile,
+                metadata,
+                metadataError))
+        {
+            std::cerr << "Failed to write metadata: "
+                      << metadataError << '\n';
+            return 1;
+        }
 
         metadataFile.close();
 
@@ -257,7 +258,7 @@ int runSingle(int argc, char* argv[])
             << "Generated MIS instance\n"
             << "  vertices: " << generated.graph.n << '\n'
             << "  edges: " << generated.graph.edges.size() << '\n'
-            << "  seed: " << metadata.seed << '\n'
+            << "  seed: " << *metadata.generatorSeed << '\n'
             << "  graph: " << outputPath << '\n'
             << "  metadata: " << metadataPath << '\n';
 
