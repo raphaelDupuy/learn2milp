@@ -17,6 +17,7 @@ add_executable(learn2milp
     src/services/MISGenerationService.cpp
     src/services/MISInstanceLoadingService.cpp
     src/services/MISSolvingService.cpp
+    src/services/MISFeatureExtractor.cpp
     src/ui/TerminalUI.cpp
     src/io/InstanceMetadataIO.cpp
 )
@@ -65,6 +66,26 @@ if(BUILD_TESTING)
     add_test(
         NAME InstanceMetadataIO
         COMMAND test_InstanceMetadataIO
+    )
+
+    add_executable(test_MISFeatureExtractor
+        tests/test_MISFeatureExtractor.cpp
+        src/services/MISFeatureExtractor.cpp
+    )
+
+    target_include_directories(test_MISFeatureExtractor
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(test_MISFeatureExtractor
+        PRIVATE
+        scip
+    )
+
+    add_test(
+        NAME MISFeatureExtractor
+        COMMAND test_MISFeatureExtractor
     )
 
     add_executable(test_MISInstanceLoadingService
