@@ -1,67 +1,14 @@
 
 #include "services/MISSolvingService.hpp"
 
+#include "io/MISInstanceIO.hpp"
+#include "services/SCIPStatusName.hpp"
+
 #include <scip/scip.h>
 #include <scip/scipdefplugins.h>
 
 #include <exception>
 #include <string>
-
-namespace
-{
-
-std::string getSCIPStatusName(SCIP_STATUS status)
-{
-    switch (status)
-    {
-        case SCIP_STATUS_OPTIMAL:
-            return "OPTIMAL";
-
-        case SCIP_STATUS_INFEASIBLE:
-            return "INFEASIBLE";
-
-        case SCIP_STATUS_UNBOUNDED:
-            return "UNBOUNDED";
-
-        case SCIP_STATUS_INFORUNBD:
-            return "INFORUNBD";
-
-        case SCIP_STATUS_USERINTERRUPT:
-            return "USERINTERRUPT";
-
-        case SCIP_STATUS_NODELIMIT:
-            return "NODELIMIT";
-
-        case SCIP_STATUS_TOTALNODELIMIT:
-            return "TOTALNODELIMIT";
-
-        case SCIP_STATUS_STALLNODELIMIT:
-            return "STALLNODELIMIT";
-
-        case SCIP_STATUS_TIMELIMIT:
-            return "TIMELIMIT";
-
-        case SCIP_STATUS_MEMLIMIT:
-            return "MEMLIMIT";
-
-        case SCIP_STATUS_GAPLIMIT:
-            return "GAPLIMIT";
-
-        case SCIP_STATUS_SOLLIMIT:
-            return "SOLLIMIT";
-
-        case SCIP_STATUS_BESTSOLLIMIT:
-            return "BESTSOLLIMIT";
-
-        case SCIP_STATUS_RESTARTLIMIT:
-            return "RESTARTLIMIT";
-
-        default:
-            return "UNKNOWN";
-    }
-}
-
-} // namespace
 
 bool solveMIS(
     const MISInstance& instance,
@@ -69,6 +16,15 @@ bool solveMIS(
 )
 {
     result = MISResult{};
+
+    // Same definition of a valid instance as the file format and the
+    // data collection.
+    if (!validateMISInstance(instance, result.errorMessage))
+    {
+        result.errorMessage =
+            "Invalid MIS instance: " + result.errorMessage;
+        return false;
+    }
 
     SCIP* scip = nullptr;
     SCIP_RETCODE retcode = SCIP_OKAY;

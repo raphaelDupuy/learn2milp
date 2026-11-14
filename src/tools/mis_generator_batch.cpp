@@ -3,6 +3,7 @@
 #include "io/MISInstanceIO.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -202,14 +203,28 @@ std::vector<T> parseList(
     return values;
 }
 
+// Must stay identical to probabilityToken() in MISGenerationService.cpp,
+// so that both batch generators name the same instance the same way.
 std::string probabilityToken(double p)
 {
-    std::ostringstream stream;
-    stream << std::setprecision(
-        std::numeric_limits<double>::max_digits10
-    ) << p;
+    // Shortest text that reads back to the same double (0.1 -> "0.1").
+    char buffer[64];
 
-    std::string token = stream.str();
+    const auto conversion = std::to_chars(
+        buffer,
+        buffer + sizeof(buffer),
+        p,
+        std::chars_format::general
+    );
+
+    if (conversion.ec != std::errc{})
+    {
+        throw std::runtime_error(
+            "Failed to format probability value."
+        );
+    }
+
+    std::string token(buffer, conversion.ptr);
 
     // Produce a filename-safe representation.
     std::replace(token.begin(), token.end(), '.', '_');

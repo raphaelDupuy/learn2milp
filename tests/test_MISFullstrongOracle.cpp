@@ -8,6 +8,7 @@
  * the scores and the best candidate must match SCIPgetVanillafullstrongData().
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -40,6 +41,7 @@ struct OracleContext
     long long samples = 0;
     long long comparedCandidates = 0;
     long long complementedCandidates = 0;
+    long long fixedVertexStates = 0;
     std::vector<std::string> failures;
 
     void fail(long long nodeId, const std::string& message)
@@ -91,6 +93,104 @@ void compareWithVanilla(
 
     if (sample->number_of_priority_candidates != vanillaNPrio)
         context.fail(node, "priority candidate count differs");
+
+    // Objective bounds share the LP's internal (minimization) space, and
+    // map back to the original bounds reported by SCIP.
+    if (!sample->lp_objective_valid
+        || std::fabs(sample->lp_objective - SCIPgetLPObjval(context.scip)) > 1e-9)
+        context.fail(node, "lp_objective differs from the node LP");
+
+    if (sample->dual_bound_valid
+        && (sample->dual_bound > sample->lp_objective + 1e-6
+            || std::fabs(SCIPretransformObj(context.scip, sample->dual_bound)
+                    - SCIPgetDualbound(context.scip)) > 1e-6))
+        context.fail(node, "inconsistent dual bound");
+
+    if (sample->primal_bound_valid
+        && (sample->primal_bound < sample->lp_objective - 1e-6
+            || std::fabs(SCIPretransformObj(context.scip, sample->primal_bound)
+                    - SCIPgetPrimalbound(context.scip)) > 1e-6))
+        context.fail(node, "inconsistent primal bound");
+
+    // Vertex states, recomputed through an independent path: the active
+    // column of each vertex (x_v = scalar * column + constant) instead of
+    // the bounds SCIP maintains on the transformed vertex variable.
+    const int numberOfVertices = static_cast<int>(context.originalVars->size());
+
+    if (sample->number_of_vertices != numberOfVertices
+        || sample->vertex_states == nullptr)
+    {
+        context.fail(node, "missing vertex states");
+        return;
+    }
+
+    int fractionalVertices = 0;
+
+    for (int v = 0; v < numberOfVertices; ++v)
+    {
+        SCIP_VAR* column = nullptr;
+        SCIP_Real scalar = 1.0;
+        SCIP_Real constant = 0.0;
+
+        if (SCIPgetTransformedVar(context.scip, (*context.originalVars)[v],
+                &column) != SCIP_OKAY
+            || SCIPgetProbvarSum(context.scip, &column, &scalar, &constant)
+                != SCIP_OKAY)
+        {
+            context.fail(node, "vertex cannot be resolved");
+            continue;
+        }
+
+        MISVertexState expected;
+
+        if (column == nullptr || scalar == 0.0)
+        {
+            // Fixed by presolving: x_v = constant.
+            expected = constant < 0.5
+                ? MIS_VERTEX_FIXED_ZERO : MIS_VERTEX_FIXED_ONE;
+        }
+        else
+        {
+            const double a = scalar * SCIPvarGetLbLocal(column) + constant;
+            const double b = scalar * SCIPvarGetUbLocal(column) + constant;
+            const double lower = std::min(a, b);
+            const double upper = std::max(a, b);
+            const double value = scalar * SCIPvarGetLPSol(column) + constant;
+
+            if (upper - lower < 0.5)
+                expected = upper < 0.5
+                    ? MIS_VERTEX_FIXED_ZERO : MIS_VERTEX_FIXED_ONE;
+            else if (value > 1e-6 && value < 1.0 - 1e-6)
+                expected = MIS_VERTEX_FRACTIONAL;
+            else
+                expected = value < 0.5
+                    ? MIS_VERTEX_FREE_LP_ZERO : MIS_VERTEX_FREE_LP_ONE;
+        }
+
+        if (sample->vertex_states[v] != expected)
+            context.fail(node, "vertex " + std::to_string(v)
+                + ": state " + std::to_string(sample->vertex_states[v])
+                + " vs expected " + std::to_string(expected));
+
+        if (sample->vertex_states[v] == MIS_VERTEX_FRACTIONAL)
+            ++fractionalVertices;
+
+        if (sample->vertex_states[v] == MIS_VERTEX_FIXED_ZERO
+            || sample->vertex_states[v] == MIS_VERTEX_FIXED_ONE)
+            ++context.fixedVertexStates;
+    }
+
+    if (fractionalVertices != static_cast<int>(numberOfCandidates))
+        context.fail(node, "fractional vertices are not exactly the candidates");
+
+    for (size_t c = 0; c < numberOfCandidates; ++c)
+    {
+        const int v = candidates[c].vertex_id;
+
+        if (v >= 0 && v < numberOfVertices
+            && sample->vertex_states[v] != MIS_VERTEX_FRACTIONAL)
+            context.fail(node, "candidate vertex is not marked fractional");
+    }
 
     int selectedCount = 0;
     int selectedPosition = -1;
@@ -400,6 +500,12 @@ int main()
                           << " vs reference " << reference << '\n';
                 ok = false;
             }
+        }
+
+        if (context.fixedVertexStates == 0)
+        {
+            std::cerr << "  no fixed vertex was ever recorded\n";
+            ok = false;
         }
 
         if (context.samples == 0 || nodes <= 1)

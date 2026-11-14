@@ -478,12 +478,54 @@ void computeExpertRanks(
     }
 }
 
+/*
+ * Classifies every MIS vertex at the current node from the local bounds
+ * and the LP value of its transformed variable. Fixed, aggregated and
+ * negated variables are handled by SCIP; multi-aggregated ones, whose
+ * local bounds are not maintained, are reported as unknown.
+ */
+static
+void fillMISVertexStates(
+    SCIP* scip,
+    const MISFullstrongBranchruleData* data,
+    MISVertexState* states
+)
+{
+    int v;
+
+    for( v = 0; v < data->nvertices; ++v )
+    {
+        SCIP_VAR* var = data->vertextransvars[v];
+        SCIP_Real lb;
+        SCIP_Real ub;
+        SCIP_Real val;
+
+        if( SCIPvarGetStatus(var) == SCIP_VARSTATUS_MULTAGGR )
+        {
+            states[v] = MIS_VERTEX_UNKNOWN;
+            continue;
+        }
+
+        lb = SCIPvarGetLbLocal(var);
+        ub = SCIPvarGetUbLocal(var);
+        val = SCIPvarGetLPSol(var);
+
+        if( SCIPisFeasEQ(scip, lb, ub) )
+            states[v] = (ub < 0.5) ? MIS_VERTEX_FIXED_ZERO : MIS_VERTEX_FIXED_ONE;
+        else if( !SCIPisFeasIntegral(scip, val) )
+            states[v] = MIS_VERTEX_FRACTIONAL;
+        else
+            states[v] = (val < 0.5) ? MIS_VERTEX_FREE_LP_ZERO : MIS_VERTEX_FREE_LP_ONE;
+    }
+}
+
 static
 SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
 {
     MISFullstrongBranchruleData* data;
     MISStrongBranchingCandidate* records;
     MISStrongBranchingSample sample;
+    MISVertexState* vertexstates;
     SCIP_VAR** scipcands;
     SCIP_VAR** lpcands;
     SCIP_NODE* node;
@@ -495,6 +537,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
     SCIP_Bool bestdownvalid;
     SCIP_Bool bestupvalid;
     SCIP_Bool anyscored;
+    SCIP_Bool cutoff;
     int nlpcands;
     int npriocands;
     int bestcand;
@@ -594,37 +637,61 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
             complementRecord(&records[c]);
     }
 
-    /* Node-level sample. */
-    node = SCIPgetCurrentNode(scip);
-    parent = SCIPnodeGetParent(node);
+    /* Same test as vanillafullstrong: the node is pruned when the best
+     * candidate proves a bound that reaches the cutoff bound. */
+    cutoff = SCIPisGE(scip, provedbound, SCIPgetCutoffbound(scip));
 
-    sample.node_id = SCIPnodeGetNumber(node);
-    sample.parent_node_valid = (parent != NULL);
-    sample.parent_node_id = (parent != NULL) ? SCIPnodeGetNumber(parent) : -1;
-    sample.node_depth = SCIPnodeGetDepth(node);
+    /*
+     * No sample is emitted when the solver is stopping (time limit or
+     * interrupt): strong branching was skipped or may have been cut
+     * short, so there is no reliable expert decision to record.
+     */
+    if( !SCIPisStopped(scip) )
+    {
+        /* Node-level sample. */
+        node = SCIPgetCurrentNode(scip);
+        parent = SCIPnodeGetParent(node);
 
-    sample.lp_objective = lpobjval;
-    sample.lp_objective_valid = TRUE;
-    sample.primal_bound_valid = (SCIPgetNSols(scip) > 0);
-    sample.primal_bound = sample.primal_bound_valid ? SCIPgetPrimalbound(scip) : 0.0;
-    sample.dual_bound = SCIPgetDualbound(scip);
-    sample.dual_bound_valid = !SCIPisInfinity(scip, REALABS(sample.dual_bound));
+        sample.node_id = SCIPnodeGetNumber(node);
+        sample.parent_node_valid = (parent != NULL);
+        sample.parent_node_id = (parent != NULL) ? SCIPnodeGetNumber(parent) : -1;
+        sample.node_depth = SCIPnodeGetDepth(node);
 
-    sample.open_nodes = SCIPgetNNodesLeft(scip);
-    sample.processed_nodes = SCIPgetNNodes(scip);
+        sample.lp_objective = lpobjval;
+        sample.lp_objective_valid = TRUE;
+        /* Global bounds in the same internal (minimization) space as the LP
+         * objective: SCIPgetPrimalbound()/SCIPgetDualbound() would return
+         * original-space values, which must not be mixed with lp_objective. */
+        sample.primal_bound = SCIPgetUpperbound(scip);
+        sample.primal_bound_valid = !SCIPisInfinity(scip, sample.primal_bound);
+        sample.dual_bound = SCIPgetLowerbound(scip);
+        sample.dual_bound_valid = !SCIPisInfinity(scip, -sample.dual_bound);
 
-    sample.number_of_candidates = nlpcands;
-    sample.number_of_priority_candidates = npriocands;
-    sample.expert_selection_valid = anyscored;
-    sample.expert_selected_vertex_id = anyscored ? records[bestcand].vertex_id : -1;
+        sample.open_nodes = SCIPgetNNodesLeft(scip);
+        sample.processed_nodes = SCIPgetNNodes(scip);
 
-    data->callback(data->userdata, &sample, records, (size_t)nlpcands);
+        sample.number_of_candidates = nlpcands;
+        sample.number_of_priority_candidates = npriocands;
+        sample.expert_selection_valid = anyscored;
+        sample.expert_selected_vertex_id = anyscored ? records[bestcand].vertex_id : -1;
+        sample.node_cutoff = cutoff;
+
+        SCIP_CALL( SCIPallocBufferArray(scip, &vertexstates, data->nvertices) );
+        fillMISVertexStates(scip, data, vertexstates);
+
+        sample.vertex_states = vertexstates;
+        sample.number_of_vertices = data->nvertices;
+
+        data->callback(data->userdata, &sample, records, (size_t)nlpcands);
+
+        SCIPfreeBufferArray(scip, &vertexstates);
+    }
 
     SCIPfreeBufferArray(scip, &records);
 
     /* Branching, identical to vanillafullstrong with idempotent = TRUE:
      * no local bound update, no child lower bound update. */
-    if( SCIPisGE(scip, provedbound, SCIPgetCutoffbound(scip)) )
+    if( cutoff )
     {
         *result = SCIP_CUTOFF;
     }

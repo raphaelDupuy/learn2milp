@@ -8,6 +8,20 @@ SCIP_RETCODE buildMISModel(
     std::vector<SCIP_VAR*>& vars
 )
 {
+    // Reject an instance that would index outside the variable array.
+    if (instance.n < 0)
+    {
+        return SCIP_INVALIDDATA;
+    }
+
+    for (const auto& [u, v] : instance.edges)
+    {
+        if (u < 0 || u >= instance.n || v < 0 || v >= instance.n)
+        {
+            return SCIP_INVALIDDATA;
+        }
+    }
+
     SCIP_CALL(
         SCIPcreateProbBasic(
             scip,

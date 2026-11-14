@@ -28,6 +28,17 @@ test "$(find "$OUT1" -maxdepth 1 -name '*.mis' | wc -l)" -eq 8
 test "$(find "$OUT1" -maxdepth 1 -name '*.mis.meta' | wc -l)" -eq 8
 test "$(wc -l < "$OUT1/manifest.csv")" -eq 9
 
+# File names use the shortest text of each probability.
+for expected in \
+    erdos_renyi_n10_p0_1_seed1 \
+    erdos_renyi_n10_p0_2_seed2 \
+    erdos_renyi_n12_p0_1_seed2 \
+    erdos_renyi_n12_p0_2_seed1; do
+    test -f "$OUT1/$expected.mis"
+    test -f "$OUT1/$expected.mis.meta"
+    grep -q "^$expected,$expected.mis," "$OUT1/manifest.csv"
+done
+
 # Every instance ID must be unique.
 test "$(
     tail -n +2 "$OUT1/manifest.csv" |

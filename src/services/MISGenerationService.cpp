@@ -164,6 +164,8 @@ private:
     bool committed_ = false;
 };
 
+// Must stay identical to probabilityToken() in mis_generator_batch.cpp,
+// so that both batch generators name the same instance the same way.
 std::string probabilityToken(double p)
 {
     char buffer[64];

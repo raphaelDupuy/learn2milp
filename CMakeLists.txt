@@ -35,6 +35,7 @@ add_executable(learn2milp
     src/services/MISGenerationService.cpp
     src/services/MISInstanceLoadingService.cpp
     src/services/MISSolvingService.cpp
+    src/services/SCIPStatusName.cpp
     src/services/MISFeatureExtractor.cpp
     src/ui/TerminalUI.cpp
     src/io/InstanceMetadataIO.cpp
@@ -61,6 +62,22 @@ add_executable(mis-generator
 target_include_directories(mis-generator
     PRIVATE
     ${PROJECT_SOURCE_DIR}/include
+)
+
+add_executable(mis-collector
+    src/tools/mis_collector_main.cpp
+    src/problems/MIS.cpp
+    src/io/MISInstanceIO.cpp
+    src/io/InstanceMetadataIO.cpp
+    src/io/MISStrongBranchingSampleIO.cpp
+    src/services/MISInstanceLoadingService.cpp
+    src/services/MISCollectionService.cpp
+    src/services/SCIPStatusName.cpp
+)
+
+target_link_libraries(mis-collector
+    PRIVATE
+    mis_branching
 )
 
 include(CTest)
@@ -94,6 +111,51 @@ if(BUILD_TESTING)
     add_test(
         NAME MISFullstrongOracle
         COMMAND test_MISFullstrongOracle
+    )
+
+    add_executable(test_MISStrongBranchingSampleIO
+        tests/test_MISStrongBranchingSampleIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+    )
+
+    target_include_directories(test_MISStrongBranchingSampleIO
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME MISStrongBranchingSampleIO
+        COMMAND test_MISStrongBranchingSampleIO
+    )
+
+    add_executable(test_MISCollectionService
+        tests/test_MISCollectionService.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+        src/services/MISCollectionService.cpp
+        src/services/SCIPStatusName.cpp
+    )
+
+    target_link_libraries(test_MISCollectionService
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISCollectionService
+        COMMAND test_MISCollectionService
+            ${PROJECT_BINARY_DIR}/test_mis_collection_service
+    )
+
+    add_test(
+        NAME MISCollectorCLI
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_mis_collector.sh
+            $<TARGET_FILE:mis-generator>
+            $<TARGET_FILE:mis-collector>
+            ${PROJECT_BINARY_DIR}/test_mis_collector
     )
 
     add_executable(test_MISInstanceIO
@@ -156,6 +218,8 @@ if(BUILD_TESTING)
     add_executable(test_MISSolvingService
         tests/test_MISSolvingService.cpp
         src/services/MISSolvingService.cpp
+        src/services/SCIPStatusName.cpp
+        src/io/MISInstanceIO.cpp
         src/problems/MIS.cpp
     )
 
@@ -172,6 +236,30 @@ if(BUILD_TESTING)
     add_test(
         NAME MISSolvingService
         COMMAND test_MISSolvingService
+    )
+
+    add_executable(test_MISGenerationService
+        tests/test_MISGenerationService.cpp
+        src/services/MISGenerationService.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/InstanceMetadataIO.cpp
+    )
+
+    target_include_directories(test_MISGenerationService
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(test_MISGenerationService
+        PRIVATE
+        scip
+    )
+
+    add_test(
+        NAME MISGenerationService
+        COMMAND test_MISGenerationService
+            ${PROJECT_BINARY_DIR}/test_mis_generation_service
     )
 
     add_test(

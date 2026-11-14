@@ -19,6 +19,10 @@ extern "C" {
  * as the plugin may be initialized by a solve. The transformed variables
  * are captured internally for the lifetime of each transformed problem.
  *
+ * The callback receives one sample per branching decision. No sample is
+ * emitted for a node reached while the solver is stopping (time limit or
+ * interrupt), because its strong branching evaluation is not reliable.
+ *
  * Pass (NULL, 0, NULL, NULL) for the empty configuration used by copies.
  */
 SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(

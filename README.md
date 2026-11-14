@@ -35,14 +35,14 @@ The current version provides a basic experimental framework for the Maximum Inde
 - integration with SCIP;
 - MILP formulation of Maximum Independent Set;
 - Erdős–Rényi random graph generation;
-- reproducible instance generation using explicit random seeds;
-- exact optimization and basic solver statistics.
+- reproducible instance generation using explicit random seeds, one instance at a time or in batches;
+- exact optimization and basic solver statistics;
+- full strong branching rule for SCIP that records every branching decision, checked node by node against SCIP's own `vanillafullstrong` rule;
+- learning-to-branch dataset generation (`mis-collector`).
 
 ### Planned
 
-- systematic solver statistics collection;
-- batch instance generation and benchmarking;
-- learning-to-branch dataset generation;
+- systematic solver statistics collection and benchmarking;
 - learned branching policies;
 - learning-to-cut;
 - comparison of classical and learned Branch-and-Cut configurations;
@@ -77,6 +77,83 @@ x_v \in \{0,1\}
 
 The current implementation generates Erdős–Rényi graphs \(G(n,p)\), builds the corresponding MILP model, and solves it exactly using SCIP.
 
+## Strong branching dataset
+
+`mis-collector` solves one MIS instance with full strong branching and records one sample per branching decision: the candidates, the outcome of strong branching on each of them, and the variable chosen by this expert.
+
+```bash
+./build/mis-generator single --n 125 --p 0.1 --seed 1 --output data/instances/g125.mis
+
+./build/mis-collector \
+    --instance data/instances/g125.mis \
+    --output-dir data/raw/strong_branching \
+    --time-limit 600
+```
+
+Optional limits are `--time-limit SECONDS` (default 3600), `--node-limit N` and `--scip-seed S`. Existing output files are never overwritten.
+
+### Solver settings
+
+The same SCIP settings are used to collect the data and, later, to evaluate the learned policies:
+
+- presolving enabled;
+- restarts disabled (`presolving/maxrestarts = 0`), so that the variable space does not change during the search;
+- cutting planes at the root node only (`separating/maxrounds = 0`), so that the effect of branching is isolated.
+
+### Output files
+
+For an instance `NAME.mis`, three files are written to the output directory:
+
+| File | Content |
+|---|---|
+| `NAME.sb.nodes.csv` | one row per sample (one branching decision) |
+| `NAME.sb.candidates.csv` | one row per branching candidate of each sample |
+| `NAME.sb.meta` | instance, SCIP version, settings, final status and counts |
+
+The metadata file is written last: its presence means that both tables are complete. The two tables are joined on `sample_index`. For a given instance, limits and seed, they are reproducible byte for byte, unless the time limit is what stopped the run.
+
+Main columns of the node table:
+
+- `node_id`, `parent_node_id`, `node_depth`: position in the search tree;
+- `lp_objective`, `primal_bound`, `dual_bound`: objective bounds at the node;
+- `number_of_candidates`, `expert_selected_vertex_id`: the decision;
+- `node_cutoff`: 1 when strong branching proved that the node can be pruned. The node is then not branched, and the expert selection is arbitrary among tied candidates;
+- `vertex_states`: one character per vertex, indexed by vertex id.
+
+| Code | Vertex state |
+|---|---|
+| `Z` / `O` | fixed to 0 / fixed to 1 by the local bounds |
+| `z` / `o` | not fixed, LP value 0 / LP value 1 |
+| `f` | not fixed, fractional LP value: a branching candidate |
+| `u` | unknown (multi-aggregated by presolving) |
+
+Main columns of the candidate table:
+
+- `vertex_id`, `lp_value`, `fractionality`, `reduced_cost`: state of the candidate;
+- `down_*` and `up_*`: strong branching outcome when the vertex is excluded (`x_v = 0`) or selected (`x_v = 1`): `bound`, `gain`, `infeasible`, ...;
+- `score`: strong branching score, computed as in SCIP's `vanillafullstrong` rule;
+- `expert_rank`: number of candidates with a strictly higher score (ties share a rank);
+- `expert_selected`: 1 for the candidate the expert branched on.
+
+Conventions:
+
+- objective values (`lp_objective`, `primal_bound`, `dual_bound`, strong branching bounds and gains) are in SCIP's internal space, which is a minimization: the MIS objective appears negated. The metadata gives the map back to the original objective, `original = original_objective_intercept + original_objective_slope * internal`;
+- every `*_valid` column tells whether the value next to it is meaningful;
+- a node reached while the solver is stopping (time limit) is not recorded, so every sample is a complete expert decision;
+- collection fails, without writing anything, if presolving merges two vertices into one LP column: a sample is never attributed to the wrong vertex.
+
+The exact column lists and the meaning of every field are documented in `include/io/MISStrongBranchingSampleIO.hpp` and `include/branching/MISStrongBranchingCollector.h`.
+
+Loading a dataset in Python:
+
+```python
+import pandas as pd
+
+nodes = pd.read_csv("NAME.sb.nodes.csv")
+candidates = pd.read_csv("NAME.sb.candidates.csv")
+samples = candidates.merge(nodes, on=["sample_index", "node_id"])
+```
+
 ## Project structure
 
 ```text
@@ -86,14 +163,22 @@ learn2milp/
 ├── docs/
 ├── data/
 ├── include/
+│   ├── branching/
+│   ├── features/
 │   ├── generators/
+│   ├── instances/
 │   ├── io/
-│   └── problems/
+│   ├── problems/
+│   ├── services/
+│   └── ui/
 ├── src/
+│   ├── branching/
 │   ├── generators/
 │   ├── io/
 │   ├── problems/
+│   ├── services/
 │   ├── tools/
+│   ├── ui/
 │   └── main.cpp
 └── tests/
 ```
@@ -236,7 +321,8 @@ The build produces the following executables:
 
 - `learn2milp`: main optimization program;
 - `mis-generator`: MIS instance generator;
-- `test_MISInstanceIO`: instance serialization test executable.
+- `mis-collector`: strong branching dataset collector;
+- one `test_*` executable per test.
 
 ### 8. Run the tests
 

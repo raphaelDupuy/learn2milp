@@ -6,8 +6,6 @@
 #include <string>
 #include <utility>
 
-namespace
-{
 bool validateMISInstance(
     const MISInstance& instance,
     std::string& errorMessage
@@ -43,7 +41,6 @@ bool validateMISInstance(
     }
 
     return true;
-}
 }
 
 bool writeMISInstance(

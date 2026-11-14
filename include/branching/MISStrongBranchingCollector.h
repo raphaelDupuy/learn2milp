@@ -17,6 +17,20 @@ typedef enum
     MIS_SB_PARTIALLY_EVALUATED
 } MISStrongBranchingEvaluationStatus;
 
+/*
+ * State of one MIS vertex variable x_v at a node (local bounds and LP
+ * value). The numeric values are stable: they are part of the dataset.
+ */
+typedef enum
+{
+    MIS_VERTEX_FIXED_ZERO = 0,   /* local bounds fix x_v = 0 */
+    MIS_VERTEX_FIXED_ONE = 1,    /* local bounds fix x_v = 1 */
+    MIS_VERTEX_FREE_LP_ZERO = 2, /* not fixed, LP value 0 */
+    MIS_VERTEX_FREE_LP_ONE = 3,  /* not fixed, LP value 1 */
+    MIS_VERTEX_FRACTIONAL = 4,   /* not fixed, fractional LP value */
+    MIS_VERTEX_UNKNOWN = 5       /* multi-aggregated by presolving */
+} MISVertexState;
+
 typedef struct
 {
     double bound;
@@ -34,13 +48,21 @@ typedef struct
  * One branching candidate at one node.
  *
  * Conventions:
- * - LP quantities (bounds, gains, lp_objective) live in SCIP's internal
- *   transformed space, which is a MINIMIZATION (the MIS maximum is negated).
+ * - Objective quantities (strong branching bounds, gains, and the sample's
+ *   lp_objective, primal_bound and dual_bound) all live in SCIP's internal
+ *   transformed space, which is a MINIMIZATION: dual_bound <= lp_objective
+ *   <= primal_bound, and the MIS maximum appears negated. Use
+ *   SCIPretransformObj() to map a value back to the original objective.
  * - Variable quantities are expressed on the MIS vertex variable x_v: if
  *   presolving replaced x_v by 1 - column, lp_value, bounds, objective
  *   coefficient and reduced cost are mirrored and down/up are swapped, so
  *   "down" always means x_v <= 0 and "up" means x_v >= 1.
  * - fractionality is min(f, 1 - f), f being the fractional part.
+ * - infeasible is SCIP's strong branching flag: the LP of that branch is
+ *   infeasible or its objective reaches the cutoff bound, i.e. the branch
+ *   cannot contain a solution better than the incumbent. Such a branch
+ *   has gain_valid = 0, and several candidates then often share the same
+ *   gain and score.
  * - gain = MAX(bound, lpobjval) - lpobjval, and score is
  *   SCIPgetBranchScoreMultiple() on (down.gain, up.gain), exactly as in
  *   SCIP's vanillafullstrong rule.
@@ -87,6 +109,20 @@ typedef struct
 
 } MISStrongBranchingCandidate;
 
+/*
+ * One branching decision (one node).
+ *
+ * - primal_bound is SCIP's global upper bound and dual_bound its global
+ *   lower bound, in the same internal space as lp_objective.
+ * - node_cutoff is 1 when strong branching proved that the node cannot
+ *   contain a solution better than the incumbent (both branches of the
+ *   selected candidate are infeasible or cut off). The rule then prunes
+ *   the node instead of branching, and the expert selection is arbitrary:
+ *   every candidate with two cut-off branches has the same score.
+ * - vertex_states has number_of_vertices entries, indexed by vertex id.
+ *   The vertices in state MIS_VERTEX_FRACTIONAL are exactly the candidates.
+ *   The array is only valid during the callback.
+ */
 typedef struct
 {
     long long node_id;
@@ -110,6 +146,11 @@ typedef struct
     int number_of_priority_candidates;
     int expert_selected_vertex_id;
     int expert_selection_valid;
+
+    int node_cutoff;
+
+    const MISVertexState* vertex_states;
+    int number_of_vertices;
 } MISStrongBranchingSample;
 
 typedef void (*MISStrongBranchingSampleCallback)(
