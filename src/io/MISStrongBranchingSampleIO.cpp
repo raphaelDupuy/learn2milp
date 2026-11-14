@@ -6,6 +6,11 @@
 #include <system_error>
 #include <utility>
 
+const char* const MIS_SB_NODES_SUFFIX = ".sb.nodes.csv";
+const char* const MIS_SB_CANDIDATES_SUFFIX = ".sb.candidates.csv";
+const char* const MIS_SB_METADATA_SUFFIX = ".sb.meta";
+const char* const MIS_SB_FEATURES_SUFFIX = ".sb.features.csv";
+
 const char* const MIS_SB_NODE_CSV_HEADER =
     "sample_index,node_id,parent_node_id,parent_node_valid,node_depth,"
     "lp_objective,lp_objective_valid,primal_bound,primal_bound_valid,"

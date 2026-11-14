@@ -19,10 +19,6 @@
 #include "services/MISSolverSettings.hpp"
 #include "services/SCIPStatusName.hpp"
 
-const char* const MIS_SB_NODES_SUFFIX = ".sb.nodes.csv";
-const char* const MIS_SB_CANDIDATES_SUFFIX = ".sb.candidates.csv";
-const char* const MIS_SB_METADATA_SUFFIX = ".sb.meta";
-
 namespace
 {
 

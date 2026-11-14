@@ -39,11 +39,12 @@ The current version provides a basic experimental framework for the Maximum Inde
 - exact optimization and basic solver statistics;
 - full strong branching rule for SCIP that records every branching decision, checked node by node against SCIP's own `vanillafullstrong` rule;
 - learning-to-branch dataset generation (`mis-collector`);
-- benchmark of branching rules on a set of instances (`mis-benchmark`).
+- benchmark of branching rules on a set of instances (`mis-benchmark`);
+- a first learned branching rule: candidate features, training of a small ranking model in Python, and its evaluation inside SCIP (`mislearned`).
 
 ### Planned
 
-- learned branching policies;
+- richer learned branching policies (graph neural networks, other training signals);
 - learning-to-cut;
 - comparison of classical and learned Branch-and-Cut configurations;
 - experiments on generalization across instance distributions;
@@ -186,6 +187,53 @@ experiments/er125_p01/build_dataset.sh build 4
 
 The tool ends with a summary per rule: number of solved runs and shifted geometric means of the node counts (shift 100) and of the solving times (shift 1 second). Node counts are reproducible for a given seed; solving times are not, and should be compared over several runs.
 
+## Learning a branching rule
+
+The first learned rule ranks the branching candidates of a node with a small neural network and branches on the best one. It imitates the full strong branching expert recorded by the data collection.
+
+### 1. Features
+
+`mis-featurizer` turns the samples collected on one instance into a training table, `NAME.sb.features.csv`, with one row per candidate: the features and the expert's answer (`score`, `expert_rank`, `expert_selected`).
+
+```bash
+scripts/featurize_strong_branching.sh build/mis-featurizer INSTANCE_DIR SAMPLES_DIR OUTPUT_DIR 4
+```
+
+Each candidate is described by 18 features computed from the graph, the state of every vertex and the LP values of the candidates: LP value and fractionality, degree in the graph and among the free or fractional vertices, sum and maximum of the LP values of its neighbours, tight edges, triangles of fractional neighbours, values relative to the other candidates, and the depth and size of the node. They are listed in `include/learning/MISBranchingFeatures.h`.
+
+The features are implemented once, in C, and that single function is used both by the featurizer and by the learned rule inside SCIP. A test checks that the features recomputed from the collected files are identical, bit for bit, to the ones computed during the solve: training and inference cannot disagree on what a feature means. After a change of the feature set, the tables are recomputed in seconds; the samples do not need to be collected again.
+
+### 2. Training
+
+The Python code lives in `ml/` and uses [uv](https://docs.astral.sh/uv/) for its environment:
+
+```bash
+uv sync
+
+uv run python ml/train_branching_model.py \
+    --train data/processed/features/er125_p01/train \
+    --valid data/processed/features/er125_p01/valid \
+    --hidden 32 32 \
+    --output experiments/er125_p01/models/mlp32.model
+```
+
+`--hidden` takes the sizes of the hidden layers; with no value, the model is linear. Training keeps the samples in which the expert's choice is meaningful (see `node_cutoff` above) and minimizes a cross-entropy: among the candidates of a node, the one chosen by the expert should get the highest score.
+
+The script reports, on the validation set, how the decisions of the model compare with the expert's: `accuracy` (same candidate), `top5` (the expert's candidate is among the model's five best) and `score ratio` (strong branching score of the model's candidate divided by the best score of the node; 1 means as good as the expert). It writes the model as a text file, checks that this file reproduces the decisions of the trained network, and stores the training history next to it as JSON.
+
+### 3. Evaluation inside SCIP
+
+The `mislearned` rule loads a model file and evaluates it in C at every node. A model is refused if it was trained on another feature set.
+
+```bash
+./build/mis-benchmark \
+    --instances data/instances/er125_p01/test \
+    --rules relpscost,mislearned \
+    --model experiments/er125_p01/models/mlp32.model \
+    --seeds 0,1,2 \
+    --output experiments/er125_p01/results/test_learned_mlp32.csv
+```
+
 ## Project structure
 
 ```text
@@ -201,13 +249,17 @@ learn2milp/
 │   ├── generators/
 │   ├── instances/
 │   ├── io/
+│   ├── learning/
 │   ├── problems/
 │   ├── services/
 │   └── ui/
+├── ml/
+├── pyproject.toml
 ├── src/
 │   ├── branching/
 │   ├── generators/
 │   ├── io/
+│   ├── learning/
 │   ├── problems/
 │   ├── services/
 │   ├── tools/
@@ -226,7 +278,7 @@ The code is deliberately separated into problem definitions, instance generators
 - SCIP Optimization Suite 10.1.0;
 - Git.
 
-The machine learning components will be developed separately, primarily using Python.
+The machine learning components are written in Python (3.11 or newer) with PyTorch; their dependencies are declared in `pyproject.toml` and installed with `uv sync`. Trained models are evaluated in C inside SCIP, so Python is not needed to run them.
 
 ## Setup and installation
 
@@ -356,6 +408,7 @@ The build produces the following executables:
 - `learn2milp`: main optimization program;
 - `mis-generator`: MIS instance generator;
 - `mis-collector`: strong branching dataset collector;
+- `mis-featurizer`: computes training tables from collected samples;
 - `mis-benchmark`: branching rule benchmark;
 - one `test_*` executable per test.
 

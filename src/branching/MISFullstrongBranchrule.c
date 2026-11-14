@@ -1,6 +1,8 @@
 
 #include "branching/MISFullstrongBranchrule.h"
 
+#include "MISVertexMapping.h"
+
 #include <scip/scip.h>
 #include <scip/scip_branch.h>
 #include <scip/scip_mem.h>
@@ -12,257 +14,14 @@
 
 typedef struct
 {
-    /*
-     * Original MIS variables, indexed by vertex id.
-     *
-     * These pointers are NOT captured: the original problem owns them,
-     * and SCIP frees the problem before the plugins (stage FREE), where
-     * SCIPreleaseVar() is no longer allowed. The plugin is therefore
-     * bound to the problem that was current when it was included.
-     */
-    SCIP_VAR** vertexvars;
-    int nvertices;
+    /* Link between graph vertices and SCIP variables. */
+    MISVertexMapping mapping;
 
     /* User callback and its context. */
     MISStrongBranchingSampleCallback callback;
     void* userdata;
 
-    /*
-     * Transformed counterparts of vertexvars, indexed by vertex id.
-     * Captured in BRANCHINIT and released in BRANCHEXIT, i.e. for the
-     * lifetime of the transformed problem.
-     */
-    SCIP_VAR** vertextransvars;
-
-    /* LP column mapping, built lazily at the first LP branching call. */
-    SCIP_VAR** transformedvars;
-    int* vertexids;
-    int* complemented;
-    int ntransformedvars;
-    int mapping_capacity;
-    SCIP_Bool mapping_initialized;
-
 } MISFullstrongBranchruleData;
-
-/*
- * Resolves a transformed MIS variable through presolving aggregations
- * and negations down to its LP column.
- *
- * On success:
- * - columnvar is the final LP column variable;
- * - complemented is FALSE if x_v = columnvar;
- * - complemented is TRUE if x_v = 1 - columnvar.
- *
- * If the transformation is unsupported or does not lead to a
- * COLUMN variable, supported is set to FALSE.
- */
-static
-SCIP_RETCODE resolveMISVertexVariable(
-    SCIP* scip,
-    SCIP_VAR* startvar,
-    SCIP_VAR** columnvar,
-    int* complemented,
-    SCIP_Bool* supported
-)
-{
-    SCIP_VAR* var;
-    SCIP_VAR* nextvar;
-    SCIP_VARSTATUS status;
-    SCIP_Real scalar;
-    SCIP_Real constant;
-    SCIP_Real nextscalar;
-    SCIP_Real nextconstant;
-
-    if( scip == NULL || startvar == NULL || columnvar == NULL
-        || complemented == NULL || supported == NULL )
-        return SCIP_INVALIDDATA;
-
-    *columnvar = NULL;
-    *complemented = FALSE;
-    *supported = FALSE;
-
-    var = startvar;
-
-    /* Current relation: x_v = scalar * var + constant. */
-    scalar = 1.0;
-    constant = 0.0;
-
-    while( TRUE )
-    {
-        status = SCIPvarGetStatus(var);
-
-        switch( status )
-        {
-        case SCIP_VARSTATUS_COLUMN:
-            if( SCIPisEQ(scip, scalar, 1.0)
-                && SCIPisEQ(scip, constant, 0.0) )
-            {
-                *columnvar = var;
-                *complemented = FALSE;
-                *supported = TRUE;
-            }
-            else if( SCIPisEQ(scip, scalar, -1.0)
-                && SCIPisEQ(scip, constant, 1.0) )
-            {
-                *columnvar = var;
-                *complemented = TRUE;
-                *supported = TRUE;
-            }
-
-            return SCIP_OKAY;
-
-        case SCIP_VARSTATUS_AGGREGATED:
-            nextvar = SCIPvarGetAggrVar(var);
-            nextscalar = SCIPvarGetAggrScalar(var);
-            nextconstant = SCIPvarGetAggrConstant(var);
-            break;
-
-        case SCIP_VARSTATUS_NEGATED:
-            nextvar = SCIPvarGetNegationVar(var);
-
-            if( nextvar == NULL )
-                return SCIP_INVALIDDATA;
-
-            nextscalar = -1.0;
-            nextconstant = SCIPvarGetNegationConstant(var);
-            break;
-
-        default:
-            /* LOOSE, FIXED, MULTAGGR or unsupported status. */
-            return SCIP_OKAY;
-        }
-
-        if( nextvar == NULL )
-            return SCIP_INVALIDDATA;
-
-        /* Compose x_v = scalar * (nextscalar * nextvar
-         * + nextconstant) + constant. */
-        constant += scalar * nextconstant;
-        scalar *= nextscalar;
-
-        var = nextvar;
-    }
-}
-
-static
-SCIP_RETCODE initializeMISVertexMapping(
-    SCIP* scip,
-    MISFullstrongBranchruleData* data
-)
-{
-    SCIP_VAR* columnvar;
-    SCIP_Bool supported;
-    SCIP_RETCODE retcode;
-    int complemented;
-    int v;
-
-    if( scip == NULL || data == NULL )
-        return SCIP_INVALIDDATA;
-
-    if( data->mapping_initialized )
-        return SCIP_OKAY;
-
-    data->ntransformedvars = 0;
-    data->mapping_capacity = data->nvertices;
-
-    if( data->nvertices == 0 )
-    {
-        data->mapping_initialized = TRUE;
-        return SCIP_OKAY;
-    }
-
-    retcode = SCIPallocBlockMemoryArray(
-        scip, &data->transformedvars, data->mapping_capacity
-    );
-
-    if( retcode != SCIP_OKAY )
-        goto TERMINATE;
-
-    retcode = SCIPallocBlockMemoryArray(
-        scip, &data->vertexids, data->mapping_capacity
-    );
-
-    if( retcode != SCIP_OKAY )
-        goto TERMINATE;
-
-    retcode = SCIPallocBlockMemoryArray(
-        scip, &data->complemented, data->mapping_capacity
-    );
-
-    if( retcode != SCIP_OKAY )
-        goto TERMINATE;
-
-    for( v = 0; v < data->nvertices; ++v )
-    {
-        retcode = resolveMISVertexVariable(
-        scip,
-        data->vertextransvars[v],
-        &columnvar,
-        &complemented,
-        &supported
-    );
-
-if( retcode != SCIP_OKAY )
-    goto TERMINATE;
-
-        if( !supported )
-            continue;
-
-        data->transformedvars[data->ntransformedvars] = columnvar;
-        data->vertexids[data->ntransformedvars] = v;
-        data->complemented[data->ntransformedvars] = complemented;
-
-        ++data->ntransformedvars;
-    }
-
-    data->mapping_initialized = TRUE;
-
-    return SCIP_OKAY;
-
-TERMINATE:
-
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->transformedvars, data->mapping_capacity
-    );
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->vertexids, data->mapping_capacity
-    );
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->complemented, data->mapping_capacity
-    );
-
-    data->mapping_capacity = 0;
-    data->ntransformedvars = 0;
-
-    return retcode;
-}
-
-/*
- * Returns the mapping index of an LP column, or -1 if the column does not
- * correspond to exactly one MIS vertex.
- */
-static
-int findMISVertexMapping(
-    const MISFullstrongBranchruleData* data,
-    SCIP_VAR* columnvar
-)
-{
-    int found = -1;
-    int mapping;
-
-    for( mapping = 0; mapping < data->ntransformedvars; ++mapping )
-    {
-        if( data->transformedvars[mapping] != columnvar )
-            continue;
-
-        if( found >= 0 )
-            return -1;
-
-        found = mapping;
-    }
-
-    return found;
-}
 
 static
 void initializeDirection(
@@ -478,47 +237,6 @@ void computeExpertRanks(
     }
 }
 
-/*
- * Classifies every MIS vertex at the current node from the local bounds
- * and the LP value of its transformed variable. Fixed, aggregated and
- * negated variables are handled by SCIP; multi-aggregated ones, whose
- * local bounds are not maintained, are reported as unknown.
- */
-static
-void fillMISVertexStates(
-    SCIP* scip,
-    const MISFullstrongBranchruleData* data,
-    MISVertexState* states
-)
-{
-    int v;
-
-    for( v = 0; v < data->nvertices; ++v )
-    {
-        SCIP_VAR* var = data->vertextransvars[v];
-        SCIP_Real lb;
-        SCIP_Real ub;
-        SCIP_Real val;
-
-        if( SCIPvarGetStatus(var) == SCIP_VARSTATUS_MULTAGGR )
-        {
-            states[v] = MIS_VERTEX_UNKNOWN;
-            continue;
-        }
-
-        lb = SCIPvarGetLbLocal(var);
-        ub = SCIPvarGetUbLocal(var);
-        val = SCIPvarGetLPSol(var);
-
-        if( SCIPisFeasEQ(scip, lb, ub) )
-            states[v] = (ub < 0.5) ? MIS_VERTEX_FIXED_ZERO : MIS_VERTEX_FIXED_ONE;
-        else if( !SCIPisFeasIntegral(scip, val) )
-            states[v] = MIS_VERTEX_FRACTIONAL;
-        else
-            states[v] = (val < 0.5) ? MIS_VERTEX_FREE_LP_ZERO : MIS_VERTEX_FREE_LP_ONE;
-    }
-}
-
 static
 SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
 {
@@ -552,11 +270,11 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
     *result = SCIP_DIDNOTRUN;
 
     /* An empty configuration is used when copying the plugin. */
-    if( data->nvertices == 0 )
+    if( data->mapping.nvertices == 0 )
         return SCIP_OKAY;
 
     /* Initialize the original-to-transformed variable mapping. */
-    SCIP_CALL( initializeMISVertexMapping(scip, data) );
+    SCIP_CALL( MISvertexMappingResolveColumns(scip, &data->mapping) );
 
     /* Retrieve the current LP branching candidates. */
     SCIP_CALL( SCIPgetLPBranchCands(
@@ -580,7 +298,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
         SCIP_VAR* var = lpcands[c];
         SCIP_Real val = SCIPvarGetLPSol(var);
         SCIP_Real frac = SCIPfeasFrac(scip, val);
-        int mapping = findMISVertexMapping(data, var);
+        int mapping = MISvertexMappingFind(&data->mapping, var);
 
         /* Every LP candidate must map to exactly one MIS vertex. */
         if( mapping < 0 )
@@ -590,7 +308,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
             return SCIP_INVALIDDATA;
         }
 
-        record->vertex_id = data->vertexids[mapping];
+        record->vertex_id = data->mapping.vertexids[mapping];
         record->candidate_position = c;
 
         record->lp_value = val;
@@ -633,7 +351,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
     /* Express every record in MIS-vertex space (x_v rather than column). */
     for( c = 0; c < nlpcands; ++c )
     {
-        if( data->complemented[findMISVertexMapping(data, lpcands[c])] )
+        if( data->mapping.complemented[MISvertexMappingFind(&data->mapping, lpcands[c])] )
             complementRecord(&records[c]);
     }
 
@@ -676,11 +394,11 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
         sample.expert_selected_vertex_id = anyscored ? records[bestcand].vertex_id : -1;
         sample.node_cutoff = cutoff;
 
-        SCIP_CALL( SCIPallocBufferArray(scip, &vertexstates, data->nvertices) );
-        fillMISVertexStates(scip, data, vertexstates);
+        SCIP_CALL( SCIPallocBufferArray(scip, &vertexstates, data->mapping.nvertices) );
+        MISvertexMappingFillStates(scip, &data->mapping, vertexstates);
 
         sample.vertex_states = vertexstates;
-        sample.number_of_vertices = data->nvertices;
+        sample.number_of_vertices = data->mapping.nvertices;
 
         data->callback(data->userdata, &sample, records, (size_t)nlpcands);
 
@@ -719,14 +437,7 @@ SCIP_DECL_BRANCHFREE(branchFreeMISFullstrong)
     data = (MISFullstrongBranchruleData*)SCIPbranchruleGetData(branchrule);
     assert(data != NULL);
 
-    /* BRANCHEXIT has already released the transformed variables. */
-    assert(data->vertextransvars == NULL);
-
-    /* Free the original-variable array (the pointers are not captured). */
-    if( data->vertexvars != NULL )
-    {
-        SCIPfreeBlockMemoryArray(scip, &data->vertexvars, data->nvertices);
-    }
+    MISvertexMappingFree(scip, &data->mapping);
 
     /* Free the branchrule data. */
     SCIPfreeBlockMemory(scip, &data);
@@ -740,41 +451,11 @@ static
 SCIP_DECL_BRANCHEXIT(branchExitMISFullstrong)
 {
     MISFullstrongBranchruleData* data;
-    int v;
 
     data = (MISFullstrongBranchruleData*)SCIPbranchruleGetData(branchrule);
     assert(data != NULL);
 
-    /* Free transformed-variable mapping arrays. */
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->transformedvars, data->mapping_capacity
-    );
-
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->vertexids, data->mapping_capacity
-    );
-
-    SCIPfreeBlockMemoryArrayNull(
-        scip, &data->complemented, data->mapping_capacity
-    );
-
-    data->ntransformedvars = 0;
-    data->mapping_capacity = 0;
-    data->mapping_initialized = FALSE;
-
-    /* Release the transformed vertex variables captured in BRANCHINIT. */
-    if( data->vertextransvars != NULL )
-    {
-        for( v = 0; v < data->nvertices; ++v )
-        {
-            if( data->vertextransvars[v] != NULL )
-            {
-                SCIP_CALL( SCIPreleaseVar(scip, &data->vertextransvars[v]) );
-            }
-        }
-
-        SCIPfreeBlockMemoryArray(scip, &data->vertextransvars, data->nvertices);
-    }
+    SCIP_CALL( MISvertexMappingExit(scip, &data->mapping) );
 
     return SCIP_OKAY;
 }
@@ -783,63 +464,13 @@ static
 SCIP_DECL_BRANCHINIT(branchInitMISFullstrong)
 {
     MISFullstrongBranchruleData* data;
-    SCIP_RETCODE retcode;
-    int v;
 
     data = (MISFullstrongBranchruleData*)SCIPbranchruleGetData(branchrule);
     assert(data != NULL);
 
-    assert(data->vertextransvars == NULL);
-    assert(data->transformedvars == NULL);
-    assert(data->vertexids == NULL);
-    assert(data->complemented == NULL);
-
-    data->ntransformedvars = 0;
-    data->mapping_capacity = 0;
-    data->mapping_initialized = FALSE;
-
-    /* An empty configuration is used when copying the plugin. */
-    if( data->nvertices == 0 )
-        return SCIP_OKAY;
-
-    /* Capture the transformed vertex variables for the lifetime of the
-     * transformed problem. */
-    SCIP_CALL( SCIPallocClearBlockMemoryArray(
-        scip, &data->vertextransvars, data->nvertices
-    ) );
-
-    for( v = 0; v < data->nvertices; ++v )
-    {
-        SCIP_VAR* transvar = NULL;
-
-        retcode = SCIPgetTransformedVar(scip, data->vertexvars[v], &transvar);
-
-        if( retcode == SCIP_OKAY && transvar == NULL )
-            retcode = SCIP_INVALIDDATA;
-
-        if( retcode == SCIP_OKAY )
-            retcode = SCIPcaptureVar(scip, transvar);
-
-        if( retcode != SCIP_OKAY )
-            goto TERMINATE;
-
-        data->vertextransvars[v] = transvar;
-    }
+    SCIP_CALL( MISvertexMappingInit(scip, &data->mapping) );
 
     return SCIP_OKAY;
-
-TERMINATE:
-
-    /* Release only the variables captured so far (others are NULL). */
-    for( v = 0; v < data->nvertices; ++v )
-    {
-        if( data->vertextransvars[v] != NULL )
-            (void)SCIPreleaseVar(scip, &data->vertextransvars[v]);
-    }
-
-    SCIPfreeBlockMemoryArray(scip, &data->vertextransvars, data->nvertices);
-
-    return retcode;
 }
 
 static
@@ -901,30 +532,17 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
 
     SCIP_CALL( SCIPallocBlockMemory(scip, &data) );
 
-    data->vertexvars = NULL;
-    data->nvertices = nvertices;
     data->callback = callback;
     data->userdata = userdata;
 
-    data->vertextransvars = NULL;
-    data->transformedvars = NULL;
-    data->vertexids = NULL;
-    data->complemented = NULL;
-    data->ntransformedvars = 0;
-    data->mapping_capacity = 0;
-    data->mapping_initialized = FALSE;
-
     /* Copy the original MIS variable pointers (not captured, see
-     * MISFullstrongBranchruleData). */
-    if( nvertices > 0 )
-    {
-        retcode = SCIPduplicateBlockMemoryArray(
-            scip, &data->vertexvars, vertexvars, nvertices
-        );
+     * MISVertexMapping). */
+    retcode = MISvertexMappingCreate(
+        scip, &data->mapping, vertexvars, nvertices
+    );
 
-        if( retcode != SCIP_OKAY )
-            goto TERMINATE;
-    }
+    if( retcode != SCIP_OKAY )
+        goto TERMINATE;
 
     /* Include the branching rule. */
     retcode = SCIPincludeBranchruleBasic(
@@ -972,11 +590,7 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
 
 TERMINATE:
 
-    if( data->vertexvars != NULL )
-    {
-        SCIPfreeBlockMemoryArray(scip, &data->vertexvars, nvertices);
-    }
-
+    MISvertexMappingFree(scip, &data->mapping);
     SCIPfreeBlockMemory(scip, &data);
 
     return retcode;

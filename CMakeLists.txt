@@ -13,8 +13,22 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Branching features and model evaluation: plain C without SCIP, shared
+# by the offline featurizer and by the learned branching rule.
+add_library(mis_learning STATIC
+    src/learning/MISBranchingFeatures.c
+    src/learning/MISBranchingModel.c
+)
+
+target_include_directories(mis_learning
+    PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
 add_library(mis_branching STATIC
     src/branching/MISFullstrongBranchrule.c
+    src/branching/MISLearnedBranchrule.c
+    src/branching/MISVertexMapping.c
 )
 
 target_include_directories(mis_branching
@@ -24,6 +38,7 @@ target_include_directories(mis_branching
 
 target_link_libraries(mis_branching
     PUBLIC
+    mis_learning
     scip
 )
 
@@ -87,6 +102,8 @@ add_executable(mis-benchmark
     src/io/MISInstanceIO.cpp
     src/io/InstanceMetadataIO.cpp
     src/services/MISInstanceLoadingService.cpp
+    src/io/MISBranchingModelIO.cpp
+    src/learning/MISAdjacency.cpp
     src/services/MISBenchmarkService.cpp
     src/services/MISSolverSettings.cpp
     src/services/SCIPStatusName.cpp
@@ -95,6 +112,23 @@ add_executable(mis-benchmark
 target_link_libraries(mis-benchmark
     PRIVATE
     mis_branching
+)
+
+add_executable(mis-featurizer
+    src/tools/mis_featurizer_main.cpp
+    src/io/CsvReader.cpp
+    src/io/MISInstanceIO.cpp
+    src/io/InstanceMetadataIO.cpp
+    src/io/MISStrongBranchingSampleIO.cpp
+    src/learning/MISAdjacency.cpp
+    src/services/MISInstanceLoadingService.cpp
+    src/services/MISFeaturizationService.cpp
+)
+
+target_link_libraries(mis-featurizer
+    PRIVATE
+    mis_learning
+    scip
 )
 
 include(CTest)
@@ -128,6 +162,95 @@ if(BUILD_TESTING)
     add_test(
         NAME MISFullstrongOracle
         COMMAND test_MISFullstrongOracle
+    )
+
+    add_executable(test_MISBranchingFeatures
+        tests/test_MISBranchingFeatures.cpp
+        src/learning/MISAdjacency.cpp
+    )
+
+    target_link_libraries(test_MISBranchingFeatures
+        PRIVATE
+        mis_learning
+        scip
+    )
+
+    add_test(
+        NAME MISBranchingFeatures
+        COMMAND test_MISBranchingFeatures
+    )
+
+    add_executable(test_MISBranchingModelIO
+        tests/test_MISBranchingModelIO.cpp
+        src/io/MISBranchingModelIO.cpp
+    )
+
+    target_link_libraries(test_MISBranchingModelIO
+        PRIVATE
+        mis_learning
+    )
+
+    add_test(
+        NAME MISBranchingModelIO
+        COMMAND test_MISBranchingModelIO
+    )
+
+    add_executable(test_MISLearnedBranchrule
+        tests/test_MISLearnedBranchrule.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
+        src/services/MISSolverSettings.cpp
+    )
+
+    target_link_libraries(test_MISLearnedBranchrule
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISLearnedBranchrule
+        COMMAND test_MISLearnedBranchrule
+    )
+
+    add_executable(test_CsvReader
+        tests/test_CsvReader.cpp
+        src/io/CsvReader.cpp
+    )
+
+    target_include_directories(test_CsvReader
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME CsvReader
+        COMMAND test_CsvReader
+    )
+
+    add_executable(test_MISFeaturizationService
+        tests/test_MISFeaturizationService.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/CsvReader.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+        src/learning/MISAdjacency.cpp
+        src/services/MISFeaturizationService.cpp
+        src/services/MISSolverSettings.cpp
+    )
+
+    target_link_libraries(test_MISFeaturizationService
+        PRIVATE
+        mis_branching
+        mis_learning
+    )
+
+    add_test(
+        NAME MISFeaturizationService
+        COMMAND test_MISFeaturizationService
+            ${PROJECT_BINARY_DIR}/test_mis_featurization_service
     )
 
     add_executable(test_MISStrongBranchingSampleIO
@@ -173,6 +296,8 @@ if(BUILD_TESTING)
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISInstanceIO.cpp
         src/io/MISStrongBranchingSampleIO.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
         src/services/MISBenchmarkService.cpp
         src/services/MISCollectionService.cpp
         src/services/MISSolverSettings.cpp

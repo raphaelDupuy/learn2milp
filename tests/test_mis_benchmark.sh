@@ -98,7 +98,9 @@ for INVALID in \
     "--rules relpscost --seeds 0,x" \
     "--rules relpscost --settings other" \
     "--rules relpscost --time-limit 0" \
-    "--rules relpscost --unknown value"; do
+    "--rules relpscost --unknown value" \
+    "--rules mislearned" \
+    "--rules relpscost --model $WORK_DIR/instances/manifest.csv"; do
     # shellcheck disable=SC2086
     if "$BENCHMARK" \
         --instances "$WORK_DIR/instances" \
@@ -112,6 +114,21 @@ for INVALID in \
 
     test ! -e "$WORK_DIR/invalid.csv"
 done
+
+# A file that is not a model must be rejected before any run.
+if "$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules mislearned \
+    --model "$WORK_DIR/instances/manifest.csv" \
+    --output "$WORK_DIR/invalid.csv" \
+    >"$WORK_DIR/invalid.stdout" \
+    2>"$WORK_DIR/invalid.stderr"; then
+    echo "ERROR: invalid model file was accepted" >&2
+    exit 1
+fi
+
+test ! -e "$WORK_DIR/invalid.csv"
+grep -q 'Invalid model file' "$WORK_DIR/invalid.stderr"
 
 # A directory without instances must be rejected.
 mkdir -p "$WORK_DIR/empty"

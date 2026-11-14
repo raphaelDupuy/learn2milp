@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 
+#include "io/MISStrongBranchingSampleIO.hpp"
 #include "problems/MIS.hpp"
 
 /*
@@ -20,7 +21,8 @@
  *   <prefix>.sb.candidates.csv  one row per branching candidate
  *   <prefix>.sb.meta            collection metadata
  *
- * The CSV tables are described in io/MISStrongBranchingSampleIO.hpp. For
+ * The CSV tables and the file suffixes (MIS_SB_*_SUFFIX) are described
+ * in io/MISStrongBranchingSampleIO.hpp. For
  * given instance, limits and seed they are reproducible byte for byte,
  * unless the time limit is what stopped the run. The metadata file is
  * written last: its presence means that the two tables are complete.
@@ -62,11 +64,6 @@ struct MISCollectionResult
     double primalBound = 0.0;
     double dualBound = 0.0;
 };
-
-// Suffixes appended to the output prefix.
-extern const char* const MIS_SB_NODES_SUFFIX;
-extern const char* const MIS_SB_CANDIDATES_SUFFIX;
-extern const char* const MIS_SB_METADATA_SUFFIX;
 
 /*
  * Collects strong branching samples for one instance.

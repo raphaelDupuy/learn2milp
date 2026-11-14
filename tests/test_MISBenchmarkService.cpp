@@ -10,10 +10,12 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
 #include "generators/ErdosRenyiGenerator.hpp"
+#include "learning/MISBranchingFeatures.h"
 #include "services/MISCollectionService.hpp"
 
 namespace
@@ -159,6 +161,83 @@ int main(int argc, char* argv[])
             same,
             "Benchmarked expert matches the collected search tree ("
                 + std::to_string(collected.exploredNodes) + " nodes)"
+        );
+    }
+
+    // Learned rule, driven by a hand-written model file ("branch on the
+    // most fractional vertex").
+    {
+        const auto modelPath = workDir / "most_fractional.model";
+        {
+            std::ofstream file(modelPath);
+
+            file << "MIS_BRANCHING_MODEL 1\nfeatures "
+                 << MIS_BRANCHING_FEATURE_COUNT << '\n';
+
+            for (int f = 0; f < MIS_BRANCHING_FEATURE_COUNT; ++f)
+                file << "feature " << MISbranchingFeatureName(f) << " 0 1\n";
+
+            file << "layers 1\nlayer " << MIS_BRANCHING_FEATURE_COUNT
+                 << " 1 linear\n";
+
+            for (int f = 0; f < MIS_BRANCHING_FEATURE_COUNT; ++f)
+                file << (f > 0 ? " " : "") << (f == 1 ? 1 : 0);
+
+            file << "\n0\n";
+        }
+
+        MISBenchmarkConfig config;
+        config.branchingRule = "mislearned";
+        config.learnedModelPath = modelPath;
+
+        MISBenchmarkResult learned;
+        MISBenchmarkResult again;
+        std::string error;
+
+        const bool ok =
+            benchmarkMIS(instance, config, learned, error)
+            && benchmarkMIS(instance, config, again, error);
+
+        check(
+            ok && learned.solved
+            && std::fabs(learned.primalBound - reference.primalBound) < 1e-6
+            && learned.exploredNodes > 1
+            && learned.exploredNodes == again.exploredNodes,
+            "Learned rule reaches the same optimum ("
+                + std::to_string(learned.exploredNodes) + " nodes) " + error
+        );
+
+        MISBenchmarkResult result;
+
+        config.learnedModelPath = workDir / "missing.model";
+
+        check(
+            !benchmarkMIS(instance, config, result, error)
+            && error.find("Unable to open model file") == 0,
+            "Missing model file is reported"
+        );
+
+        config.learnedModelPath.clear();
+
+        check(
+            !benchmarkMIS(instance, config, result, error),
+            "Learned rule without a model is rejected"
+        );
+
+        config.branchingRule = "relpscost";
+        config.learnedModelPath = modelPath;
+
+        check(
+            !benchmarkMIS(instance, config, result, error),
+            "Model given to another rule is rejected"
+        );
+
+        config.branchingRule = "mislearned";
+
+        check(
+            benchmarkMIS(MISInstance{0, {}}, config, result, error)
+            && isMISBenchmarkRuleAvailable("mislearned"),
+            "Learned rule accepts an empty graph"
         );
     }
 

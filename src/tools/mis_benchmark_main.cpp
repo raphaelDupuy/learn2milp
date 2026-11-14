@@ -1,3 +1,4 @@
+#include "io/MISBranchingModelIO.hpp"
 #include "services/MISBenchmarkService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
 
@@ -23,7 +24,8 @@ void printUsage(const char* program)
         << "  " << program
         << " --instances DIR --rules R1,R2 --output PATH\n"
         << "      [--seeds S1,S2] [--settings study|default]"
-        << " [--time-limit SECONDS]\n\n"
+        << " [--time-limit SECONDS]\n"
+        << "      [--model PATH]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -31,7 +33,9 @@ void printUsage(const char* program)
         << "  --instances   Directory containing the .mis instances\n"
         << "  --rules       Comma-separated branching rules: SCIP rules such\n"
         << "                as relpscost, pscost, vanillafullstrong, or\n"
-        << "                misfullstrong (the data collection expert)\n"
+        << "                misfullstrong (the data collection expert),\n"
+        << "                or mislearned (the rule driven by --model)\n"
+        << "  --model       Model file of the mislearned rule\n"
         << "  --output      Path of the result table (never overwritten)\n"
         << "  --seeds       Comma-separated SCIP seed shifts (default 0)\n"
         << "  --settings    study: settings used for data collection"
@@ -156,6 +160,7 @@ int main(int argc, char* argv[])
     bool hasSeeds = false;
     bool hasSettings = false;
     bool hasTimeLimit = false;
+    std::string modelPath;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -233,6 +238,16 @@ int main(int argc, char* argv[])
 
             hasSettings = true;
         }
+        else if (option == "--model")
+        {
+            if (!modelPath.empty() || value.empty())
+            {
+                std::cerr << "Invalid or duplicate --model value.\n";
+                return 2;
+            }
+
+            modelPath = value;
+        }
         else if (option == "--time-limit")
         {
             if (hasTimeLimit || !parsePositiveDouble(value, timeLimit))
@@ -262,6 +277,30 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Unknown branching rule: " << rule << '\n';
             return 2;
+        }
+    }
+
+    const bool usesModel =
+        std::find(rules.begin(), rules.end(), "mislearned") != rules.end();
+
+    if (usesModel != !modelPath.empty())
+    {
+        std::cerr
+            << (usesModel
+                ? "The mislearned rule needs --model.\n"
+                : "--model is only used by the mislearned rule.\n");
+        return 2;
+    }
+
+    if (usesModel)
+    {
+        LoadedMISBranchingModel model;
+        std::string modelError;
+
+        if (!loadMISBranchingModel(modelPath, model, modelError))
+        {
+            std::cerr << modelError << '\n';
+            return 1;
         }
     }
 
@@ -342,6 +381,11 @@ int main(int argc, char* argv[])
                 config.settings = settings;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
+
+                if (rule == "mislearned")
+                {
+                    config.learnedModelPath = modelPath;
+                }
 
                 MISBenchmarkResult result;
 

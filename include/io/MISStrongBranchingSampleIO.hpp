@@ -60,6 +60,14 @@ private:
     std::size_t numberOfCandidates_ = 0;
 };
 
+// Suffixes appended to an instance name to form the file names of one
+// collection: the two sample tables, the collection metadata and the
+// feature table derived from the samples.
+extern const char* const MIS_SB_NODES_SUFFIX;
+extern const char* const MIS_SB_CANDIDATES_SUFFIX;
+extern const char* const MIS_SB_METADATA_SUFFIX;
+extern const char* const MIS_SB_FEATURES_SUFFIX;
+
 // Header rows, without the trailing line break.
 extern const char* const MIS_SB_NODE_CSV_HEADER;
 extern const char* const MIS_SB_CANDIDATE_CSV_HEADER;

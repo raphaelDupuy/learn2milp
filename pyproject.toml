@@ -1,0 +1,22 @@
+[project]
+name = "learn2milp-ml"
+version = "0.1.0"
+description = "Machine learning components of Learn2MILP"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "torch",
+]
+
+# CPU build of PyTorch: models are small and are evaluated in C inside SCIP.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv]
+package = false

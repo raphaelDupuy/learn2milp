@@ -1,0 +1,79 @@
+#ifndef LEARN2MILP_MIS_LEARNED_BRANCHRULE_H
+#define LEARN2MILP_MIS_LEARNED_BRANCHRULE_H
+
+#include <stddef.h>
+
+#include <scip/scip.h>
+
+#include "learning/MISBranchingFeatures.h"
+#include "learning/MISBranchingModel.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * What the learned rule saw and decided at one node. Every array is only
+ * valid during the callback.
+ *
+ * features has number_of_candidates rows of MIS_BRANCHING_FEATURE_COUNT
+ * values; scores has one value per candidate. The rule branches on
+ * candidate selected_candidate, the first one with the highest score.
+ */
+typedef struct
+{
+    long long node_id;
+    int node_depth;
+
+    const MISVertexState* vertex_states;
+    int number_of_vertices;
+
+    int number_of_candidates;
+    const int* candidate_vertices;
+    const double* candidate_lp_values;
+
+    const double* features;
+    const double* scores;
+
+    int selected_candidate;
+} MISLearnedBranchingDecision;
+
+typedef void (*MISLearnedBranchingDecisionCallback)(
+    void* userdata,
+    const MISLearnedBranchingDecision* decision
+);
+
+/*
+ * Includes the learned MIS branching rule: at every node, it computes the
+ * features of the LP branching candidates, scores them with the model and
+ * branches on the candidate with the highest score.
+ *
+ * vertexvars[v] must be the original variable of vertex v, and graph the
+ * adjacency of the same graph. vertexvars, graph and model are NOT
+ * copied: they must stay valid for as long as the rule may run. The model
+ * must be valid (MISbranchingModelIsValid()).
+ *
+ * callback may be NULL. When given, it is called once per branching
+ * decision, before branching; it is meant for tests and analysis.
+ *
+ * The solve fails with SCIP_INVALIDDATA if presolving merged two
+ * vertices into one LP column: the features would not be defined.
+ *
+ * Pass (NULL, 0, NULL, NULL, NULL, NULL) for the empty configuration
+ * used by copies.
+ */
+SCIP_RETCODE SCIPincludeBranchruleMISLearned(
+    SCIP* scip,
+    SCIP_VAR** vertexvars,
+    int nvertices,
+    const MISFeatureGraph* graph,
+    const MISBranchingModel* model,
+    MISLearnedBranchingDecisionCallback callback,
+    void* userdata
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

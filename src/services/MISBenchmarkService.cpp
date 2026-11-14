@@ -10,7 +10,10 @@
 #include <scip/scipdefplugins.h>
 
 #include "branching/MISFullstrongBranchrule.h"
+#include "branching/MISLearnedBranchrule.h"
+#include "io/MISBranchingModelIO.hpp"
 #include "io/MISInstanceIO.hpp"
+#include "learning/MISAdjacency.hpp"
 #include "services/MISSolverSettings.hpp"
 #include "services/SCIPStatusName.hpp"
 
@@ -18,6 +21,7 @@ namespace
 {
 
 const char* const MIS_FULLSTRONG_RULE = "misfullstrong";
+const char* const MIS_LEARNED_RULE = "mislearned";
 
 // Highest value accepted by SCIP for a branching rule priority.
 const int MAX_BRANCHING_PRIORITY = INT_MAX / 4;
@@ -91,7 +95,8 @@ bool parseMISBenchmarkSettings(
 
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
 {
-    if (branchingRule == MIS_FULLSTRONG_RULE)
+    if (branchingRule == MIS_FULLSTRONG_RULE
+        || branchingRule == MIS_LEARNED_RULE)
     {
         return true;
     }
@@ -135,6 +140,37 @@ bool benchmarkMIS(
             throw std::invalid_argument(
                 "Invalid MIS instance: " + instanceError
             );
+        }
+
+        const bool learned = config.branchingRule == MIS_LEARNED_RULE;
+
+        if (learned == config.learnedModelPath.empty())
+        {
+            throw std::invalid_argument(
+                learned
+                ? "The mislearned rule needs a model file."
+                : "A model file is only used by the mislearned rule."
+            );
+        }
+
+        // Declared before the solver: the learned rule points to them,
+        // so they must be destroyed after it.
+        LoadedMISBranchingModel model;
+        MISAdjacency adjacency;
+        MISFeatureGraph graph{};
+
+        if (learned)
+        {
+            std::string modelError;
+
+            if (!loadMISBranchingModel(
+                    config.learnedModelPath, model, modelError))
+            {
+                throw std::invalid_argument(modelError);
+            }
+
+            adjacency = buildMISAdjacency(instance);
+            graph = adjacency.view();
         }
 
         SCIPHandle handle;
@@ -194,7 +230,22 @@ bool benchmarkMIS(
                     "include the strong branching rule"
                 );
             }
+            else if (learned && !vars.empty())
+            {
+                require(
+                    SCIPincludeBranchruleMISLearned(
+                        scip,
+                        vars.data(),
+                        static_cast<int>(vars.size()),
+                        &graph,
+                        &model.view(),
+                        nullptr,
+                        nullptr),
+                    "include the learned branching rule"
+                );
+            }
             else if (config.branchingRule != MIS_FULLSTRONG_RULE
+                && !learned
                 && SCIPfindBranchrule(
                     scip, config.branchingRule.c_str()) == nullptr)
             {
@@ -206,7 +257,7 @@ bool benchmarkMIS(
             SCIP_BRANCHRULE* const rule =
                 SCIPfindBranchrule(scip, config.branchingRule.c_str());
 
-            // Null only for the expert on a graph without vertices,
+            // Null only for our own rules on a graph without vertices,
             // where there is nothing to branch on.
             if (rule != nullptr)
             {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 
 #include "problems/MIS.hpp"
@@ -30,9 +31,14 @@ struct MISBenchmarkConfig
      *   "pscost" or "vanillafullstrong";
      * - "misfullstrong", the full strong branching expert that the data
      *   collection records;
+     * - "mislearned", the rule driven by the model of learnedModelPath;
      * - empty to keep SCIP's own priorities.
      */
     std::string branchingRule;
+
+    // Model file of the "mislearned" rule (io/MISBranchingModelIO.hpp).
+    // Must be empty for every other rule.
+    std::filesystem::path learnedModelPath;
 
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
 
@@ -69,13 +75,13 @@ bool parseMISBenchmarkSettings(
 );
 
 // True if the name designates a branching rule that benchmarkMIS() can
-// select: "misfullstrong" or a rule shipped with SCIP.
+// select: "misfullstrong", "mislearned" or a rule shipped with SCIP.
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule);
 
 /*
  * Solves the instance once. Fails, with an explanation in errorMessage,
- * if the instance is invalid, the branching rule is unknown or SCIP
- * reports an error. Reaching the time limit is not a failure.
+ * if the instance is invalid, the branching rule is unknown, the model
+ * cannot be loaded or SCIP reports an error. Reaching the time limit is not a failure.
  */
 bool benchmarkMIS(
     const MISInstance& instance,
