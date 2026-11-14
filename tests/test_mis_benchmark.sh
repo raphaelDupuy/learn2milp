@@ -1,0 +1,131 @@
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+GENERATOR="$1"
+BENCHMARK="$2"
+WORK_DIR="$3"
+
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
+
+# Two instances that need branching with the study settings.
+"$GENERATOR" batch \
+    --n-values 100 \
+    --p-values 0.1 \
+    --seeds 1,2 \
+    --output-dir "$WORK_DIR/instances" \
+    >/dev/null
+
+RESULTS="$WORK_DIR/results.csv"
+
+"$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost,pscost \
+    --seeds 0,1 \
+    --output "$RESULTS" \
+    >"$WORK_DIR/stdout"
+
+# One row per (instance, seed, rule), plus the header.
+head -n 1 "$RESULTS" |
+    grep -qx 'instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound'
+
+test "$(wc -l <"$RESULTS")" -eq 9
+test "$(grep -c ',study,relpscost,' "$RESULTS")" -eq 4
+test "$(grep -c ',study,pscost,' "$RESULTS")" -eq 4
+test "$(grep -c ',OPTIMAL,1,' "$RESULTS")" -eq 8
+grep -q '^erdos_renyi_n100_p0_1_seed1.mis,100,' "$RESULTS"
+
+# Rules are interleaved on each instance.
+sed -n '2p' "$RESULTS" | grep -q ',relpscost,0,'
+sed -n '3p' "$RESULTS" | grep -q ',pscost,0,'
+
+# Every row has the same number of fields.
+test "$(awk -F, '{print NF}' "$RESULTS" | sort -u | wc -l)" -eq 1
+
+# All rules and seeds prove the same optimum on a given instance.
+test "$(
+    grep '^erdos_renyi_n100_p0_1_seed1.mis,' "$RESULTS" |
+    cut -d, -f12 |
+    sort -u |
+    wc -l
+)" -eq 1
+
+# The summary lists every rule.
+grep -q '^relpscost .*4/4' "$WORK_DIR/stdout"
+grep -q '^pscost .*4/4' "$WORK_DIR/stdout"
+
+# Node counts are reproducible.
+"$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost,pscost \
+    --seeds 0,1 \
+    --output "$WORK_DIR/again.csv" \
+    >/dev/null
+
+cmp <(cut -d, -f1-10 "$RESULTS") <(cut -d, -f1-10 "$WORK_DIR/again.csv")
+
+# SCIP as shipped is available as an outside reference.
+"$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --settings default \
+    --output "$WORK_DIR/default.csv" \
+    >/dev/null
+
+test "$(grep -c ',default,relpscost,0,OPTIMAL,1,' "$WORK_DIR/default.csv")" -eq 2
+
+# Existing results must not be overwritten.
+cp "$RESULTS" "$WORK_DIR/results.before"
+
+if "$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --output "$RESULTS" \
+    >"$WORK_DIR/overwrite.stdout" \
+    2>"$WORK_DIR/overwrite.stderr"; then
+    echo "ERROR: existing results were overwritten" >&2
+    exit 1
+fi
+
+cmp "$RESULTS" "$WORK_DIR/results.before"
+
+# Invalid requests must be rejected without creating a result table.
+for INVALID in \
+    "--rules no_such_rule" \
+    "--rules relpscost,relpscost" \
+    "--rules relpscost, " \
+    "--rules relpscost --seeds 0,x" \
+    "--rules relpscost --settings other" \
+    "--rules relpscost --time-limit 0" \
+    "--rules relpscost --unknown value"; do
+    # shellcheck disable=SC2086
+    if "$BENCHMARK" \
+        --instances "$WORK_DIR/instances" \
+        --output "$WORK_DIR/invalid.csv" \
+        $INVALID \
+        >"$WORK_DIR/invalid.stdout" \
+        2>"$WORK_DIR/invalid.stderr"; then
+        echo "ERROR: invalid request was accepted: $INVALID" >&2
+        exit 1
+    fi
+
+    test ! -e "$WORK_DIR/invalid.csv"
+done
+
+# A directory without instances must be rejected.
+mkdir -p "$WORK_DIR/empty"
+
+if "$BENCHMARK" \
+    --instances "$WORK_DIR/empty" \
+    --rules relpscost \
+    --output "$WORK_DIR/empty.csv" \
+    >"$WORK_DIR/empty.stdout" \
+    2>"$WORK_DIR/empty.stderr"; then
+    echo "ERROR: empty instance directory was accepted" >&2
+    exit 1
+fi
+
+test ! -e "$WORK_DIR/empty.csv"
+
+echo "All MIS benchmark CLI tests passed."

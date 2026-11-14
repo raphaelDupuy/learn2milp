@@ -72,10 +72,27 @@ add_executable(mis-collector
     src/io/MISStrongBranchingSampleIO.cpp
     src/services/MISInstanceLoadingService.cpp
     src/services/MISCollectionService.cpp
+    src/services/MISSolverSettings.cpp
     src/services/SCIPStatusName.cpp
 )
 
 target_link_libraries(mis-collector
+    PRIVATE
+    mis_branching
+)
+
+add_executable(mis-benchmark
+    src/tools/mis_benchmark_main.cpp
+    src/problems/MIS.cpp
+    src/io/MISInstanceIO.cpp
+    src/io/InstanceMetadataIO.cpp
+    src/services/MISInstanceLoadingService.cpp
+    src/services/MISBenchmarkService.cpp
+    src/services/MISSolverSettings.cpp
+    src/services/SCIPStatusName.cpp
+)
+
+target_link_libraries(mis-benchmark
     PRIVATE
     mis_branching
 )
@@ -135,6 +152,7 @@ if(BUILD_TESTING)
         src/io/MISInstanceIO.cpp
         src/io/MISStrongBranchingSampleIO.cpp
         src/services/MISCollectionService.cpp
+        src/services/MISSolverSettings.cpp
         src/services/SCIPStatusName.cpp
     )
 
@@ -147,6 +165,38 @@ if(BUILD_TESTING)
         NAME MISCollectionService
         COMMAND test_MISCollectionService
             ${PROJECT_BINARY_DIR}/test_mis_collection_service
+    )
+
+    add_executable(test_MISBenchmarkService
+        tests/test_MISBenchmarkService.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+        src/services/MISBenchmarkService.cpp
+        src/services/MISCollectionService.cpp
+        src/services/MISSolverSettings.cpp
+        src/services/SCIPStatusName.cpp
+    )
+
+    target_link_libraries(test_MISBenchmarkService
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISBenchmarkService
+        COMMAND test_MISBenchmarkService
+            ${PROJECT_BINARY_DIR}/test_mis_benchmark_service
+    )
+
+    add_test(
+        NAME MISBenchmarkCLI
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_mis_benchmark.sh
+            $<TARGET_FILE:mis-generator>
+            $<TARGET_FILE:mis-benchmark>
+            ${PROJECT_BINARY_DIR}/test_mis_benchmark
     )
 
     add_test(

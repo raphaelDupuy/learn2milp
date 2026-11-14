@@ -1,0 +1,264 @@
+/*
+ * Tests of the branching rule benchmark.
+ *
+ * The key check ties evaluation to data collection: benchmarking the
+ * "misfullstrong" expert must explore exactly the tree that the data
+ * collection recorded for the same instance and seed.
+ */
+
+#include "services/MISBenchmarkService.hpp"
+
+#include <cmath>
+#include <filesystem>
+#include <iostream>
+#include <string>
+
+#include "generators/ErdosRenyiGenerator.hpp"
+#include "services/MISCollectionService.hpp"
+
+namespace
+{
+
+int failures = 0;
+
+void check(bool condition, const std::string& testName)
+{
+    if (condition)
+    {
+        std::cout << "[PASS] " << testName << '\n';
+    }
+    else
+    {
+        std::cerr << "[FAIL] " << testName << '\n';
+        ++failures;
+    }
+}
+
+bool run(
+    const MISInstance& instance,
+    const std::string& rule,
+    MISBenchmarkSettings settings,
+    unsigned int seed,
+    MISBenchmarkResult& result
+)
+{
+    MISBenchmarkConfig config;
+    config.branchingRule = rule;
+    config.settings = settings;
+    config.scipSeed = seed;
+
+    std::string error;
+
+    if (!benchmarkMIS(instance, config, result, error))
+    {
+        std::cerr << "  " << rule << ": " << error << '\n';
+        return false;
+    }
+
+    return true;
+}
+
+} // namespace
+
+int main(int argc, char* argv[])
+{
+    if (argc != 2)
+    {
+        std::cerr << "Usage: " << argv[0] << " WORK_DIR\n";
+        return 2;
+    }
+
+    const std::filesystem::path workDir(argv[1]);
+    std::filesystem::remove_all(workDir);
+    std::filesystem::create_directories(workDir);
+
+    // Needs branching with the study settings.
+    const MISInstance instance =
+        ErdosRenyiGenerator{}.generate({100, 0.10, 1}).graph;
+
+    // Every rule proves the same optimum.
+    MISBenchmarkResult reference;
+
+    check(
+        run(instance, "relpscost", MISBenchmarkSettings::Default, 0,
+            reference)
+        && reference.solved && reference.status == "OPTIMAL"
+        && reference.hasSolution
+        && std::fabs(reference.primalBound - reference.dualBound) < 1e-6,
+        "SCIP as shipped solves the instance"
+    );
+
+    for (const char* rule : {
+            "relpscost", "pscost", "vanillafullstrong", "misfullstrong"})
+    {
+        MISBenchmarkResult result;
+
+        const bool ok =
+            run(instance, rule, MISBenchmarkSettings::Study, 0, result);
+
+        check(
+            ok && result.solved
+            && std::fabs(result.primalBound - reference.primalBound) < 1e-6
+            && result.exploredNodes > 1
+            && result.lpIterations > 0
+            && result.solvingTimeSeconds > 0.0,
+            std::string(rule) + " reaches the same optimum ("
+                + std::to_string(result.exploredNodes) + " nodes)"
+        );
+    }
+
+    // The rule really changes the search.
+    {
+        MISBenchmarkResult pscost;
+        MISBenchmarkResult expert;
+
+        check(
+            run(instance, "pscost", MISBenchmarkSettings::Study, 0, pscost)
+            && run(instance, "misfullstrong", MISBenchmarkSettings::Study,
+                0, expert)
+            && expert.exploredNodes < pscost.exploredNodes,
+            "Full strong branching explores fewer nodes than pscost"
+        );
+    }
+
+    // Node counts are reproducible for a given seed.
+    {
+        MISBenchmarkResult first;
+        MISBenchmarkResult second;
+
+        check(
+            run(instance, "relpscost", MISBenchmarkSettings::Study, 3, first)
+            && run(instance, "relpscost", MISBenchmarkSettings::Study, 3,
+                second)
+            && first.exploredNodes == second.exploredNodes
+            && first.lpIterations == second.lpIterations,
+            "Same seed gives the same search"
+        );
+    }
+
+    // Evaluation and data collection run in the same conditions: the
+    // expert explores exactly the tree that the collection recorded.
+    {
+        MISCollectionConfig collection;
+        collection.instanceName = "instance";
+
+        MISCollectionResult collected;
+        MISBenchmarkResult expert;
+        std::string error;
+
+        const bool same =
+            collectMISStrongBranchingSamples(
+                instance, collection, workDir / "expert", collected, error)
+            && run(instance, "misfullstrong", MISBenchmarkSettings::Study,
+                0, expert)
+            && collected.exploredNodes > 1
+            && expert.exploredNodes == collected.exploredNodes
+            && std::fabs(expert.primalBound - collected.primalBound) < 1e-6;
+
+        check(
+            same,
+            "Benchmarked expert matches the collected search tree ("
+                + std::to_string(collected.exploredNodes) + " nodes)"
+        );
+    }
+
+    // Time limit: reported, not an error.
+    {
+        MISBenchmarkConfig config;
+        config.branchingRule = "pscost";
+        config.timeLimitSeconds = 0.001;
+
+        MISBenchmarkResult result;
+        std::string error;
+
+        check(
+            benchmarkMIS(instance, config, result, error)
+            && !result.solved
+            && result.status == "TIMELIMIT",
+            "Time limit is reported as an unsolved run"
+        );
+    }
+
+    // Degenerate graphs.
+    {
+        MISBenchmarkResult result;
+
+        check(
+            run(MISInstance{5, {}}, "misfullstrong",
+                MISBenchmarkSettings::Study, 0, result)
+            && result.solved
+            && std::fabs(result.primalBound - 5.0) < 1e-6,
+            "Edgeless graph is solved with the expert"
+        );
+
+        check(
+            run(MISInstance{0, {}}, "misfullstrong",
+                MISBenchmarkSettings::Study, 0, result),
+            "Empty graph is accepted with the expert"
+        );
+    }
+
+    // Rejections.
+    {
+        MISBenchmarkConfig config;
+        MISBenchmarkResult result;
+        std::string error;
+
+        config.branchingRule = "no_such_rule";
+
+        check(
+            !benchmarkMIS(instance, config, result, error)
+            && error == "Unknown branching rule: no_such_rule",
+            "Unknown branching rule is rejected"
+        );
+
+        config.branchingRule = "relpscost";
+        config.timeLimitSeconds = 0.0;
+
+        check(
+            !benchmarkMIS(instance, config, result, error),
+            "Non-positive time limit is rejected"
+        );
+
+        config.timeLimitSeconds = 10.0;
+
+        check(
+            !benchmarkMIS(MISInstance{3, {{0, 3}}}, config, result, error)
+            && error.rfind("Invalid MIS instance: ", 0) == 0,
+            "Invalid instance is rejected"
+        );
+
+        check(
+            isMISBenchmarkRuleAvailable("relpscost")
+            && isMISBenchmarkRuleAvailable("misfullstrong")
+            && !isMISBenchmarkRuleAvailable("no_such_rule")
+            && !isMISBenchmarkRuleAvailable(""),
+            "Rule availability is reported"
+        );
+    }
+
+    // Settings names.
+    {
+        MISBenchmarkSettings parsed = MISBenchmarkSettings::Study;
+
+        check(
+            parseMISBenchmarkSettings("default", parsed)
+            && parsed == MISBenchmarkSettings::Default
+            && parseMISBenchmarkSettings("study", parsed)
+            && parsed == MISBenchmarkSettings::Study
+            && !parseMISBenchmarkSettings("other", parsed)
+            && std::string(misBenchmarkSettingsName(
+                MISBenchmarkSettings::Study)) == "study",
+            "Settings names round-trip"
+        );
+    }
+
+    if (failures > 0)
+    {
+        std::cerr << failures << " test(s) failed.\n";
+        return 1;
+    }
+
+    std::cout << "All MIS benchmark service tests passed.\n";
+    return 0;
+}

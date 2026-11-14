@@ -11,11 +11,8 @@
  *
  * SCIP solves the instance with the MIS full strong branching rule, which
  * records one sample per branching decision. The solver settings are the
- * ones used for both data collection and evaluation in this project:
- *
- * - presolving enabled;
- * - restarts disabled (presolving/maxrestarts = 0);
- * - cutting planes at the root node only (separating/maxrounds = 0).
+ * branching study settings of services/MISSolverSettings.hpp, also used
+ * to evaluate branching rules.
  *
  * Three files are produced next to each other:
  *

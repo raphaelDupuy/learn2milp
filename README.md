@@ -38,11 +38,11 @@ The current version provides a basic experimental framework for the Maximum Inde
 - reproducible instance generation using explicit random seeds, one instance at a time or in batches;
 - exact optimization and basic solver statistics;
 - full strong branching rule for SCIP that records every branching decision, checked node by node against SCIP's own `vanillafullstrong` rule;
-- learning-to-branch dataset generation (`mis-collector`).
+- learning-to-branch dataset generation (`mis-collector`);
+- benchmark of branching rules on a set of instances (`mis-benchmark`).
 
 ### Planned
 
-- systematic solver statistics collection and benchmarking;
 - learned branching policies;
 - learning-to-cut;
 - comparison of classical and learned Branch-and-Cut configurations;
@@ -154,6 +154,38 @@ candidates = pd.read_csv("NAME.sb.candidates.csv")
 samples = candidates.merge(nodes, on=["sample_index", "node_id"])
 ```
 
+### Collecting a whole directory
+
+`scripts/collect_strong_branching.sh` runs the collector on every instance of a directory, several instances at a time. It can be interrupted and restarted: instances already collected are skipped.
+
+```bash
+scripts/collect_strong_branching.sh build/mis-collector INSTANCE_DIR OUTPUT_DIR 4
+```
+
+`experiments/er125_p01/build_dataset.sh` is the recipe of the first dataset: Erdős–Rényi graphs G(125, 0.1) split into training (60 graphs), validation (20) and test (20) sets, plus 20 graphs G(150, 0.05) to measure generalization. Samples are collected for the training and validation sets only; the other two sets are used to evaluate the solver.
+
+```bash
+experiments/er125_p01/build_dataset.sh build 4
+```
+
+## Evaluating branching rules
+
+`mis-benchmark` solves every instance of a directory with each branching rule and each SCIP seed, and writes one CSV row per run: status, explored nodes, LP iterations and solving time.
+
+```bash
+./build/mis-benchmark \
+    --instances data/instances/er125_p01/test \
+    --rules relpscost,pscost,misfullstrong \
+    --seeds 0,1,2 \
+    --output experiments/er125_p01/baselines.csv
+```
+
+- `--rules` takes the name of any SCIP branching rule (`relpscost` is SCIP's default), or `misfullstrong`, the full strong branching expert recorded by the data collection;
+- `--settings study` (the default) uses the solver settings of the data collection, so that rules are compared in the conditions they were learned in; `--settings default` runs SCIP with no parameter changed, as an outside reference;
+- runs are executed one at a time, with the rules interleaved on each instance: do not run anything else on the machine if solving times matter.
+
+The tool ends with a summary per rule: number of solved runs and shifted geometric means of the node counts (shift 100) and of the solving times (shift 1 second). Node counts are reproducible for a given seed; solving times are not, and should be compared over several runs.
+
 ## Project structure
 
 ```text
@@ -162,6 +194,7 @@ learn2milp/
 ├── README.md
 ├── docs/
 ├── data/
+├── experiments/
 ├── include/
 │   ├── branching/
 │   ├── features/
@@ -180,6 +213,7 @@ learn2milp/
 │   ├── tools/
 │   ├── ui/
 │   └── main.cpp
+├── scripts/
 └── tests/
 ```
 
@@ -322,6 +356,7 @@ The build produces the following executables:
 - `learn2milp`: main optimization program;
 - `mis-generator`: MIS instance generator;
 - `mis-collector`: strong branching dataset collector;
+- `mis-benchmark`: branching rule benchmark;
 - one `test_*` executable per test.
 
 ### 8. Run the tests

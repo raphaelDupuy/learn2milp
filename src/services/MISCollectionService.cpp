@@ -16,6 +16,7 @@
 #include "branching/MISFullstrongBranchrule.h"
 #include "io/MISInstanceIO.hpp"
 #include "io/MISStrongBranchingSampleIO.hpp"
+#include "services/MISSolverSettings.hpp"
 #include "services/SCIPStatusName.hpp"
 
 const char* const MIS_SB_NODES_SUFFIX = ".sb.nodes.csv";
@@ -308,12 +309,8 @@ bool collectMISStrongBranchingSamples(
             "disable console output"
         );
         require(
-            SCIPsetIntParam(scip, "presolving/maxrestarts", 0),
-            "disable restarts"
-        );
-        require(
-            SCIPsetIntParam(scip, "separating/maxrounds", 0),
-            "restrict cutting planes to the root node"
+            applyBranchingStudySettings(scip),
+            "apply the branching study settings"
         );
         require(
             SCIPsetRealParam(
