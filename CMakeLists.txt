@@ -2,12 +2,30 @@ cmake_minimum_required(VERSION 3.20)
 
 project(learn2milp
     VERSION 0.1.0
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_library(mis_branching STATIC
+    src/branching/MISFullstrongBranchrule.c
+)
+
+target_include_directories(mis_branching
+    PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(mis_branching
+    PUBLIC
+    scip
+)
 
 add_executable(learn2milp
     src/main.cpp
@@ -48,6 +66,36 @@ target_include_directories(mis-generator
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(test_MISFullstrongBranchrule
+        tests/test_MISFullstrongBranchrule.cpp
+    )
+
+    target_link_libraries(test_MISFullstrongBranchrule
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISFullstrongBranchrule
+        COMMAND test_MISFullstrongBranchrule
+    )
+
+    add_executable(test_MISFullstrongOracle
+        tests/test_MISFullstrongOracle.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+    )
+
+    target_link_libraries(test_MISFullstrongOracle
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISFullstrongOracle
+        COMMAND test_MISFullstrongOracle
+    )
+
     add_executable(test_MISInstanceIO
         tests/test_MISInstanceIO.cpp
         src/io/MISInstanceIO.cpp
