@@ -302,7 +302,9 @@ void TerminalUI::handleSingleGeneration()
 
     std::cout << "\nGenerating instance...\n";
 
-    if (!generateSingleMIS(config, outputPath, errorMessage))
+    MISSingleGenerationResult generated;
+
+    if (!generateSingleMIS(config, outputPath, generated, errorMessage))
     {
         std::cout << "\nGeneration failed: "
                   << errorMessage << '\n';
@@ -407,7 +409,9 @@ void TerminalUI::handleBatchGeneration()
 
     std::cout << "Generating batch...\n";
 
-    if (!generateBatchMIS(config, errorMessage))
+    MISBatchResult generated;
+
+    if (!generateBatchMIS(config, generated, errorMessage))
     {
         std::cout << "\nBatch generation failed: "
                   << errorMessage << '\n';
@@ -621,7 +625,9 @@ void TerminalUI::handleGenerateAndSolve()
 
     std::cout << "\nGenerating instance...\n";
 
-    if (!generateSingleMIS(config, outputPath, errorMessage))
+    MISSingleGenerationResult generated;
+
+    if (!generateSingleMIS(config, outputPath, generated, errorMessage))
     {
         std::cout << "\nGeneration failed: "
                   << errorMessage << '\n';

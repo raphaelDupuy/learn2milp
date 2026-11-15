@@ -1,140 +1,21 @@
 #include "services/MISGenerationService.hpp"
+
+#include <cmath>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <system_error>
+#include <vector>
+
 #include "io/InstanceMetadataIO.hpp"
 #include "io/MISInstanceIO.hpp"
 
-#include <charconv>
-#include <fstream>
-#include <iomanip>
-#include <stdexcept>
-#include <system_error>
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <set>
-#include <sstream>
-#include <vector>
-
-bool generateSingleMIS(
-    const ErdosRenyiConfig& config,
-    const std::filesystem::path& outputPath,
-    std::string& errorMessage
-)
-{
-    try
-    {
-        if (outputPath.empty())
-        {
-            throw std::invalid_argument(
-                "Output path must not be empty."
-            );
-        }
-
-        const std::filesystem::path metadataPath =
-            outputPath.string() + ".meta";
-
-        if (std::filesystem::exists(outputPath)
-            || std::filesystem::exists(metadataPath))
-        {
-            throw std::runtime_error(
-                "Output file already exists. "
-                "Choose another output path."
-            );
-        }
-
-        ErdosRenyiGenerator generator;
-        const GeneratedMISInstance generated =
-            generator.generate(config);
-
-        {
-            std::ofstream graphFile(outputPath);
-
-            if (!graphFile)
-            {
-                throw std::runtime_error(
-                    "Cannot open output file: "
-                    + outputPath.string()
-                );
-            }
-
-            if (!writeMISInstance(
-                    graphFile,
-                    generated.graph,
-                    errorMessage))
-            {
-                throw std::runtime_error(
-                    "Failed to write instance: " + errorMessage
-                );
-            }
-
-            graphFile.close();
-
-            if (!graphFile)
-            {
-                throw std::runtime_error(
-                    "Failed to finish writing: "
-                    + outputPath.string()
-                );
-            }
-        }
-
-        {
-            std::ofstream metadataFile(metadataPath);
-
-            if (!metadataFile)
-            {
-                throw std::runtime_error(
-                    "Cannot open metadata file: "
-                    + metadataPath.string()
-                );
-            }
-
-            const auto& metadata = generated.metadata;
-            std::string metadataError;
-
-            if (!writeInstanceMetadata(
-                    metadataFile,
-                    metadata,
-                    metadataError))
-            {
-                throw std::runtime_error(
-                    "Failed to write metadata: " + metadataError
-                );
-            }
-
-            metadataFile.close();
-
-            if (!metadataFile)
-            {
-                throw std::runtime_error(
-                    "Failed to finish writing metadata: "
-                    + metadataPath.string()
-                );
-            }
-        }
-
-        errorMessage.clear();
-        return true;
-    }
-    catch (const std::exception& exception)
-    {
-        // Avoid leaving an incomplete instance behind.
-        std::error_code ignored;
-        std::filesystem::remove(outputPath, ignored);
-        std::filesystem::remove(
-            outputPath.string() + ".meta",
-            ignored
-        );
-
-        errorMessage = exception.what();
-        return false;
-    }
-}
-
 namespace
 {
-constexpr std::size_t MAX_BATCH_SIZE = 100000;
 
-class BatchFileCleanup
+// Removes every tracked file, newest first, unless committed.
+class FileCleanup
 {
 public:
     void track(const std::filesystem::path& path)
@@ -147,15 +28,15 @@ public:
         committed_ = true;
     }
 
-    ~BatchFileCleanup()
+    ~FileCleanup()
     {
         if (committed_)
             return;
 
         for (auto it = paths_.rbegin(); it != paths_.rend(); ++it)
         {
-            std::error_code error;
-            std::filesystem::remove(*it, error);
+            std::error_code ignored;
+            std::filesystem::remove(*it, ignored);
         }
     }
 
@@ -164,258 +45,307 @@ private:
     bool committed_ = false;
 };
 
-// Must stay identical to probabilityToken() in mis_generator_batch.cpp,
-// so that both batch generators name the same instance the same way.
-std::string probabilityToken(double p)
+std::filesystem::path metadataPathOf(const std::filesystem::path& graphPath)
 {
-    char buffer[64];
+    return std::filesystem::path(graphPath.string() + ".meta");
+}
 
-    const auto conversion = std::to_chars(
-        buffer,
-        buffer + sizeof(buffer),
-        p,
-        std::chars_format::general
-    );
+void closeOutput(std::ofstream& file, const std::filesystem::path& path)
+{
+    file.close();
 
-    if (conversion.ec != std::errc{})
+    if (!file)
     {
         throw std::runtime_error(
-            "Failed to format probability value."
+            "Failed to finish writing: " + path.string()
+        );
+    }
+}
+
+// Writes the graph and metadata files of one instance; both are tracked
+// by cleanup before they are created.
+void writeInstanceFiles(
+    const GeneratedMISInstance& generated,
+    const std::filesystem::path& graphPath,
+    FileCleanup& cleanup
+)
+{
+    const auto metadataPath = metadataPathOf(graphPath);
+    std::string ioError;
+
+    cleanup.track(graphPath);
+
+    {
+        std::ofstream graphFile(graphPath);
+
+        if (!graphFile)
+        {
+            throw std::runtime_error(
+                "Cannot open output file: " + graphPath.string()
+            );
+        }
+
+        if (!writeMISInstance(graphFile, generated.graph, ioError))
+        {
+            throw std::runtime_error(
+                "Failed to write instance " + graphPath.string()
+                + ": " + ioError
+            );
+        }
+
+        closeOutput(graphFile, graphPath);
+    }
+
+    cleanup.track(metadataPath);
+
+    {
+        std::ofstream metadataFile(metadataPath);
+
+        if (!metadataFile)
+        {
+            throw std::runtime_error(
+                "Cannot open metadata file: " + metadataPath.string()
+            );
+        }
+
+        if (!writeInstanceMetadata(
+                metadataFile, generated.metadata, ioError))
+        {
+            throw std::runtime_error(
+                "Failed to write metadata: " + ioError
+            );
+        }
+
+        closeOutput(metadataFile, metadataPath);
+    }
+}
+
+void requireAbsent(const std::filesystem::path& path)
+{
+    if (std::filesystem::exists(path))
+    {
+        throw std::runtime_error(
+            "Output file already exists: " + path.string()
+        );
+    }
+}
+
+template <typename T>
+void requireDistinct(const std::vector<T>& values, const char* listName)
+{
+    if (std::set<T>(values.begin(), values.end()).size() != values.size())
+    {
+        throw std::invalid_argument(
+            std::string("Duplicate value in the ") + listName + " list."
+        );
+    }
+}
+
+// Every instance of a batch, in generation order.
+std::vector<MISGeneratorConfig> batchInstances(const MISBatchConfig& config)
+{
+    const bool erdosRenyi = config.family == MISGraphFamily::ErdosRenyi;
+    const std::size_t familyValues = erdosRenyi
+        ? config.pValues.size() : config.kValues.size();
+    const std::size_t otherValues = erdosRenyi
+        ? config.kValues.size() : config.pValues.size();
+
+    if (config.nValues.empty() || familyValues == 0 || config.seeds.empty())
+    {
+        throw std::invalid_argument(
+            std::string("Batch parameter lists must not be empty: n, ")
+            + (erdosRenyi ? "p" : "k") + " and seeds."
         );
     }
 
-    std::string token(buffer, conversion.ptr);
+    if (otherValues != 0)
+    {
+        throw std::invalid_argument(
+            std::string(erdosRenyi ? "k" : "p")
+            + " values are not parameters of "
+            + misGraphFamilyName(config.family) + " graphs."
+        );
+    }
 
-    std::replace(token.begin(), token.end(), '.', '_');
-    std::replace(token.begin(), token.end(), '-', 'm');
-    std::replace(token.begin(), token.end(), '+', 'p');
+    for (const double p : config.pValues)
+    {
+        if (!std::isfinite(p))
+            throw std::invalid_argument("Invalid probability value.");
+    }
 
-    return token;
+    requireDistinct(config.nValues, "n");
+    requireDistinct(config.pValues, "p");
+    requireDistinct(config.kValues, "k");
+    requireDistinct(config.seeds, "seed");
+
+    if (config.nValues.size() > MIS_MAX_BATCH_SIZE / familyValues
+        || config.nValues.size() * familyValues
+            > MIS_MAX_BATCH_SIZE / config.seeds.size())
+    {
+        throw std::invalid_argument(
+            "Batch exceeds the maximum of "
+            + std::to_string(MIS_MAX_BATCH_SIZE) + " instances."
+        );
+    }
+
+    std::vector<MISGeneratorConfig> instances;
+
+    for (const int n : config.nValues)
+    {
+        for (std::size_t f = 0; f < familyValues; ++f)
+        {
+            for (const unsigned int seed : config.seeds)
+            {
+                if (erdosRenyi)
+                {
+                    instances.push_back(
+                        ErdosRenyiConfig{n, config.pValues[f], seed});
+                }
+                else
+                {
+                    instances.push_back(
+                        BarabasiAlbertConfig{n, config.kValues[f], seed});
+                }
+
+                // Before anything is written.
+                validateMISGeneratorConfig(instances.back());
+            }
+        }
+    }
+
+    return instances;
 }
 
-std::string probabilityText(double p)
-{
-    std::ostringstream stream;
-    stream << std::setprecision(
-        std::numeric_limits<double>::max_digits10
-    ) << p;
+} // namespace
 
-    return stream.str();
-}
-}
-
-bool generateBatchMIS(
-    const MISBatchConfig& config,
+bool generateSingleMIS(
+    const MISGeneratorConfig& config,
+    const std::filesystem::path& outputPath,
+    MISSingleGenerationResult& result,
     std::string& errorMessage
 )
 {
     try
     {
-        if (config.nValues.empty()
-            || config.pValues.empty()
-            || config.seeds.empty())
+        if (outputPath.empty())
         {
-            throw std::invalid_argument(
-                "Batch parameter lists must not be empty."
-            );
+            throw std::invalid_argument("Output path must not be empty.");
         }
 
-        std::set<int> uniqueN;
-        for (int n : config.nValues)
-        {
-            if (n < 0 || !uniqueN.insert(n).second)
-                throw std::invalid_argument(
-                    "Invalid or duplicate n value."
-                );
-        }
+        requireAbsent(outputPath);
+        requireAbsent(metadataPathOf(outputPath));
 
-        std::set<double> uniqueP;
-        for (double p : config.pValues)
-        {
-            if (!std::isfinite(p) || p < 0.0 || p > 1.0
-                || !uniqueP.insert(p).second)
-                throw std::invalid_argument(
-                    "Invalid or duplicate probability value."
-                );
-        }
+        const GeneratedMISInstance generated = generateMISInstance(config);
 
-        std::set<unsigned int> uniqueSeeds;
-        for (unsigned int seed : config.seeds)
-        {
-            if (!uniqueSeeds.insert(seed).second)
-                throw std::invalid_argument(
-                    "Duplicate seed value."
-                );
-        }
+        // From here on, the files are removed on failure.
+        FileCleanup cleanup;
+        writeInstanceFiles(generated, outputPath, cleanup);
+        cleanup.commit();
 
-        if (config.nValues.size() > MAX_BATCH_SIZE / config.pValues.size()
-            || config.nValues.size() * config.pValues.size()
-                > MAX_BATCH_SIZE / config.seeds.size())
-        {
-            throw std::invalid_argument(
-                "Batch exceeds the maximum of 100000 instances."
-            );
-        }
+        MISSingleGenerationResult written;
+        written.graphPath = outputPath;
+        written.metadataPath = metadataPathOf(outputPath);
+        written.numberOfVertices = generated.graph.n;
+        written.numberOfEdges = generated.graph.edges.size();
+        written.seed = misGeneratorSeed(config);
+
+        result = std::move(written);
+        errorMessage.clear();
+        return true;
+    }
+    catch (const std::exception& exception)
+    {
+        errorMessage = exception.what();
+        return false;
+    }
+}
+
+bool generateBatchMIS(
+    const MISBatchConfig& config,
+    MISBatchResult& result,
+    std::string& errorMessage,
+    const MISBatchProgressCallback& progress
+)
+{
+    try
+    {
+        // Validate the whole request before touching the file system.
+        const std::vector<MISGeneratorConfig> instances =
+            batchInstances(config);
 
         if (config.outputDirectory.empty())
+        {
             throw std::invalid_argument(
                 "Output directory must not be empty."
             );
+        }
 
         const auto& outputDir = config.outputDirectory;
-        std::filesystem::create_directories(outputDir);
-
         const auto manifestPath = outputDir / "manifest.csv";
         const auto temporaryManifest = outputDir / "manifest.csv.tmp";
+
+        std::filesystem::create_directories(outputDir);
 
         if (std::filesystem::exists(manifestPath)
             || std::filesystem::exists(temporaryManifest))
         {
             throw std::runtime_error(
-                "Manifest already exists. Choose another output directory."
+                "A manifest already exists in " + outputDir.string()
+                + ". Choose another output directory."
             );
         }
 
-        struct BatchInstance
+        std::vector<std::string> ids;
+        ids.reserve(instances.size());
+
+        for (const auto& instance : instances)
         {
-            int n;
-            double p;
-            unsigned int seed;
-            std::string id;
-            std::string filename;
-        };
+            ids.push_back(misInstanceId(instance));
 
-        std::vector<BatchInstance> instances;
-
-        const std::size_t total =
-            config.nValues.size()
-            * config.pValues.size()
-            * config.seeds.size();
-
-        instances.reserve(total);
-
-        for (int n : config.nValues)
-        {
-            for (double p : config.pValues)
-            {
-                for (unsigned int seed : config.seeds)
-                {
-                    const std::string id =
-                        "erdos_renyi_n" + std::to_string(n)
-                        + "_p" + probabilityToken(p)
-                        + "_seed" + std::to_string(seed);
-
-                    const std::string filename = id + ".mis";
-                    const auto graphPath = outputDir / filename;
-                    const auto metadataPath =
-                        std::filesystem::path(
-                            graphPath.string() + ".meta"
-                        );
-
-                    if (std::filesystem::exists(graphPath)
-                        || std::filesystem::exists(metadataPath))
-                    {
-                        throw std::runtime_error(
-                            "Output file already exists: " + filename
-                        );
-                    }
-
-                    instances.push_back(
-                        {n, p, seed, id, filename}
-                    );
-                }
-            }
+            const auto graphPath = outputDir / (ids.back() + ".mis");
+            requireAbsent(graphPath);
+            requireAbsent(metadataPathOf(graphPath));
         }
 
-        BatchFileCleanup cleanup;
-        ErdosRenyiGenerator generator;
-
+        // From here on, every created file is removed on failure.
+        FileCleanup cleanup;
         std::ostringstream manifest;
-        manifest
-            << "instance_id,file,generator_type,generator_version,"
-            << "seed,n,p,m\n";
 
-        for (const auto& item : instances)
+        manifest << "instance_id,file,generator_type,generator_version,seed";
+
+        for (const auto& name : misManifestParameterNames(config.family))
+            manifest << ',' << name;
+
+        manifest << ",m\n";
+
+        for (std::size_t i = 0; i < instances.size(); ++i)
         {
-            const auto generated = generator.generate(
-                ErdosRenyiConfig{
-                    item.n, item.p, item.seed
-                }
-            );
+            const GeneratedMISInstance generated =
+                generateMISInstance(instances[i]);
 
-            const auto graphPath = outputDir / item.filename;
-            const auto metadataPath =
-                std::filesystem::path(
-                    graphPath.string() + ".meta"
-                );
-
-            cleanup.track(graphPath);
-
-            {
-                std::ofstream graphFile(graphPath);
-                std::string ioError;
-
-                if (!graphFile
-                    || !writeMISInstance(
-                        graphFile, generated.graph, ioError))
-                {
-                    throw std::runtime_error(
-                        "Failed to write " + graphPath.string()
-                        + ": " + ioError
-                    );
-                }
-
-                graphFile.close();
-
-                if (!graphFile)
-                    throw std::runtime_error(
-                        "Failed to finish writing graph file."
-                    );
-            }
-
-            cleanup.track(metadataPath);
-
-            {
-                std::ofstream metadataFile(metadataPath);
-
-                if (!metadataFile)
-                    throw std::runtime_error(
-                        "Cannot create metadata file: "
-                        + metadataPath.string()
-                    );
-
-                const auto& metadata = generated.metadata;
-                std::string metadataError;
-
-                if (!writeInstanceMetadata(
-                        metadataFile,
-                        metadata,
-                        metadataError))
-                {
-                    throw std::runtime_error(
-                        "Failed to write metadata: " + metadataError
-                    );
-                }
-
-                metadataFile.close();
-
-                if (!metadataFile)
-                {
-                    throw std::runtime_error(
-                        "Failed to finish writing metadata."
-                    );
-                }
-            }
+            const std::string fileName = ids[i] + ".mis";
+            writeInstanceFiles(generated, outputDir / fileName, cleanup);
 
             manifest
-                << item.id << ','
-                << item.filename << ','
+                << ids[i] << ','
+                << fileName << ','
                 << generated.metadata.generatorType << ','
                 << generated.metadata.generatorVersion << ','
-                << item.seed << ','
-                << item.n << ','
-                << probabilityText(item.p) << ','
-                << generated.graph.edges.size() << '\n';
+                << misGeneratorSeed(instances[i]);
+
+            for (const auto& value : misManifestParameterValues(instances[i]))
+                manifest << ',' << value;
+
+            manifest << ',' << generated.graph.edges.size() << '\n';
+
+            if (progress)
+            {
+                progress(MISBatchProgress{
+                    i + 1,
+                    instances.size(),
+                    fileName,
+                    generated.graph.edges.size()});
+            }
         }
 
         cleanup.track(temporaryManifest);
@@ -424,22 +354,22 @@ bool generateBatchMIS(
             std::ofstream manifestFile(temporaryManifest);
 
             if (!manifestFile)
+            {
                 throw std::runtime_error(
-                    "Cannot create temporary manifest."
+                    "Cannot create temporary manifest: "
+                    + temporaryManifest.string()
                 );
+            }
 
             manifestFile << manifest.str();
-            manifestFile.close();
-
-            if (!manifestFile)
-                throw std::runtime_error(
-                    "Failed to finish writing manifest."
-                );
+            closeOutput(manifestFile, temporaryManifest);
         }
 
         std::filesystem::rename(temporaryManifest, manifestPath);
         cleanup.commit();
 
+        result.numberOfInstances = instances.size();
+        result.manifestPath = manifestPath;
         errorMessage.clear();
         return true;
     }

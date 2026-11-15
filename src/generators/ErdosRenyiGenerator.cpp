@@ -20,9 +20,7 @@ namespace
     }
 }
 
-GeneratedMISInstance ErdosRenyiGenerator::generate(
-    const ErdosRenyiConfig& config
-) const
+void ErdosRenyiGenerator::validate(const ErdosRenyiConfig& config)
 {
     if (config.n < 0)
     {
@@ -31,12 +29,20 @@ GeneratedMISInstance ErdosRenyiGenerator::generate(
         );
     }
 
-    if (config.p < 0.0 || config.p > 1.0)
+    // Written so that a NaN probability is rejected too.
+    if (!(config.p >= 0.0 && config.p <= 1.0))
     {
         throw std::invalid_argument(
             "Erdos-Renyi parameter p must be in [0, 1]"
         );
     }
+}
+
+GeneratedMISInstance ErdosRenyiGenerator::generate(
+    const ErdosRenyiConfig& config
+) const
+{
+    validate(config);
 
     MISInstance graph;
     graph.n = config.n;

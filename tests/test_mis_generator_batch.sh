@@ -74,6 +74,49 @@ do
     cmp "$OUT1/$filename.meta" "$OUT2/$filename.meta"
 done < "$OUT1/manifest.csv"
 
+# Barabasi-Albert batch: named after n, k and the seed, with n and k in
+# the manifest and m = k (n - k) edges.
+BA="$WORK_DIR/barabasi_albert"
+
+"$GENERATOR" batch \
+    --family barabasi_albert \
+    --n-values 20,30 \
+    --k-values 2,3 \
+    --seeds 1,2 \
+    --output-dir "$BA" \
+    >"$WORK_DIR/ba.stdout"
+
+test "$(find "$BA" -maxdepth 1 -name '*.mis' | wc -l)" -eq 8
+head -n 1 "$BA/manifest.csv" |
+    grep -qx 'instance_id,file,generator_type,generator_version,seed,n,k,m'
+grep -qx 'barabasi_albert_n20_k2_seed1,barabasi_albert_n20_k2_seed1.mis,barabasi_albert,1.0,1,20,2,36' \
+    "$BA/manifest.csv"
+grep -qx 'barabasi_albert_n30_k3_seed2,barabasi_albert_n30_k3_seed2.mis,barabasi_albert,1.0,2,30,3,81' \
+    "$BA/manifest.csv"
+grep -qx 'parameter.k "3"' "$BA/barabasi_albert_n30_k3_seed2.mis.meta"
+grep -q '^\[8/8\] barabasi_albert_n30_k3_seed2.mis (m=81)$' "$WORK_DIR/ba.stdout"
+
+# Parameters of the other family, or k not smaller than every n, are
+# refused before anything is written.
+for invalid in \
+    "--family barabasi_albert --n-values 20 --k-values 2 --p-values 0.1" \
+    "--family barabasi_albert --n-values 20 --p-values 0.1" \
+    "--n-values 20 --p-values 0.1 --k-values 2" \
+    "--family barabasi_albert --n-values 5,20 --k-values 5" \
+    "--family watts_strogatz --n-values 20 --k-values 2"; do
+    # shellcheck disable=SC2086
+    if "$GENERATOR" batch $invalid \
+        --seeds 1 \
+        --output-dir "$WORK_DIR/invalid-family" \
+        >"$WORK_DIR/invalid-family.stdout" \
+        2>"$WORK_DIR/invalid-family.stderr"; then
+        echo "ERROR: invalid batch was accepted: $invalid" >&2
+        exit 1
+    fi
+
+    test ! -e "$WORK_DIR/invalid-family"
+done
+
 # Duplicate values must be rejected.
 if "$GENERATOR" batch \
     --n-values 10,10 \

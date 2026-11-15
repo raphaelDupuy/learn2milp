@@ -76,7 +76,25 @@ x_v \in \{0,1\}
 \qquad \forall v \in V.
 \]
 
-The current implementation generates Erdős–Rényi graphs \(G(n,p)\), builds the corresponding MILP model, and solves it exactly using SCIP.
+The current implementation generates random graphs of two families, builds the corresponding MILP model, and solves it exactly using SCIP.
+
+## Instance generation
+
+`mis-generator` writes MIS instances, one graph per `.mis` file with its generator and parameters in a `.mis.meta` file next to it. Two graph families are available (`--family`):
+
+- `erdos_renyi` (the default): \(G(n, p)\), every edge present with probability \(p\);
+- `barabasi_albert`: preferential attachment. The graph starts with \(k\) isolated vertices; every new vertex is joined to \(k\) distinct existing vertices, drawn with probability proportional to their degree, until there are \(n\) vertices. The graph has \(k(n-k)\) edges, is connected and has a few vertices of high degree, unlike \(G(n, p)\). (\(k\) is often written \(m\) in the literature; here \(m\) is the number of edges, as in the instance files.)
+
+```bash
+./build/mis-generator single --n 125 --p 0.1 --seed 1 --output data/instances/g125.mis
+./build/mis-generator single --family barabasi_albert --n 200 --k 8 --seed 1 --output data/instances/ba200.mis
+
+./build/mis-generator batch --family barabasi_albert \
+    --n-values 200 --k-values 8 --seeds 81,82,83 \
+    --output-dir data/instances/ba_test
+```
+
+A batch generates every combination of the parameter lists and names each instance after its family and parameters (`erdos_renyi_n125_p0_1_seed81`, `barabasi_albert_n200_k8_seed81`). Its `manifest.csv` lists the instances with their parameters and number of edges `m`; it is written last, so its presence means the batch is complete. A graph only depends on its parameters and seed, on every platform, and existing files are never overwritten.
 
 ## Strong branching dataset
 
@@ -285,7 +303,12 @@ The search history of version 3 (pseudo-costs, inferences, cutoffs, distance to 
 
 Across all these models, neither the score ratio nor the accuracy measured on the validation samples predicted the size of the search trees: only the benchmark does.
 
-A pilot on another graph family tells the two kinds of features apart. On 20 Barabási–Albert graphs with 200 vertices, each new vertex joined to 8 existing ones (never seen during training; 3 seeds, all solved), relpscost explores 916 nodes in 5.6 s, `mlp32_v2` 1,064 nodes in 3.0 s and `mlp32_h2` 861 nodes in 2.7 s. Both learned rules stay faster than relpscost on every instance, and the model with the search history explores 17% fewer nodes than the one without, on all 20 instances: the history generalizes across families where the static features do not. The instances come from a temporary Python script, kept with the results in `experiments/ba200_m8_pilot/` until the C++ generator supports this family.
+Another graph family tells the two kinds of features apart. On 20 Barabási–Albert graphs with 200 vertices and \(k = 8\) (`data/instances/ba200_k8/test`, seeds 81 to 100, never seen during training; 3 seeds, all solved), relpscost explores 846 nodes in 6.1 s, `mlp32_v2` 1,033 nodes in 3.1 s and `mlp32_h2` 861 nodes in 2.8 s. Both learned rules stay about twice as fast as relpscost on every instance, and the model with the search history explores 15% fewer nodes than the one without (on 17 of the 20 instances), as many as relpscost: the history generalizes across families where the static features do not. Results are in `experiments/ba200_k8/results/`; the instances are generated with
+
+```bash
+./build/mis-generator batch --family barabasi_albert --n-values 200 --k-values 8 \
+    --seeds $(seq -s, 81 100) --output-dir data/instances/ba200_k8/test
+```
 
 ## Project structure
 

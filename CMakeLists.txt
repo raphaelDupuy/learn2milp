@@ -45,7 +45,9 @@ target_link_libraries(mis_branching
 add_executable(learn2milp
     src/main.cpp
     src/problems/MIS.cpp
+    src/generators/BarabasiAlbertGenerator.cpp
     src/generators/ErdosRenyiGenerator.cpp
+    src/generators/MISGenerator.cpp
     src/io/MISInstanceIO.cpp
     src/services/MISGenerationService.cpp
     src/services/MISInstanceLoadingService.cpp
@@ -68,8 +70,10 @@ target_link_libraries(learn2milp
 
 add_executable(mis-generator
     src/tools/mis_generator_main.cpp
-    src/tools/mis_generator_batch.cpp
+    src/services/MISGenerationService.cpp
+    src/generators/BarabasiAlbertGenerator.cpp
     src/generators/ErdosRenyiGenerator.cpp
+    src/generators/MISGenerator.cpp
     src/io/MISInstanceIO.cpp
     src/io/InstanceMetadataIO.cpp
 )
@@ -420,7 +424,9 @@ if(BUILD_TESTING)
     add_executable(test_MISGenerationService
         tests/test_MISGenerationService.cpp
         src/services/MISGenerationService.cpp
+        src/generators/BarabasiAlbertGenerator.cpp
         src/generators/ErdosRenyiGenerator.cpp
+        src/generators/MISGenerator.cpp
         src/io/MISInstanceIO.cpp
         src/io/InstanceMetadataIO.cpp
     )
@@ -430,9 +436,21 @@ if(BUILD_TESTING)
         ${PROJECT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(test_MISGenerationService
+    add_executable(test_MISGenerators
+        tests/test_MISGenerators.cpp
+        src/generators/BarabasiAlbertGenerator.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/generators/MISGenerator.cpp
+    )
+
+    target_include_directories(test_MISGenerators
         PRIVATE
-        scip
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME MISGenerators
+        COMMAND test_MISGenerators
     )
 
     add_test(
