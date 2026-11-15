@@ -285,6 +285,8 @@ The search history of version 3 (pseudo-costs, inferences, cutoffs, distance to 
 
 Across all these models, neither the score ratio nor the accuracy measured on the validation samples predicted the size of the search trees: only the benchmark does.
 
+A pilot on another graph family tells the two kinds of features apart. On 20 Barabási–Albert graphs with 200 vertices, each new vertex joined to 8 existing ones (never seen during training; 3 seeds, all solved), relpscost explores 916 nodes in 5.6 s, `mlp32_v2` 1,064 nodes in 3.0 s and `mlp32_h2` 861 nodes in 2.7 s. Both learned rules stay faster than relpscost on every instance, and the model with the search history explores 17% fewer nodes than the one without, on all 20 instances: the history generalizes across families where the static features do not. The instances come from a temporary Python script, kept with the results in `experiments/ba200_m8_pilot/` until the C++ generator supports this family.
+
 ## Project structure
 
 ```text
