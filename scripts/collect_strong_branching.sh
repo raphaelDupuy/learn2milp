@@ -4,13 +4,15 @@
 # several instances at a time.
 #
 # Usage:
-#   scripts/collect_strong_branching.sh COLLECTOR INSTANCE_DIR OUTPUT_DIR [JOBS] [TIME_LIMIT]
+#   scripts/collect_strong_branching.sh COLLECTOR INSTANCE_DIR OUTPUT_DIR [JOBS] [TIME_LIMIT] [POLICY_MODEL]
 #
 #   COLLECTOR     path of the mis-collector executable
 #   INSTANCE_DIR  directory containing the .mis instances (and their .meta)
 #   OUTPUT_DIR    directory receiving the .sb.* files
 #   JOBS          instances collected in parallel (default 4)
 #   TIME_LIMIT    solving time limit per instance, in seconds (default 3600)
+#   POLICY_MODEL  branching model driving the search instead of the expert
+#                 (default: none, the search follows the expert)
 #
 # The script can be interrupted and restarted: an instance whose .sb.meta
 # file already exists is skipped. The collected tables do not depend on
@@ -18,8 +20,8 @@
 # One log file per instance is written to OUTPUT_DIR/logs.
 set -euo pipefail
 
-if [[ $# -lt 3 || $# -gt 5 ]]; then
-    sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' >&2
+if [[ $# -lt 3 || $# -gt 6 ]]; then
+    sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 fi
 
@@ -28,9 +30,15 @@ INSTANCE_DIR="$2"
 OUTPUT_DIR="$3"
 JOBS="${4:-4}"
 TIME_LIMIT="${5:-3600}"
+POLICY_MODEL="${6:-}"
 
 if [[ ! -x "$COLLECTOR" ]]; then
     echo "Collector not found or not executable: $COLLECTOR" >&2
+    exit 2
+fi
+
+if [[ -n "$POLICY_MODEL" && ! -f "$POLICY_MODEL" ]]; then
+    echo "Policy model not found: $POLICY_MODEL" >&2
     exit 2
 fi
 
@@ -51,10 +59,17 @@ collect_one() {
         return 0
     fi
 
+    local policy=()
+
+    if [[ -n "$POLICY_MODEL" ]]; then
+        policy=(--policy-model "$POLICY_MODEL")
+    fi
+
     if "$COLLECTOR" \
         --instance "$instance" \
         --output-dir "$OUTPUT_DIR" \
         --time-limit "$TIME_LIMIT" \
+        "${policy[@]}" \
         >"$OUTPUT_DIR/logs/$name.log" 2>&1; then
         echo "done  $name"
     else
@@ -64,7 +79,7 @@ collect_one() {
 }
 
 export -f collect_one
-export COLLECTOR OUTPUT_DIR TIME_LIMIT
+export COLLECTOR OUTPUT_DIR TIME_LIMIT POLICY_MODEL
 
 FAILED=0
 

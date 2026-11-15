@@ -38,6 +38,7 @@ class BranchingDataset:
     scores    [samples, candidates], strong branching score, 0 where padded
     target    [samples], position of the candidate chosen by the expert
     instance  [samples], index of the instance each sample comes from
+    source    [samples], index of the directory each sample comes from
     """
 
     feature_names: list[str]
@@ -46,6 +47,7 @@ class BranchingDataset:
     scores: np.ndarray
     target: np.ndarray
     instance: np.ndarray
+    source: np.ndarray
     instance_names: list[str]
     total_samples: int
 
@@ -56,6 +58,20 @@ class BranchingDataset:
     @property
     def number_of_candidates(self) -> int:
         return int(self.mask.sum())
+
+    def from_source(self, source: int) -> BranchingDataset:
+        """The samples that come from one of the loaded directories."""
+        keep = self.source == source
+
+        return dataclasses.replace(
+            self,
+            features=self.features[keep],
+            mask=self.mask[keep],
+            scores=self.scores[keep],
+            target=self.target[keep],
+            instance=self.instance[keep],
+            source=self.source[keep],
+        )
 
 
 def _usable_samples(table: pd.DataFrame) -> pd.Series:
@@ -73,13 +89,29 @@ def _usable_samples(table: pd.DataFrame) -> pd.Series:
     )
 
 
-def load_feature_tables(directory: str | pathlib.Path) -> BranchingDataset:
-    """Loads every feature table of a directory."""
-    directory = pathlib.Path(directory)
-    paths = sorted(directory.glob("*" + FEATURES_SUFFIX))
+def load_feature_tables(
+    directories: str | pathlib.Path | list[str] | list[pathlib.Path],
+) -> BranchingDataset:
+    """Loads every feature table of one or several directories.
 
-    if not paths:
-        raise FileNotFoundError(f"No feature table found in {directory}")
+    Several directories are aggregated into one dataset, for example the
+    samples collected along the expert's search and those collected along
+    the search of a learned policy on the same instances.
+    """
+    if isinstance(directories, (str, pathlib.Path)):
+        directories = [directories]
+
+    paths = []
+    source_of_path = []
+
+    for source_index, directory in enumerate(directories):
+        found = sorted(pathlib.Path(directory).glob("*" + FEATURES_SUFFIX))
+
+        if not found:
+            raise FileNotFoundError(f"No feature table found in {directory}")
+
+        paths.extend(found)
+        source_of_path.extend([source_index] * len(found))
 
     feature_names: list[str] | None = None
     tables = []
@@ -136,6 +168,7 @@ def load_feature_tables(directory: str | pathlib.Path) -> BranchingDataset:
 
     instance = np.zeros(samples, np.int64)
     instance[sample_of_row] = rows["instance"].to_numpy(np.int64)
+    source = np.asarray(source_of_path, np.int64)[instance]
 
     return BranchingDataset(
         feature_names=feature_names,
@@ -144,6 +177,7 @@ def load_feature_tables(directory: str | pathlib.Path) -> BranchingDataset:
         scores=scores,
         target=target,
         instance=instance,
+        source=source,
         instance_names=instance_names,
         total_samples=total_samples,
     )

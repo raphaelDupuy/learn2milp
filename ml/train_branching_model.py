@@ -13,6 +13,11 @@ Usage:
         --hidden 32 32 --output experiments/er125_p01/models/mlp32.model
 
 Use --hidden with no value for a linear model.
+
+--train and --valid accept several directories, which are aggregated:
+this is how samples collected along the search of a previous model
+(mis-collector --policy-model) are added to the expert's samples. The
+validation metrics are then also reported for each directory.
 """
 
 from __future__ import annotations
@@ -203,8 +208,8 @@ def train(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--train", required=True, help="directory of training feature tables")
-    parser.add_argument("--valid", required=True, help="directory of validation feature tables")
+    parser.add_argument("--train", required=True, nargs="+", help="directories of training feature tables")
+    parser.add_argument("--valid", required=True, nargs="+", help="directories of validation feature tables")
     parser.add_argument("--output", required=True, help="path of the model file to write")
     parser.add_argument("--hidden", type=int, nargs="*", default=[32, 32], help="hidden layer sizes; none for a linear model")
     parser.add_argument("--epochs", type=int, default=20)
@@ -227,7 +232,7 @@ def main() -> None:
 
     for name, dataset in [("train", train_set), ("valid", valid_set)]:
         print(
-            f"{name}: {len(dataset.instance_names)} instances, "
+            f"{name}: {len(dataset.instance_names)} feature tables, "
             f"{dataset.number_of_samples} usable samples of {dataset.total_samples}, "
             f"{dataset.number_of_candidates} candidates"
         )
@@ -282,6 +287,22 @@ def main() -> None:
     if same_pick < 0.999:
         raise SystemExit("The exported file does not reproduce the trained network")
 
+    # Model selection uses all validation samples together; the details
+    # show where the model is good: on the nodes the expert visits, or on
+    # those a learned policy leads to.
+    valid_by_directory = {}
+
+    if len(arguments.valid) > 1:
+        for index, directory in enumerate(arguments.valid):
+            part = valid_set.from_source(index)
+            metrics = decision_metrics(from_file[valid_set.source == index], part)
+            valid_by_directory[directory] = metrics
+            print(
+                f"  {directory}: {part.number_of_samples} samples, "
+                f"accuracy {metrics['accuracy']:.3f}  top5 {metrics['top5']:.3f}  "
+                f"score ratio {metrics['score_ratio']:.4f}"
+            )
+
     summary = {
         "arguments": vars(arguments),
         "train_samples": train_set.number_of_samples,
@@ -289,6 +310,7 @@ def main() -> None:
         "references": references,
         "history": history,
         "exported": file_metrics,
+        "exported_by_valid_directory": valid_by_directory,
     }
     output.with_suffix(".json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"model: {output}")

@@ -59,6 +59,7 @@ grep -qx 'MIS_SB_DATASET 1' "$META"
 grep -qx 'instance_name "instance_n100.mis"' "$META"
 grep -qx 'number_of_vertices 100' "$META"
 grep -qx 'branching_rule "misfullstrong"' "$META"
+grep -qx 'branching_policy "expert"' "$META"
 grep -qx 'parameter.presolving/maxrestarts 0' "$META"
 grep -qx 'parameter.separating/maxrounds 0' "$META"
 grep -qx 'parameter.limits/nodes -1' "$META"
@@ -92,6 +93,33 @@ grep -qx 'status "NODELIMIT"' "$WORK_DIR/limited/instance_n100.sb.meta"
 grep -qx 'complete 0' "$WORK_DIR/limited/instance_n100.sb.meta"
 grep -qx 'parameter.limits/nodes 5' "$WORK_DIR/limited/instance_n100.sb.meta"
 grep -q 'truncated search tree' "$WORK_DIR/limited.stdout"
+
+# A policy model drives the search and is reported in the metadata.
+MODEL="$(dirname "$0")/../experiments/er125_p01/models/linear.model"
+
+"$COLLECTOR" \
+    --instance "$INSTANCE" \
+    --output-dir "$WORK_DIR/policy" \
+    --node-limit 20 \
+    --policy-model "$MODEL" \
+    >"$WORK_DIR/policy.stdout"
+
+grep -qx 'branching_policy "model"' "$WORK_DIR/policy/instance_n100.sb.meta"
+grep -qx 'policy_model "linear.model"' "$WORK_DIR/policy/instance_n100.sb.meta"
+grep -qE '^policy_decisions [1-9][0-9]*$' "$WORK_DIR/policy/instance_n100.sb.meta"
+grep -q 'policy decisions: ' "$WORK_DIR/policy.stdout"
+
+# A file that is not a model must be rejected.
+if "$COLLECTOR" \
+    --instance "$INSTANCE" \
+    --output-dir "$WORK_DIR/badmodel" \
+    --policy-model "$INSTANCE" \
+    >/dev/null 2>"$WORK_DIR/badmodel.stderr"; then
+    echo "ERROR: invalid policy model was accepted" >&2
+    exit 1
+fi
+
+grep -q 'Invalid model file' "$WORK_DIR/badmodel.stderr"
 
 # Existing outputs must not be overwritten.
 cp "$NODES" "$WORK_DIR/nodes.before"

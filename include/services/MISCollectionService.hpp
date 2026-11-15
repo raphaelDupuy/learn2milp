@@ -23,9 +23,18 @@
  *
  * The CSV tables and the file suffixes (MIS_SB_*_SUFFIX) are described
  * in io/MISStrongBranchingSampleIO.hpp. For
- * given instance, limits and seed they are reproducible byte for byte,
- * unless the time limit is what stopped the run. The metadata file is
+ * given instance, limits, seed and policy model they are reproducible
+ * byte for byte, unless the time limit is what stopped the run. The metadata file is
  * written last: its presence means that the two tables are complete.
+ *
+ * By default the search follows the expert: the rule branches on the
+ * variable strong branching ranks first. With a policy model, the search
+ * follows the model instead (the candidate the mislearned rule would
+ * choose), while every visited node is still labelled by strong
+ * branching. The samples then describe the nodes the model leads to,
+ * which is what a model trained on them will face inside the solver
+ * (on-policy collection, as in DAgger). Nodes that strong branching
+ * proves prunable are still pruned.
  */
 
 struct MISCollectionConfig
@@ -40,6 +49,9 @@ struct MISCollectionConfig
 
     // SCIP randomization/randomseedshift.
     unsigned int scipSeed = 0;
+
+    // Branching model driving the search (see above). Empty: the expert.
+    std::filesystem::path policyModelPath;
 };
 
 struct MISCollectionResult
@@ -56,6 +68,11 @@ struct MISCollectionResult
     long long exploredNodes = 0;
     std::size_t numberOfSamples = 0;
     std::size_t numberOfCandidates = 0;
+
+    // With a policy model: branching decisions taken by the model, and
+    // those where it chose a candidate with the expert's best score.
+    std::size_t policyDecisions = 0;
+    std::size_t policyAgreements = 0;
 
     double solvingTimeSeconds = 0.0;
 

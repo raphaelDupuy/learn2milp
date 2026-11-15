@@ -26,10 +26,13 @@
 
 #include "generators/ErdosRenyiGenerator.hpp"
 #include "io/MISStrongBranchingSampleIO.hpp"
+#include "learning/MISBranchingFeatures.h"
 #include "problems/MIS.hpp"
 
 namespace
 {
+
+const char* const MOST_FRACTIONAL_MODEL = "most_fractional.model";
 
 int failures = 0;
 
@@ -178,7 +181,8 @@ bool solveReference(const MISInstance& instance, double& objective)
 std::vector<std::string> validateDataset(
     const MISInstance& instance,
     const MISCollectionResult& result,
-    const double* optimum
+    const double* optimum,
+    bool mostFractionalPolicy = false
 )
 {
     std::vector<std::string> problems;
@@ -231,6 +235,16 @@ std::vector<std::string> validateDataset(
         || meta("parameter.presolving/maxrestarts") != "0"
         || meta("parameter.separating/maxrounds") != "0"
         || meta("branching_rule") != "misfullstrong"
+        || meta("branching_policy")
+            != (mostFractionalPolicy ? "model" : "expert")
+        || meta("policy_model")
+            != (mostFractionalPolicy ? MOST_FRACTIONAL_MODEL : "")
+        || meta("policy_decisions")
+            != (mostFractionalPolicy
+                ? std::to_string(result.policyDecisions) : "")
+        || meta("policy_expert_agreements")
+            != (mostFractionalPolicy
+                ? std::to_string(result.policyAgreements) : "")
         || meta("scip_version").empty()
         || meta("original_objective_slope").empty())
         fail("metadata does not match the collection result");
@@ -262,12 +276,13 @@ std::vector<std::string> validateDataset(
     {
         long long depth;
         std::string states;
-        long long selectedVertex;
+        long long branchedVertex;
         bool cutoff;
     };
 
     std::map<long long, NodeInfo> nodeInfo;
     long long cutoffSamples = 0;
+    long long agreements = 0;
 
     for (std::size_t r = 0; r < nodes.rows.size(); ++r)
     {
@@ -358,6 +373,12 @@ std::vector<std::string> validateDataset(
         std::set<long long> vertices;
         bool allEvaluated = true;
 
+        // What the "most fractional" policy model branches on: the
+        // first candidate with the largest min(x, 1 - x).
+        long long mostFractionalVertex = -1;
+        double largestFractionality = -1.0;
+        bool mostFractionalIsBest = false;
+
         for (std::size_t k = 0; k < rowsOfSample.size(); ++k)
         {
             const std::size_t c = rowsOfSample[k];
@@ -389,6 +410,14 @@ std::vector<std::string> validateDataset(
             if (std::fabs(candidates.real(c, "gain_reference_lp_objective")
                     - lpObjective) > 1e-9)
                 fail(where + "gain reference differs from LP objective");
+
+            if (std::min(lpValue, 1.0 - lpValue) > largestFractionality)
+            {
+                largestFractionality = std::min(lpValue, 1.0 - lpValue);
+                mostFractionalVertex = vertex;
+                mostFractionalIsBest =
+                    candidates.integer(c, "expert_rank") == 0;
+            }
 
             if (candidates.text(c, "evaluation_status") == "evaluated")
             {
@@ -439,20 +468,24 @@ std::vector<std::string> validateDataset(
 
         if (cutoff)
             ++cutoffSamples;
+        else if (mostFractionalIsBest)
+            ++agreements;
 
         if (!nodeInfo.emplace(
                 nodeId,
                 NodeInfo{
                     nodes.integer(r, "node_depth"),
                     states,
-                    selectedVertex,
+                    mostFractionalPolicy
+                        ? mostFractionalVertex : selectedVertex,
                     cutoff}).second)
             fail(where + "node recorded twice");
     }
 
     // Search tree: this rule branches at every recorded node, so the
     // parent of a recorded node is recorded too. A child inherits its
-    // parent's fixings and has the parent's branching vertex fixed.
+    // parent's fixings and has the parent's branching vertex fixed: the
+    // expert's choice, or the policy model's when one drives the search.
     long long roots = 0;
 
     for (std::size_t r = 0; r < nodes.rows.size(); ++r)
@@ -497,7 +530,7 @@ std::vector<std::string> validateDataset(
                 fail(where + "child lost a fixing of its parent");
         }
 
-        const long long branched = parent->second.selectedVertex;
+        const long long branched = parent->second.branchedVertex;
 
         if (branched >= 0
             && self->second.states[branched] != 'Z'
@@ -507,6 +540,18 @@ std::vector<std::string> validateDataset(
 
     if (!nodes.rows.empty() && roots != 1)
         fail("expected exactly one root sample");
+
+    // The policy decides at every recorded node that is not pruned.
+    if (mostFractionalPolicy
+        && (result.policyDecisions
+                != nodes.rows.size() - static_cast<std::size_t>(cutoffSamples)
+            || result.policyAgreements
+                != static_cast<std::size_t>(agreements)))
+        fail("policy decision counts differ from the tables");
+
+    if (!mostFractionalPolicy
+        && (result.policyDecisions != 0 || result.policyAgreements != 0))
+        fail("policy decisions reported without a policy model");
 
     // A complete search ends by pruning nodes: some samples are cut off.
     if (result.complete && nodes.rows.size() > 1 && cutoffSamples == 0)
@@ -709,6 +754,87 @@ int main(int argc, char* argv[])
                 validateDataset(instance, result, &optimum)
             );
         }
+    }
+
+    // Policy model: the search follows the model ("branch on the most
+    // fractional vertex") while strong branching labels every node.
+    {
+        const auto modelPath = workDir / MOST_FRACTIONAL_MODEL;
+        {
+            std::ofstream file(modelPath);
+
+            file << "MIS_BRANCHING_MODEL 1\nfeatures "
+                 << MIS_BRANCHING_FEATURE_COUNT << '\n';
+
+            for (int f = 0; f < MIS_BRANCHING_FEATURE_COUNT; ++f)
+                file << "feature " << MISbranchingFeatureName(f) << " 0 1\n";
+
+            file << "layers 1\nlayer " << MIS_BRANCHING_FEATURE_COUNT
+                 << " 1 linear\n";
+
+            for (int f = 0; f < MIS_BRANCHING_FEATURE_COUNT; ++f)
+                file << (f > 0 ? " " : "") << (f == 1 ? 1 : 0);
+
+            file << "\n0\n";
+        }
+
+        MISCollectionConfig guided = config;
+        guided.policyModelPath = modelPath;
+
+        MISCollectionResult policy;
+        MISCollectionResult again;
+
+        const bool ok = collectMISStrongBranchingSamples(
+            instance, guided, workDir / "policy", policy, error);
+
+        check(ok, "Collection with a policy model succeeds: " + error);
+
+        if (ok)
+        {
+            std::cout << "  " << policy.exploredNodes << " nodes, "
+                      << policy.numberOfSamples << " samples, "
+                      << policy.policyAgreements << " of "
+                      << policy.policyDecisions
+                      << " decisions agree with the expert\n";
+
+            check(
+                policy.status == "OPTIMAL" && policy.complete
+                && std::fabs(policy.primalBound - optimum) < 1e-6
+                && std::fabs(policy.dualBound - optimum) < 1e-6,
+                "Policy run reaches the reference optimum"
+            );
+
+            report(
+                "Policy dataset is consistent and follows the model",
+                validateDataset(instance, policy, &optimum, true)
+            );
+
+            check(
+                policy.policyDecisions > 0
+                && policy.policyAgreements < policy.policyDecisions
+                && readFile(policy.nodesPath) != readFile(first.nodesPath),
+                "Policy run leaves the expert's search tree"
+            );
+
+            check(
+                collectMISStrongBranchingSamples(
+                    instance, guided, workDir / "policy_again", again,
+                    error)
+                && readFile(policy.nodesPath) == readFile(again.nodesPath)
+                && readFile(policy.candidatesPath)
+                    == readFile(again.candidatesPath),
+                "Two policy runs produce identical tables"
+            );
+        }
+
+        guided.policyModelPath = workDir / "missing.model";
+
+        check(
+            !collectMISStrongBranchingSamples(
+                instance, guided, workDir / "invalid", policy, error)
+            && error.find("Unable to open model file") == 0,
+            "Missing policy model is reported"
+        );
     }
 
     // Instances without any branching still produce valid, empty tables.

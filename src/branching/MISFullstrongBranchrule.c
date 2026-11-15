@@ -12,6 +12,8 @@
 #include <limits.h>
 #include <math.h>
 
+#define MIS_FULLSTRONG_NAME "misfullstrong"
+
 typedef struct
 {
     /* Link between graph vertices and SCIP variables. */
@@ -20,6 +22,10 @@ typedef struct
     /* User callback and its context. */
     MISStrongBranchingSampleCallback callback;
     void* userdata;
+
+    /* Optional policy choosing the branching variable (NULL: expert). */
+    MISBranchingSelector selector;
+    void* selectoruserdata;
 
 } MISFullstrongBranchruleData;
 
@@ -259,6 +265,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
     int nlpcands;
     int npriocands;
     int bestcand;
+    int branchcand;
     int c;
 
     (void)allowaddcons;
@@ -359,6 +366,9 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
      * candidate proves a bound that reaches the cutoff bound. */
     cutoff = SCIPisGE(scip, provedbound, SCIPgetCutoffbound(scip));
 
+    /* The expert's choice, unless a selector decides otherwise below. */
+    branchcand = bestcand;
+
     /*
      * No sample is emitted when the solver is stopping (time limit or
      * interrupt): strong branching was skipped or may have been cut
@@ -402,20 +412,39 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
 
         data->callback(data->userdata, &sample, records, (size_t)nlpcands);
 
+        if( data->selector != NULL && !cutoff )
+        {
+            const int selected = data->selector(
+                data->selectoruserdata, &sample, records, (size_t)nlpcands
+            );
+
+            if( selected >= 0 && selected < nlpcands )
+                branchcand = selected;
+            else if( selected != -1 )
+                branchcand = -1;
+        }
+
         SCIPfreeBufferArray(scip, &vertexstates);
     }
 
     SCIPfreeBufferArray(scip, &records);
 
-    /* Branching, identical to vanillafullstrong with idempotent = TRUE:
-     * no local bound update, no child lower bound update. */
+    if( branchcand < 0 )
+    {
+        SCIPfreeBufferArray(scip, &lpcands);
+        return SCIP_INVALIDDATA;
+    }
+
+    /* Branching, identical to vanillafullstrong with idempotent = TRUE
+     * when the expert is followed: no local bound update, no child lower
+     * bound update. */
     if( cutoff )
     {
         *result = SCIP_CUTOFF;
     }
     else
     {
-        SCIP_VAR* var = lpcands[bestcand];
+        SCIP_VAR* var = lpcands[branchcand];
 
         SCIP_CALL( SCIPbranchVarVal(
             scip, var, SCIPvarGetLPSol(var), NULL, NULL, NULL
@@ -534,6 +563,8 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
 
     data->callback = callback;
     data->userdata = userdata;
+    data->selector = NULL;
+    data->selectoruserdata = NULL;
 
     /* Copy the original MIS variable pointers (not captured, see
      * MISVertexMapping). */
@@ -548,7 +579,7 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
     retcode = SCIPincludeBranchruleBasic(
         scip,
         &branchrule,
-        "misfullstrong",
+        MIS_FULLSTRONG_NAME,
         "MIS full strong branching with data collection",
         1000000,
         -1,
@@ -596,4 +627,28 @@ TERMINATE:
     return retcode;
 }
 
+SCIP_RETCODE SCIPsetMISFullstrongSelector(
+    SCIP* scip,
+    MISBranchingSelector selector,
+    void* userdata
+)
+{
+    SCIP_BRANCHRULE* branchrule;
+    MISFullstrongBranchruleData* data;
 
+    if( scip == NULL )
+        return SCIP_INVALIDDATA;
+
+    branchrule = SCIPfindBranchrule(scip, MIS_FULLSTRONG_NAME);
+
+    if( branchrule == NULL )
+        return SCIP_INVALIDDATA;
+
+    data = (MISFullstrongBranchruleData*)SCIPbranchruleGetData(branchrule);
+    assert(data != NULL);
+
+    data->selector = selector;
+    data->selectoruserdata = selector != NULL ? userdata : NULL;
+
+    return SCIP_OKAY;
+}

@@ -163,6 +163,8 @@ samples = candidates.merge(nodes, on=["sample_index", "node_id"])
 scripts/collect_strong_branching.sh build/mis-collector INSTANCE_DIR OUTPUT_DIR 4
 ```
 
+Two more optional arguments give the time limit per instance and a policy model (see "On-policy samples" below).
+
 `experiments/er125_p01/build_dataset.sh` is the recipe of the first dataset: Erdős–Rényi graphs G(125, 0.1) split into training (60 graphs), validation (20) and test (20) sets, plus 20 graphs G(150, 0.05) to measure generalization. Samples are collected for the training and validation sets only; the other two sets are used to evaluate the solver.
 
 ```bash
@@ -233,6 +235,44 @@ The `mislearned` rule loads a model file and evaluates it in C at every node. A 
     --seeds 0,1,2 \
     --output experiments/er125_p01/results/test_learned_mlp32.csv
 ```
+
+### 4. On-policy samples
+
+The first dataset only contains nodes visited by the expert's own search. Inside the solver, a learned rule makes different choices and reaches nodes that the expert never visits, on which it was not trained. With `--policy-model`, the collector lets a trained model drive the search while full strong branching still labels every visited node (the DAgger scheme):
+
+```bash
+./build/mis-collector \
+    --instance INSTANCE.mis \
+    --output-dir OUTPUT_DIR \
+    --policy-model experiments/er125_p01/models/mlp32.model
+```
+
+The tables have the same format. The metadata file records the model (`branching_policy`, `policy_model`), the number of branching decisions it took and how many of them agree with the expert (`policy_decisions`, `policy_expert_agreements`). Nodes that strong branching proves prunable are still pruned, so the tree is smaller than the one the model explores on its own.
+
+`experiments/er125_p01/collect_on_policy.sh` collects and featurizes such samples for the training and validation instances. The training script accepts several directories, so that a new model is trained on the expert's samples and the on-policy ones together:
+
+```bash
+experiments/er125_p01/collect_on_policy.sh experiments/er125_p01/models/mlp32.model dagger1 build 4
+
+uv run python ml/train_branching_model.py \
+    --train data/processed/features/er125_p01/train \
+            data/processed/features/er125_p01_dagger1/train \
+    --valid data/processed/features/er125_p01/valid \
+            data/processed/features/er125_p01_dagger1/valid \
+    --hidden 32 32 \
+    --output experiments/er125_p01/models/mlp32_dagger1.model
+```
+
+First iteration on er125_p01 (20 instances, 3 seeds, shifted geometric means of the node counts; models and result tables are in `experiments/er125_p01/`):
+
+| Model | Training samples | Test nodes | Transfer nodes |
+|---|---|---|---|
+| `relpscost` (SCIP default) | | 3,584 | 732 |
+| `mlp32` | expert | 2,711 | 733 |
+| `mlp32_dagger1` | expert + on-policy | 2,606 | 699 |
+| `mlp32_onpolicy1` | on-policy | 2,582 | 713 |
+
+On-policy samples bring about 4% fewer nodes, on about 42 of the 60 runs of each set. The gain is small (within the instance-to-instance noise), and the offline validation metrics do not improve: with these features and this model size, the nodes visited during training are not what limits the learned rule. The effect of the training seed has not been measured.
 
 ## Project structure
 

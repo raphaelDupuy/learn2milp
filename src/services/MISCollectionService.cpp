@@ -14,8 +14,12 @@
 #include <scip/scipdefplugins.h>
 
 #include "branching/MISFullstrongBranchrule.h"
+#include "io/MISBranchingModelIO.hpp"
 #include "io/MISInstanceIO.hpp"
 #include "io/MISStrongBranchingSampleIO.hpp"
+#include "learning/MISAdjacency.hpp"
+#include "learning/MISBranchingFeatures.h"
+#include "learning/MISBranchingModel.h"
 #include "services/MISSolverSettings.hpp"
 #include "services/SCIPStatusName.hpp"
 
@@ -112,6 +116,91 @@ void recordSample(
 
     if (state.failed)
         SCIPinterruptSolve(state.scip);
+}
+
+// Policy model driving the search. Every array is sized once, before the
+// solve: the selector runs inside a C callback and must not throw.
+struct PolicyState
+{
+    MISFeatureGraph graph{};
+    const MISBranchingModel* model = nullptr;
+
+    std::vector<int> vertices;
+    std::vector<double> lpValues;
+    std::vector<double> features;
+    std::vector<double> featureWork;
+    std::vector<double> modelWork;
+
+    std::size_t decisions = 0;
+    std::size_t agreements = 0;
+};
+
+// Position of the candidate the mislearned rule would branch on: same
+// features, same model evaluation, first candidate with the best score.
+int selectWithPolicy(
+    void* userdata,
+    const MISStrongBranchingSample* sample,
+    const MISStrongBranchingCandidate* candidates,
+    size_t numberOfCandidates
+)
+{
+    auto& policy = *static_cast<PolicyState*>(userdata);
+
+    // Out of range: reported by the rule as invalid data.
+    const int invalid = -2;
+
+    if (numberOfCandidates == 0
+        || numberOfCandidates > policy.vertices.size())
+    {
+        return invalid;
+    }
+
+    const int count = static_cast<int>(numberOfCandidates);
+
+    for (int c = 0; c < count; ++c)
+    {
+        policy.vertices[c] = candidates[c].vertex_id;
+        policy.lpValues[c] = candidates[c].lp_value;
+    }
+
+    if (MIScomputeBranchingFeatures(
+            &policy.graph,
+            sample->vertex_states,
+            sample->node_depth,
+            count,
+            policy.vertices.data(),
+            policy.lpValues.data(),
+            policy.featureWork.data(),
+            policy.features.data()) != 0)
+    {
+        return invalid;
+    }
+
+    int best = 0;
+    double bestScore = 0.0;
+
+    for (int c = 0; c < count; ++c)
+    {
+        const double score = MISevaluateBranchingModel(
+            policy.model,
+            policy.features.data()
+                + static_cast<std::size_t>(c) * MIS_BRANCHING_FEATURE_COUNT,
+            policy.modelWork.data()
+        );
+
+        if (c == 0 || score > bestScore)
+        {
+            best = c;
+            bestScore = score;
+        }
+    }
+
+    ++policy.decisions;
+
+    if (candidates[best].expert_rank == 0)
+        ++policy.agreements;
+
+    return best;
 }
 
 // Shortest decimal text that reads back to the same double.
@@ -283,6 +372,23 @@ bool collectMISStrongBranchingSamples(
         if (!writer.writeHeaders(errorMessage))
             throw std::runtime_error(errorMessage);
 
+        // Declared before the solver: the selector points to them, so
+        // they must be destroyed after it.
+        LoadedMISBranchingModel model;
+        MISAdjacency adjacency;
+        PolicyState policy;
+
+        if (!config.policyModelPath.empty())
+        {
+            std::string modelError;
+
+            if (!loadMISBranchingModel(
+                    config.policyModelPath, model, modelError))
+            {
+                throw std::invalid_argument(modelError);
+            }
+        }
+
         // Build the model.
         SCIPHandle handle;
         require(SCIPcreate(&handle.scip), "create a solver instance");
@@ -329,6 +435,8 @@ bool collectMISStrongBranchingSamples(
         state.scip = scip;
         state.writer = &writer;
 
+        const bool usesPolicy = !config.policyModelPath.empty();
+
         // An instance without vertices has nothing to branch on.
         if (!vars.empty())
         {
@@ -341,6 +449,28 @@ bool collectMISStrongBranchingSamples(
                     &state),
                 "include the strong branching rule"
             );
+
+            if (usesPolicy)
+            {
+                const std::size_t n = vars.size();
+
+                adjacency = buildMISAdjacency(instance);
+                policy.graph = adjacency.view();
+                policy.model = &model.view();
+                policy.vertices.resize(n);
+                policy.lpValues.resize(n);
+                policy.features.resize(n * MIS_BRANCHING_FEATURE_COUNT);
+                policy.featureWork.resize(static_cast<std::size_t>(
+                    MISbranchingFeatureWorkSize(instance.n)));
+                policy.modelWork.resize(static_cast<std::size_t>(
+                    MISbranchingModelWorkSize(policy.model)));
+
+                require(
+                    SCIPsetMISFullstrongSelector(
+                        scip, selectWithPolicy, &policy),
+                    "install the policy model"
+                );
+            }
         }
 
         const SCIP_RETCODE solveRetcode = SCIPsolve(scip);
@@ -369,6 +499,8 @@ bool collectMISStrongBranchingSamples(
             static_cast<long long>(SCIPgetNNodes(scip));
         collected.numberOfSamples = writer.numberOfSamples();
         collected.numberOfCandidates = writer.numberOfCandidates();
+        collected.policyDecisions = policy.decisions;
+        collected.policyAgreements = policy.agreements;
         collected.solvingTimeSeconds = SCIPgetSolvingTime(scip);
 
         collected.hasSolution = SCIPgetBestSol(scip) != nullptr;
@@ -399,6 +531,23 @@ bool collectMISStrongBranchingSamples(
                 << SCIPminorVersion() << '.'
                 << SCIPtechVersion() << "\"\n"
                 << "branching_rule \"misfullstrong\"\n"
+                << "branching_policy "
+                << (usesPolicy ? "\"model\"" : "\"expert\"") << '\n';
+
+            if (usesPolicy)
+            {
+                metadataFile
+                    << "policy_model "
+                    << std::quoted(
+                        config.policyModelPath.filename().string())
+                    << '\n'
+                    << "policy_decisions "
+                    << collected.policyDecisions << '\n'
+                    << "policy_expert_agreements "
+                    << collected.policyAgreements << '\n';
+            }
+
+            metadataFile
                 << "parameter.presolving/maxrestarts 0\n"
                 << "parameter.separating/maxrounds 0\n"
                 << "parameter.limits/time "

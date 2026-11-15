@@ -85,6 +85,8 @@ add_executable(mis-collector
     src/io/MISInstanceIO.cpp
     src/io/InstanceMetadataIO.cpp
     src/io/MISStrongBranchingSampleIO.cpp
+    src/io/MISBranchingModelIO.cpp
+    src/learning/MISAdjacency.cpp
     src/services/MISInstanceLoadingService.cpp
     src/services/MISCollectionService.cpp
     src/services/MISSolverSettings.cpp
@@ -274,6 +276,8 @@ if(BUILD_TESTING)
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISInstanceIO.cpp
         src/io/MISStrongBranchingSampleIO.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
         src/services/MISCollectionService.cpp
         src/services/MISSolverSettings.cpp
         src/services/SCIPStatusName.cpp

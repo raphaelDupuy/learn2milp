@@ -16,7 +16,8 @@ void printUsage(const char* program)
         << "Usage:\n"
         << "  " << program
         << " --instance PATH --output-dir DIR"
-        << " [--time-limit SECONDS] [--node-limit N] [--scip-seed S]\n\n"
+        << " [--time-limit SECONDS] [--node-limit N] [--scip-seed S]"
+        << " [--policy-model PATH]\n\n"
         << "Solves one MIS instance with full strong branching and records\n"
         << "one sample per branching decision.\n\n"
         << "Options:\n"
@@ -27,7 +28,10 @@ void printUsage(const char* program)
         << "  --time-limit  Solving time limit in seconds (default 3600)\n"
         << "  --node-limit  Maximum number of explored nodes"
         << " (default: none)\n"
-        << "  --scip-seed   SCIP random seed shift (default 0)\n";
+        << "  --scip-seed   SCIP random seed shift (default 0)\n"
+        << "  --policy-model  Branching model file: the search follows\n"
+        << "                this model instead of the expert, and strong\n"
+        << "                branching still labels every visited node\n";
 }
 
 bool parsePositiveDouble(const std::string& text, double& value)
@@ -103,6 +107,7 @@ int main(int argc, char* argv[])
     bool hasTimeLimit = false;
     bool hasNodeLimit = false;
     bool hasSeed = false;
+    bool hasPolicyModel = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -170,6 +175,17 @@ int main(int argc, char* argv[])
 
             hasSeed = true;
         }
+        else if (option == "--policy-model")
+        {
+            if (hasPolicyModel || value.empty())
+            {
+                std::cerr << "Invalid or duplicate --policy-model value.\n";
+                return 2;
+            }
+
+            config.policyModelPath = value;
+            hasPolicyModel = true;
+        }
         else
         {
             std::cerr << "Unknown option: " << option << '\n';
@@ -229,7 +245,17 @@ int main(int argc, char* argv[])
         << (result.complete ? "" : " (truncated search tree)") << '\n'
         << "  explored nodes: " << result.exploredNodes << '\n'
         << "  samples: " << result.numberOfSamples << '\n'
-        << "  candidates: " << result.numberOfCandidates << '\n'
+        << "  candidates: " << result.numberOfCandidates << '\n';
+
+    if (hasPolicyModel)
+    {
+        std::cout
+            << "  policy decisions: " << result.policyDecisions << '\n'
+            << "  agreeing with the expert: "
+            << result.policyAgreements << '\n';
+    }
+
+    std::cout
         << "  solving time (s): " << result.solvingTimeSeconds << '\n'
         << "  nodes table: " << result.nodesPath.string() << '\n'
         << "  candidates table: " << result.candidatesPath.string() << '\n'

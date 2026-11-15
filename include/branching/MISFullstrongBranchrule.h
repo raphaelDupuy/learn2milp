@@ -33,6 +33,36 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
     void* userdata
 );
 
+/*
+ * Chooses the candidate to branch on, given the fully evaluated sample
+ * of the current node. sample and candidates are what the sample
+ * callback received just before. The return value is a position in
+ * candidates, or -1 to follow the expert.
+ */
+typedef int (*MISBranchingSelector)(
+    void* userdata,
+    const MISStrongBranchingSample* sample,
+    const MISStrongBranchingCandidate* candidates,
+    size_t number_of_candidates
+);
+
+/*
+ * Lets another policy drive the search while the rule keeps recording
+ * the expert's answer at every visited node (on-policy data collection,
+ * as in DAgger).
+ *
+ * The rule must have been included in scip. The selector is called once
+ * per recorded sample whose node is not pruned; strong branching, the
+ * recorded samples and the pruning test are unchanged, only the branching
+ * variable differs. A position outside the candidates makes the solve
+ * fail with SCIP_INVALIDDATA. Pass NULL to follow the expert again.
+ */
+SCIP_RETCODE SCIPsetMISFullstrongSelector(
+    SCIP* scip,
+    MISBranchingSelector selector,
+    void* userdata
+);
+
 #ifdef __cplusplus
 }
 #endif
