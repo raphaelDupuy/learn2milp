@@ -25,6 +25,16 @@ target_include_directories(mis_learning
     ${PROJECT_SOURCE_DIR}/include
 )
 
+# Argument parsing shared by the mis-* command line tools.
+add_library(command_line STATIC
+    src/tools/CommandLine.cpp
+)
+
+target_include_directories(command_line
+    PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
 add_library(mis_branching STATIC
     src/branching/MISFullstrongBranchrule.c
     src/branching/MISLearnedBranchrule.c
@@ -52,8 +62,16 @@ add_executable(learn2milp
     src/services/MISGenerationService.cpp
     src/services/MISInstanceLoadingService.cpp
     src/services/MISSolvingService.cpp
+    src/services/MISBenchmarkService.cpp
+    src/services/MISSolverSettings.cpp
     src/services/SCIPStatusName.cpp
     src/services/MISFeatureExtractor.cpp
+    src/io/MISBranchingModelIO.cpp
+    src/learning/MISAdjacency.cpp
+    src/services/MISDatasetInspectionService.cpp
+    src/services/MISFeaturizationService.cpp
+    src/io/CsvReader.cpp
+    src/io/MISStrongBranchingSampleIO.cpp
     src/ui/TerminalUI.cpp
     src/io/InstanceMetadataIO.cpp
 )
@@ -65,7 +83,7 @@ target_include_directories(learn2milp
 
 target_link_libraries(learn2milp
     PRIVATE
-    scip
+    mis_branching
 )
 
 add_executable(mis-generator
@@ -81,6 +99,11 @@ add_executable(mis-generator
 target_include_directories(mis-generator
     PRIVATE
     ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(mis-generator
+    PRIVATE
+    command_line
 )
 
 add_executable(mis-collector
@@ -99,6 +122,7 @@ add_executable(mis-collector
 
 target_link_libraries(mis-collector
     PRIVATE
+    command_line
     mis_branching
 )
 
@@ -117,6 +141,7 @@ add_executable(mis-benchmark
 
 target_link_libraries(mis-benchmark
     PRIVATE
+    command_line
     mis_branching
 )
 
@@ -133,6 +158,7 @@ add_executable(mis-featurizer
 
 target_link_libraries(mis-featurizer
     PRIVATE
+    command_line
     mis_learning
     scip
 )
@@ -140,6 +166,20 @@ target_link_libraries(mis-featurizer
 include(CTest)
 
 if(BUILD_TESTING)
+    add_executable(test_CommandLine
+        tests/test_CommandLine.cpp
+    )
+
+    target_link_libraries(test_CommandLine
+        PRIVATE
+        command_line
+    )
+
+    add_test(
+        NAME CommandLine
+        COMMAND test_CommandLine
+    )
+
     add_executable(test_MISFullstrongBranchrule
         tests/test_MISFullstrongBranchrule.cpp
     )
@@ -298,6 +338,38 @@ if(BUILD_TESTING)
             ${PROJECT_BINARY_DIR}/test_mis_collection_service
     )
 
+    add_executable(test_MISDatasetInspectionService
+        tests/test_MISDatasetInspectionService.cpp
+        src/problems/MIS.cpp
+        src/generators/BarabasiAlbertGenerator.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/generators/MISGenerator.cpp
+        src/io/CsvReader.cpp
+        src/io/InstanceMetadataIO.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+        src/learning/MISAdjacency.cpp
+        src/services/MISCollectionService.cpp
+        src/services/MISDatasetInspectionService.cpp
+        src/services/MISFeaturizationService.cpp
+        src/services/MISGenerationService.cpp
+        src/services/MISInstanceLoadingService.cpp
+        src/services/MISSolverSettings.cpp
+        src/services/SCIPStatusName.cpp
+    )
+
+    target_link_libraries(test_MISDatasetInspectionService
+        PRIVATE
+        mis_branching
+    )
+
+    add_test(
+        NAME MISDatasetInspectionService
+        COMMAND test_MISDatasetInspectionService
+            ${PROJECT_BINARY_DIR}/test_mis_dataset_inspection_service
+    )
+
     add_executable(test_MISBenchmarkService
         tests/test_MISBenchmarkService.cpp
         src/problems/MIS.cpp
@@ -401,8 +473,12 @@ if(BUILD_TESTING)
     add_executable(test_MISSolvingService
         tests/test_MISSolvingService.cpp
         src/services/MISSolvingService.cpp
+        src/services/MISBenchmarkService.cpp
+        src/services/MISSolverSettings.cpp
         src/services/SCIPStatusName.cpp
         src/io/MISInstanceIO.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
         src/problems/MIS.cpp
     )
 
@@ -413,7 +489,7 @@ if(BUILD_TESTING)
 
     target_link_libraries(test_MISSolvingService
         PRIVATE
-        scip
+        mis_branching
     )
 
     add_test(

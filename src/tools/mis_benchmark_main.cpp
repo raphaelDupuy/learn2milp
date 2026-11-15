@@ -1,14 +1,14 @@
 #include "io/MISBranchingModelIO.hpp"
 #include "services/MISBenchmarkService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
+#include "tools/CommandLine.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
+#include <ostream>
 #include <map>
 #include <set>
 #include <sstream>
@@ -17,9 +17,9 @@
 
 namespace
 {
-void printUsage(const char* program)
+void printUsage(const char* program, std::ostream& out = std::cerr)
 {
-    std::cerr
+    out
         << "Usage:\n"
         << "  " << program
         << " --instances DIR --rules R1,R2 --output PATH\n"
@@ -41,99 +41,8 @@ void printUsage(const char* program)
         << "  --settings    study: settings used for data collection"
         << " (default)\n"
         << "                default: SCIP with no parameter changed\n"
-        << "  --time-limit  Time limit per run in seconds (default 3600)\n";
-}
-
-bool splitList(const std::string& text, std::vector<std::string>& items)
-{
-    items.clear();
-
-    std::string item;
-    std::istringstream stream(text);
-
-    while (std::getline(stream, item, ','))
-    {
-        if (item.empty())
-        {
-            return false;
-        }
-
-        items.push_back(item);
-    }
-
-    // Reject an empty list, a trailing comma and duplicates.
-    return !items.empty()
-        && text.back() != ','
-        && std::set<std::string>(items.begin(), items.end()).size()
-            == items.size();
-}
-
-bool parseSeed(const std::string& text, unsigned int& value)
-{
-    try
-    {
-        std::size_t position = 0;
-
-        if (text.empty() || text.front() == '-')
-        {
-            return false;
-        }
-
-        const unsigned long long parsed = std::stoull(text, &position);
-
-        if (position != text.size()
-            || parsed > static_cast<unsigned long long>(
-                std::numeric_limits<int>::max()))
-        {
-            return false;
-        }
-
-        value = static_cast<unsigned int>(parsed);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parsePositiveDouble(const std::string& text, double& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        value = std::stod(text, &position);
-
-        return position == text.size()
-            && std::isfinite(value)
-            && value > 0.0;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-// Shifted geometric mean: exp(mean(log(x + shift))) - shift. It limits
-// the weight of both the very easy and the very hard instances.
-double shiftedGeometricMean(
-    const std::vector<double>& values,
-    double shift
-)
-{
-    if (values.empty())
-    {
-        return 0.0;
-    }
-
-    double logSum = 0.0;
-
-    for (const double value : values)
-    {
-        logSum += std::log(value + shift);
-    }
-
-    return std::exp(logSum / static_cast<double>(values.size())) - shift;
+        << "  --time-limit  Time limit per run in seconds (default 3600)\n"
+        << "  -h, --help    Show this help and exit\n";
 }
 
 struct RuleSummary
@@ -147,128 +56,42 @@ struct RuleSummary
 
 int main(int argc, char* argv[])
 {
+    if (isHelpRequested(argc, argv))
+    {
+        printUsage(argv[0], std::cout);
+        return 0;
+    }
+
     std::string instanceDirectory;
     std::string outputPath;
     std::vector<std::string> rules;
     std::vector<unsigned int> seeds{0};
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
     double timeLimit = 3600.0;
-
-    bool hasInstances = false;
-    bool hasRules = false;
-    bool hasOutput = false;
-    bool hasSeeds = false;
-    bool hasSettings = false;
-    bool hasTimeLimit = false;
     std::string modelPath;
 
-    for (int i = 1; i < argc; ++i)
+    try
     {
-        const std::string option = argv[i];
+        const CommandLineOptions options(argc, argv, 1, {
+            "--instances", "--rules", "--output", "--seeds",
+            "--settings", "--model", "--time-limit"});
 
-        if (i + 1 >= argc)
-        {
-            std::cerr << "Missing value for option: " << option << '\n';
-            return 2;
-        }
+        instanceDirectory = options.text("--instances");
+        rules = options.list<std::string>("--rules", parseText);
+        outputPath = options.text("--output");
+        settings = options.get(
+            "--settings", parseMISBenchmarkSettings, settings);
+        timeLimit = options.get("--time-limit", parsePositiveDouble, timeLimit);
 
-        const std::string value = argv[++i];
+        if (options.has("--seeds"))
+            seeds = options.list<unsigned int>("--seeds", parseSCIPSeed);
 
-        if (option == "--instances")
-        {
-            if (hasInstances || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --instances value.\n";
-                return 2;
-            }
-
-            instanceDirectory = value;
-            hasInstances = true;
-        }
-        else if (option == "--rules")
-        {
-            if (hasRules || !splitList(value, rules))
-            {
-                std::cerr << "Invalid or duplicate --rules value.\n";
-                return 2;
-            }
-
-            hasRules = true;
-        }
-        else if (option == "--output")
-        {
-            if (hasOutput || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --output value.\n";
-                return 2;
-            }
-
-            outputPath = value;
-            hasOutput = true;
-        }
-        else if (option == "--seeds")
-        {
-            std::vector<std::string> items;
-            bool valid = !hasSeeds && splitList(value, items);
-
-            seeds.clear();
-
-            for (std::size_t s = 0; valid && s < items.size(); ++s)
-            {
-                unsigned int seed = 0;
-                valid = parseSeed(items[s], seed);
-                seeds.push_back(seed);
-            }
-
-            if (!valid)
-            {
-                std::cerr << "Invalid or duplicate --seeds value.\n";
-                return 2;
-            }
-
-            hasSeeds = true;
-        }
-        else if (option == "--settings")
-        {
-            if (hasSettings || !parseMISBenchmarkSettings(value, settings))
-            {
-                std::cerr << "Invalid or duplicate --settings value.\n";
-                return 2;
-            }
-
-            hasSettings = true;
-        }
-        else if (option == "--model")
-        {
-            if (!modelPath.empty() || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --model value.\n";
-                return 2;
-            }
-
-            modelPath = value;
-        }
-        else if (option == "--time-limit")
-        {
-            if (hasTimeLimit || !parsePositiveDouble(value, timeLimit))
-            {
-                std::cerr << "Invalid or duplicate --time-limit value.\n";
-                return 2;
-            }
-
-            hasTimeLimit = true;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << option << '\n';
-            return 2;
-        }
+        if (options.has("--model"))
+            modelPath = options.text("--model");
     }
-
-    if (!hasInstances || !hasRules || !hasOutput)
+    catch (const CommandLineError& error)
     {
-        printUsage(argv[0]);
-        return 2;
+        return reportCommandLineError(argv[0], error);
     }
 
     for (const std::string& rule : rules)
@@ -469,9 +292,9 @@ int main(int argc, char* argv[])
             << std::left << std::setw(22) << rule
             << std::right << std::setw(10) << solved.str()
             << std::setw(12) << std::fixed << std::setprecision(1)
-            << shiftedGeometricMean(summary.nodes, 100.0)
+            << misShiftedGeometricMean(summary.nodes, MIS_NODES_SHIFT)
             << std::setw(12) << std::setprecision(2)
-            << shiftedGeometricMean(summary.times, 1.0) << '\n';
+            << misShiftedGeometricMean(summary.times, MIS_TIME_SHIFT_SECONDS) << '\n';
     }
 
     std::cout << "\nResults: " << outputPath << '\n';

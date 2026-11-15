@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "problems/MIS.hpp"
 
@@ -63,6 +64,10 @@ struct MISBenchmarkResult
     bool hasSolution = false;
     double primalBound = 0.0;
     double dualBound = 0.0;
+
+    // Vertices of the best solution found, in increasing order; empty
+    // when there is no solution.
+    std::vector<int> selectedVertices;
 };
 
 // Text names of the settings, as used on the command line and in result
@@ -89,3 +94,14 @@ bool benchmarkMIS(
     MISBenchmarkResult& result,
     std::string& errorMessage
 );
+
+/*
+ * Shifted geometric mean, exp(mean(log(x + shift))) - shift (0 for no
+ * value): it limits the weight of both the very easy and the very hard
+ * instances. Node counts are summarized with a shift of 100, solving
+ * times with a shift of 1 second.
+ */
+double misShiftedGeometricMean(const std::vector<double>& values, double shift);
+
+constexpr double MIS_NODES_SHIFT = 100.0;
+constexpr double MIS_TIME_SHIFT_SECONDS = 1.0;

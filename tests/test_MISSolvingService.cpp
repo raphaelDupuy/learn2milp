@@ -3,6 +3,7 @@
 
 #include "services/SCIPStatusName.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <set>
@@ -156,6 +157,37 @@ bool checkMIS(
         std::cerr << "[FAIL] " << testName
                   << ": expected OPTIMAL status, got "
                   << result.status << '\n';
+        return false;
+    }
+
+    // The selected vertices: an independent set of the optimal size, in
+    // increasing order.
+    const std::set<int> selected(
+        result.selectedVertices.begin(),
+        result.selectedVertices.end()
+    );
+
+    bool independent = true;
+
+    for (const auto& [u, v] : instance.edges)
+    {
+        if (selected.count(u) > 0 && selected.count(v) > 0)
+            independent = false;
+    }
+
+    const bool ordered = std::is_sorted(
+        result.selectedVertices.begin(),
+        result.selectedVertices.end()
+    );
+
+    if (!independent || !ordered
+        || selected.size() != result.selectedVertices.size()
+        || std::abs(static_cast<double>(selected.size())
+                    - expectedObjective) > 1e-6)
+    {
+        std::cerr << "[FAIL] " << testName
+                  << ": selected vertices are not an optimal"
+                     " independent set\n";
         return false;
     }
 

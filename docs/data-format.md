@@ -1,0 +1,77 @@
+# Data formats
+
+## Instances
+
+An instance is a pair of text files:
+
+- `NAME.mis`: the graph, with a header `MIS_INSTANCE 1`, the number of vertices `n`, the number of edges `m` and one edge `u v` per line (`u < v`);
+- `NAME.mis.meta`: the problem type, the generator, its version, its seed and its parameters (`parameter.n`, `parameter.p` or `parameter.k`).
+
+A batch of instances comes with a `manifest.csv`, one row per instance with its parameters and number of edges `m`. The formats are documented in `include/io/MISInstanceIO.hpp` and `include/io/InstanceMetadataIO.hpp`.
+
+## Strong branching samples
+
+For an instance `NAME.mis`, `mis-collector` writes three files to the output directory:
+
+| File | Content |
+|---|---|
+| `NAME.sb.nodes.csv` | one row per sample (one branching decision) |
+| `NAME.sb.candidates.csv` | one row per branching candidate of each sample |
+| `NAME.sb.meta` | instance, SCIP version, settings, final status and counts |
+
+The metadata file is written last: its presence means that both tables are complete. The two tables are joined on `sample_index`. For a given instance, limits and seed, they are reproducible byte for byte, unless the time limit is what stopped the run.
+
+Main columns of the node table:
+
+- `node_id`, `parent_node_id`, `node_depth`: position in the search tree;
+- `lp_objective`, `primal_bound`, `dual_bound`: objective bounds at the node;
+- `number_of_candidates`, `expert_selected_vertex_id`: the decision;
+- `node_cutoff`: 1 when strong branching proved that the node can be pruned. The node is then not branched, and the expert selection is arbitrary among tied candidates;
+- `vertex_states`: one character per vertex, indexed by vertex id.
+
+| Code | Vertex state |
+|---|---|
+| `Z` / `O` | fixed to 0 / fixed to 1 by the local bounds |
+| `z` / `o` | not fixed, LP value 0 / LP value 1 |
+| `f` | not fixed, fractional LP value: a branching candidate |
+| `u` | unknown (multi-aggregated by presolving) |
+
+Main columns of the candidate table:
+
+- `vertex_id`, `lp_value`, `fractionality`, `reduced_cost`: state of the candidate;
+- `down_*` and `up_*`: strong branching outcome when the vertex is excluded (`x_v = 0`) or selected (`x_v = 1`): `bound`, `gain`, `infeasible`, ...;
+- `score`: strong branching score, computed as in SCIP's `vanillafullstrong` rule;
+- `expert_rank`: number of candidates with a strictly higher score (ties share a rank);
+- `expert_selected`: 1 for the candidate the expert branched on;
+- `pseudocost_down`, `pseudocost_up`, `pseudocost_count_*`, `inferences_*`, `cutoffs_*`, `conflict_score`: what the search has learned about the vertex before the node is branched, as kept by SCIP. Strong branching does not change these statistics: a rule without strong branching sees the same kind of values.
+
+On-policy collections (`--policy-model`) have the same tables. Their metadata records the model (`branching_policy`, `policy_model`), the number of branching decisions it took and how many of them agree with the expert (`policy_decisions`, `policy_expert_agreements`).
+
+Conventions:
+
+- objective values (`lp_objective`, `primal_bound`, `dual_bound`, strong branching bounds and gains) are in SCIP's internal space, which is a minimization: the MIS objective appears negated. The metadata gives the map back to the original objective, `original = original_objective_intercept + original_objective_slope * internal`;
+- every `*_valid` column tells whether the value next to it is meaningful;
+- a node reached while the solver is stopping (time limit) is not recorded, so every sample is a complete expert decision;
+- collection fails, without writing anything, if presolving merges two vertices into one LP column: a sample is never attributed to the wrong vertex.
+
+A sample is **usable** for training when the node was branched (`node_cutoff = 0`), the expert's choice is valid (`expert_selection_valid = 1`) and strong branching evaluated every candidate; in the other samples the expert's choice is arbitrary or missing.
+
+The exact column lists and the meaning of every field are documented in `include/io/MISStrongBranchingSampleIO.hpp` and `include/branching/MISStrongBranchingCollector.h`.
+
+Loading a dataset in Python:
+
+```python
+import pandas as pd
+
+nodes = pd.read_csv("NAME.sb.nodes.csv")
+candidates = pd.read_csv("NAME.sb.candidates.csv")
+samples = candidates.merge(nodes, on=["sample_index", "node_id"])
+```
+
+## Training tables
+
+`mis-featurizer` writes `NAME.sb.features.csv`, one row per candidate: `sample_index`, `candidate_position`, `vertex_id`, `node_cutoff`, `expert_selection_valid`, `evaluated`, the expert's answer (`score`, `expert_rank`, `expert_selected`), then one column per feature, named after the feature (see [learning-to-branch.md](learning-to-branch.md#1-features)). The format is documented in `include/services/MISFeaturizationService.hpp`.
+
+## Benchmark results
+
+`mis-benchmark` writes one CSV row per run, with the columns `instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound`. The bounds are those of the size of a maximum independent set.

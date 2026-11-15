@@ -93,6 +93,19 @@ bool parseMISBenchmarkSettings(
     return false;
 }
 
+double misShiftedGeometricMean(const std::vector<double>& values, double shift)
+{
+    if (values.empty())
+        return 0.0;
+
+    double logSum = 0.0;
+
+    for (const double value : values)
+        logSum += std::log(value + shift);
+
+    return std::exp(logSum / static_cast<double>(values.size())) - shift;
+}
+
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
 {
     if (branchingRule == MIS_FULLSTRONG_RULE
@@ -283,10 +296,21 @@ bool benchmarkMIS(
             static_cast<long long>(SCIPgetNLPIterations(scip));
         measured.solvingTimeSeconds = SCIPgetSolvingTime(scip);
 
-        measured.hasSolution = SCIPgetBestSol(scip) != nullptr;
+        SCIP_SOL* const solution = SCIPgetBestSol(scip);
+
+        measured.hasSolution = solution != nullptr;
         measured.primalBound =
             measured.hasSolution ? SCIPgetPrimalbound(scip) : 0.0;
         measured.dualBound = SCIPgetDualbound(scip);
+
+        if (measured.hasSolution)
+        {
+            for (std::size_t v = 0; v < vars.size(); ++v)
+            {
+                if (SCIPgetSolVal(scip, solution, vars[v]) > 0.5)
+                    measured.selectedVertices.push_back(static_cast<int>(v));
+            }
+        }
 
         result = measured;
         errorMessage.clear();

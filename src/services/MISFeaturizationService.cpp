@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
+#include <unordered_set>
 #include <vector>
 
 #include "io/CsvReader.hpp"
@@ -491,7 +492,7 @@ bool featurizeMISStrongBranchingSamples(
             counted.numberOfCandidates +=
                 static_cast<std::size_t>(numberOfCandidates);
 
-            if (nodeCutoff == 0 && selectionValid == 1 && allEvaluated)
+            if (isUsableMISSample(nodeCutoff, selectionValid, allEvaluated))
             {
                 ++counted.numberOfUsableSamples;
             }
@@ -524,6 +525,128 @@ bool featurizeMISStrongBranchingSamples(
         cleanup.commit();
 
         result = counted;
+        errorMessage.clear();
+        return true;
+    }
+    catch (const std::exception& exception)
+    {
+        errorMessage = exception.what();
+        return false;
+    }
+}
+
+bool isUsableMISSample(
+    long long nodeCutoff,
+    long long expertSelectionValid,
+    bool allCandidatesEvaluated
+)
+{
+    return nodeCutoff == 0
+        && expertSelectionValid == 1
+        && allCandidatesEvaluated;
+}
+
+bool countUsableMISStrongBranchingSamples(
+    const std::filesystem::path& nodesPath,
+    const std::filesystem::path& candidatesPath,
+    long long& usable,
+    bool& countable,
+    std::string& errorMessage
+)
+{
+    usable = 0;
+    countable = false;
+
+    try
+    {
+        std::string readError;
+        std::vector<std::string> fields;
+
+        const auto field = [&](int column, const std::filesystem::path& path) {
+            long long value = 0;
+
+            if (!parseCsvInteger(fields[static_cast<std::size_t>(column)], value))
+            {
+                throw std::runtime_error(
+                    path.string() + ": invalid integer field."
+                );
+            }
+
+            return value;
+        };
+
+        // Samples with a candidate that strong branching did not evaluate.
+        std::unordered_set<long long> partlyEvaluated;
+        {
+            std::ifstream input(candidatesPath);
+
+            if (!input)
+                throw std::runtime_error("Cannot open " + candidatesPath.string());
+
+            CsvReader reader(input);
+
+            if (!reader.readHeader(readError))
+                throw std::runtime_error(candidatesPath.string() + ": " + readError);
+
+            const int sample = reader.column("sample_index");
+            const int status = reader.column("evaluation_status");
+            const std::string evaluated =
+                misStrongBranchingEvaluationStatusName(MIS_SB_EVALUATED);
+
+            if (sample < 0 || status < 0)
+            {
+                errorMessage.clear();
+                return true;
+            }
+
+            while (reader.readRow(fields, readError))
+            {
+                if (fields[static_cast<std::size_t>(status)] != evaluated)
+                    partlyEvaluated.insert(field(sample, candidatesPath));
+            }
+
+            if (!reader.atEnd())
+                throw std::runtime_error(candidatesPath.string() + ": " + readError);
+        }
+
+        std::ifstream input(nodesPath);
+
+        if (!input)
+            throw std::runtime_error("Cannot open " + nodesPath.string());
+
+        CsvReader reader(input);
+
+        if (!reader.readHeader(readError))
+            throw std::runtime_error(nodesPath.string() + ": " + readError);
+
+        const int sample = reader.column("sample_index");
+        const int cutoff = reader.column("node_cutoff");
+        const int valid = reader.column("expert_selection_valid");
+
+        if (sample < 0 || cutoff < 0 || valid < 0)
+        {
+            errorMessage.clear();
+            return true;
+        }
+
+        long long counted = 0;
+
+        while (reader.readRow(fields, readError))
+        {
+            if (isUsableMISSample(
+                    field(cutoff, nodesPath),
+                    field(valid, nodesPath),
+                    partlyEvaluated.count(field(sample, nodesPath)) == 0))
+            {
+                ++counted;
+            }
+        }
+
+        if (!reader.atEnd())
+            throw std::runtime_error(nodesPath.string() + ": " + readError);
+
+        usable = counted;
+        countable = true;
         errorMessage.clear();
         return true;
     }

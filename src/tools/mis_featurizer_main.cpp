@@ -1,17 +1,19 @@
 #include "io/MISStrongBranchingSampleIO.hpp"
 #include "services/MISFeaturizationService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
+#include "tools/CommandLine.hpp"
 
 #include <filesystem>
 #include <iostream>
+#include <ostream>
 #include <string>
 #include <system_error>
 
 namespace
 {
-void printUsage(const char* program)
+void printUsage(const char* program, std::ostream& out = std::cerr)
 {
-    std::cerr
+    out
         << "Usage:\n"
         << "  " << program
         << " --instance PATH --samples-dir DIR --output-dir DIR\n\n"
@@ -21,55 +23,35 @@ void printUsage(const char* program)
         << "  --instance     Path of the .mis instance\n"
         << "  --samples-dir  Directory containing NAME.sb.nodes.csv,\n"
         << "                 NAME.sb.candidates.csv and NAME.sb.meta\n"
-        << "  --output-dir   Directory receiving NAME.sb.features.csv\n";
+        << "  --output-dir   Directory receiving NAME.sb.features.csv\n"
+        << "  -h, --help     Show this help and exit\n";
 }
 }
 
 int main(int argc, char* argv[])
 {
+    if (isHelpRequested(argc, argv))
+    {
+        printUsage(argv[0], std::cout);
+        return 0;
+    }
+
     std::string instancePath;
     std::string samplesDirectory;
     std::string outputDirectory;
 
-    for (int i = 1; i < argc; ++i)
+    try
     {
-        const std::string option = argv[i];
+        const CommandLineOptions options(argc, argv, 1, {
+            "--instance", "--samples-dir", "--output-dir"});
 
-        if (i + 1 >= argc)
-        {
-            std::cerr << "Missing value for option: " << option << '\n';
-            return 2;
-        }
-
-        const std::string value = argv[++i];
-
-        std::string* target =
-            option == "--instance" ? &instancePath
-            : option == "--samples-dir" ? &samplesDirectory
-            : option == "--output-dir" ? &outputDirectory
-            : nullptr;
-
-        if (target == nullptr)
-        {
-            std::cerr << "Unknown option: " << option << '\n';
-            return 2;
-        }
-
-        if (!target->empty() || value.empty())
-        {
-            std::cerr << "Invalid or duplicate " << option << " value.\n";
-            return 2;
-        }
-
-        *target = value;
+        instancePath = options.text("--instance");
+        samplesDirectory = options.text("--samples-dir");
+        outputDirectory = options.text("--output-dir");
     }
-
-    if (instancePath.empty()
-        || samplesDirectory.empty()
-        || outputDirectory.empty())
+    catch (const CommandLineError& error)
     {
-        printUsage(argv[0]);
-        return 2;
+        return reportCommandLineError(argv[0], error);
     }
 
     std::string errorMessage;

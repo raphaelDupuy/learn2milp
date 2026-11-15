@@ -21,6 +21,12 @@ struct MISResult
     std::string errorMessage;
 };
 
+/*
+ * Solves the instance to optimality with SCIP as shipped (its own
+ * branching rules and settings, no time limit). To choose the branching
+ * rule, the settings or a limit, use benchmarkMIS()
+ * (services/MISBenchmarkService.hpp), which this function calls.
+ */
 bool solveMIS(
     const MISInstance& instance,
     MISResult& result

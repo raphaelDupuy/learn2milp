@@ -39,6 +39,28 @@ struct MISFeaturizationResult
     std::size_t numberOfUsableSamples = 0;
 };
 
+// The rule above: true if the expert's choice in a sample is meaningful.
+bool isUsableMISSample(
+    long long nodeCutoff,
+    long long expertSelectionValid,
+    bool allCandidatesEvaluated
+);
+
+/*
+ * Counts the usable samples of the node and candidate tables written by
+ * the data collection, without computing any feature. countable is false
+ * (and usable 0) if the tables lack a column the rule needs, as those of
+ * an older format. Fails, with an explanation in errorMessage, if a table
+ * cannot be read or is malformed.
+ */
+bool countUsableMISStrongBranchingSamples(
+    const std::filesystem::path& nodesPath,
+    const std::filesystem::path& candidatesPath,
+    long long& usable,
+    bool& countable,
+    std::string& errorMessage
+);
+
 // Header row of the feature table, without the trailing line break.
 std::string misFeatureTableHeader();
 

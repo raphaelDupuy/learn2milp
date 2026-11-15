@@ -9,11 +9,10 @@
 
 #include "generators/MISGenerator.hpp"
 #include "services/MISGenerationService.hpp"
+#include "tools/CommandLine.hpp"
 
-#include <cmath>
 #include <iostream>
-#include <limits>
-#include <set>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -21,9 +20,9 @@
 namespace
 {
 
-void printUsage(const char* program)
+void printUsage(const char* program, std::ostream& out = std::cerr)
 {
-    std::cerr
+    out
         << "Usage:\n"
         << "  " << program
         << " single [--family F] --n N (--p P | --k K) --seed S"
@@ -53,157 +52,8 @@ void printUsage(const char* program)
         << " (barabasi_albert)\n"
         << "  --seeds      Comma-separated random seeds\n"
         << "  --output-dir Output directory for the batch\n\n"
-        << "Existing files are never overwritten.\n";
-}
-
-bool parseNonNegativeInt(const std::string& text, int& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        const long long parsed = std::stoll(text, &position);
-
-        if (position != text.size()
-            || parsed < 0
-            || parsed > std::numeric_limits<int>::max())
-        {
-            return false;
-        }
-
-        value = static_cast<int>(parsed);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parsePositiveInt(const std::string& text, int& value)
-{
-    return parseNonNegativeInt(text, value) && value > 0;
-}
-
-bool parseSeed(const std::string& text, unsigned int& value)
-{
-    try
-    {
-        if (text.empty() || text.front() == '-')
-        {
-            return false;
-        }
-
-        std::size_t position = 0;
-        const unsigned long long parsed = std::stoull(text, &position);
-
-        if (position != text.size()
-            || parsed > std::numeric_limits<unsigned int>::max())
-        {
-            return false;
-        }
-
-        value = static_cast<unsigned int>(parsed);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parseProbability(const std::string& text, double& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        value = std::stod(text, &position);
-
-        return position == text.size()
-            && std::isfinite(value)
-            && value >= 0.0
-            && value <= 1.0;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-std::vector<std::string> splitCommaSeparated(const std::string& text)
-{
-    if (text.empty())
-    {
-        throw std::invalid_argument("Empty parameter list.");
-    }
-
-    std::vector<std::string> values;
-    std::size_t start = 0;
-
-    while (start < text.size())
-    {
-        const std::size_t comma = text.find(',', start);
-        const std::size_t end =
-            comma == std::string::npos ? text.size() : comma;
-
-        if (end == start)
-        {
-            throw std::invalid_argument(
-                "Empty value in comma-separated list."
-            );
-        }
-
-        values.push_back(text.substr(start, end - start));
-
-        if (comma == std::string::npos)
-        {
-            return values;
-        }
-
-        start = comma + 1;
-
-        if (start == text.size())
-        {
-            throw std::invalid_argument(
-                "Trailing comma in comma-separated list."
-            );
-        }
-    }
-
-    return values;
-}
-
-template <typename T, typename Parser>
-std::vector<T> parseList(
-    const std::string& text,
-    Parser parser,
-    const std::string& parameterName
-)
-{
-    std::vector<T> values;
-    std::set<T> uniqueValues;
-
-    for (const auto& token : splitCommaSeparated(text))
-    {
-        T value{};
-
-        if (!parser(token, value))
-        {
-            throw std::invalid_argument(
-                "Invalid value '" + token + "' for " + parameterName + "."
-            );
-        }
-
-        if (!uniqueValues.insert(value).second)
-        {
-            throw std::invalid_argument(
-                "Duplicate value '" + token + "' in " + parameterName + "."
-            );
-        }
-
-        values.push_back(value);
-    }
-
-    return values;
+        << "Existing files are never overwritten.\n"
+        << "-h or --help shows this help.\n";
 }
 
 // The option that carries the family parameter, and the other one.
@@ -223,6 +73,31 @@ const char* otherFamilyOption(MISGraphFamily family, bool list)
     return list ? "--p-values" : "--p";
 }
 
+// Requires the option of the family parameter and refuses the other one.
+void requireFamilyOptions(
+    const CommandLineOptions& options,
+    MISGraphFamily family,
+    bool list
+)
+{
+    if (options.has(otherFamilyOption(family, list)))
+    {
+        throw CommandLineError(
+            std::string("Option ") + otherFamilyOption(family, list)
+            + " is not a parameter of " + misGraphFamilyName(family)
+            + " graphs."
+        );
+    }
+
+    if (!options.has(familyOption(family, list)))
+    {
+        throw CommandLineError(
+            std::string("Missing required option: ")
+            + familyOption(family, list)
+        );
+    }
+}
+
 int runSingle(int argc, char* argv[])
 {
     MISGraphFamily family = MISGraphFamily::ErdosRenyi;
@@ -232,85 +107,29 @@ int runSingle(int argc, char* argv[])
     unsigned int seed = 0;
     std::string outputPath;
 
-    bool hasFamily = false;
-    bool hasN = false;
-    bool hasP = false;
-    bool hasK = false;
-    bool hasSeed = false;
-    bool hasOutput = false;
-
-    for (int i = 2; i < argc; ++i)
+    try
     {
-        const std::string option = argv[i];
+        const CommandLineOptions options(argc, argv, 2, {
+            "--family", "--n", "--p", "--k", "--seed", "--output"});
 
-        if (i + 1 >= argc)
-        {
-            std::cerr << "Missing value for option: " << option << '\n';
-            return 2;
-        }
+        family = options.get("--family", parseMISGraphFamily, family);
+        requireFamilyOptions(options, family, false);
 
-        const std::string value = argv[++i];
-        bool valid = true;
+        n = options.get<int>("--n", parseNonNegativeInt);
+        seed = options.get<unsigned int>("--seed", parseSeed);
+        outputPath = options.text("--output");
 
-        if (option == "--family")
-        {
-            valid = !hasFamily && parseMISGraphFamily(value, family);
-            hasFamily = true;
-        }
-        else if (option == "--n")
-        {
-            valid = !hasN && parseNonNegativeInt(value, n);
-            hasN = true;
-        }
-        else if (option == "--p")
-        {
-            valid = !hasP && parseProbability(value, p);
-            hasP = true;
-        }
-        else if (option == "--k")
-        {
-            valid = !hasK && parsePositiveInt(value, k);
-            hasK = true;
-        }
-        else if (option == "--seed")
-        {
-            valid = !hasSeed && parseSeed(value, seed);
-            hasSeed = true;
-        }
-        else if (option == "--output")
-        {
-            valid = !hasOutput && !value.empty();
-            outputPath = value;
-            hasOutput = true;
-        }
+        if (family == MISGraphFamily::ErdosRenyi)
+            p = options.get<double>("--p", parseProbability);
         else
-        {
-            std::cerr << "Unknown option: " << option << '\n';
-            return 2;
-        }
-
-        if (!valid)
-        {
-            std::cerr << "Invalid or duplicate " << option << " value.\n";
-            return 2;
-        }
+            k = options.get<int>("--k", parsePositiveInt);
+    }
+    catch (const CommandLineError& error)
+    {
+        return reportCommandLineError(argv[0], error);
     }
 
     const bool erdosRenyi = family == MISGraphFamily::ErdosRenyi;
-
-    if (erdosRenyi ? hasK : hasP)
-    {
-        std::cerr << "Option " << otherFamilyOption(family, false)
-                  << " is not a parameter of "
-                  << misGraphFamilyName(family) << " graphs.\n";
-        return 2;
-    }
-
-    if (!hasN || !(erdosRenyi ? hasP : hasK) || !hasSeed || !hasOutput)
-    {
-        printUsage(argv[0]);
-        return 2;
-    }
 
     const MISGeneratorConfig config = erdosRenyi
         ? MISGeneratorConfig{ErdosRenyiConfig{n, p, seed}}
@@ -348,113 +167,31 @@ int runSingle(int argc, char* argv[])
 
 int runBatch(int argc, char* argv[])
 {
-    std::string familyText;
-    std::string nText;
-    std::string pText;
-    std::string kText;
-    std::string seedsText;
-    std::string outputText;
-
-    bool hasFamily = false;
-    bool hasN = false;
-    bool hasP = false;
-    bool hasK = false;
-    bool hasSeeds = false;
-    bool hasOutput = false;
-
-    for (int i = 2; i < argc; ++i)
-    {
-        const std::string option = argv[i];
-
-        if (i + 1 >= argc)
-        {
-            throw std::invalid_argument(
-                "Missing value for option " + option + "."
-            );
-        }
-
-        const std::string value = argv[++i];
-
-        if (option == "--family" && !hasFamily)
-        {
-            familyText = value;
-            hasFamily = true;
-        }
-        else if (option == "--n-values" && !hasN)
-        {
-            nText = value;
-            hasN = true;
-        }
-        else if (option == "--p-values" && !hasP)
-        {
-            pText = value;
-            hasP = true;
-        }
-        else if (option == "--k-values" && !hasK)
-        {
-            kText = value;
-            hasK = true;
-        }
-        else if (option == "--seeds" && !hasSeeds)
-        {
-            seedsText = value;
-            hasSeeds = true;
-        }
-        else if (option == "--output-dir" && !hasOutput)
-        {
-            outputText = value;
-            hasOutput = true;
-        }
-        else
-        {
-            throw std::invalid_argument(
-                "Unknown or duplicate option: " + option
-            );
-        }
-    }
-
     MISBatchConfig config;
 
-    if (hasFamily && !parseMISGraphFamily(familyText, config.family))
+    try
     {
-        throw std::invalid_argument("Unknown graph family: " + familyText);
+        const CommandLineOptions options(argc, argv, 2, {
+            "--family", "--n-values", "--p-values", "--k-values",
+            "--seeds", "--output-dir"});
+
+        config.family = options.get(
+            "--family", parseMISGraphFamily, config.family);
+        requireFamilyOptions(options, config.family, true);
+
+        config.nValues = options.list<int>("--n-values", parseNonNegativeInt);
+        config.seeds = options.list<unsigned int>("--seeds", parseSeed);
+        config.outputDirectory = options.text("--output-dir");
+
+        if (config.family == MISGraphFamily::ErdosRenyi)
+            config.pValues = options.list<double>("--p-values", parseProbability);
+        else
+            config.kValues = options.list<int>("--k-values", parsePositiveInt);
     }
-
-    const bool erdosRenyi = config.family == MISGraphFamily::ErdosRenyi;
-
-    if (erdosRenyi ? hasK : hasP)
+    catch (const CommandLineError& error)
     {
-        throw std::invalid_argument(
-            std::string("Option ") + otherFamilyOption(config.family, true)
-            + " is not a parameter of "
-            + misGraphFamilyName(config.family) + " graphs."
-        );
+        return reportCommandLineError(argv[0], error);
     }
-
-    if (!hasN || !(erdosRenyi ? hasP : hasK) || !hasSeeds || !hasOutput)
-    {
-        throw std::invalid_argument(
-            std::string("Required options: --n-values, ")
-            + familyOption(config.family, true)
-            + ", --seeds, --output-dir."
-        );
-    }
-
-    config.nValues = parseList<int>(nText, parseNonNegativeInt, "--n-values");
-
-    if (erdosRenyi)
-    {
-        config.pValues =
-            parseList<double>(pText, parseProbability, "--p-values");
-    }
-    else
-    {
-        config.kValues =
-            parseList<int>(kText, parsePositiveInt, "--k-values");
-    }
-
-    config.seeds = parseList<unsigned int>(seedsText, parseSeed, "--seeds");
-    config.outputDirectory = outputText;
 
     MISBatchResult result;
     std::string errorMessage;
@@ -489,6 +226,12 @@ int runBatch(int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
+    if (isHelpRequested(argc, argv))
+    {
+        printUsage(argv[0], std::cout);
+        return 0;
+    }
+
     if (argc < 2)
     {
         printUsage(argv[0]);
