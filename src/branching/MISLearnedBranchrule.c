@@ -36,6 +36,7 @@ SCIP_RETCODE scoreCandidates(
     MISVertexState* states,
     int* vertices,
     double* lpvalues,
+    MISCandidateHistory* histories,
     double* features,
     double* scores,
     double* featurework,
@@ -43,6 +44,8 @@ SCIP_RETCODE scoreCandidates(
     int* best
 )
 {
+    MISBranchingNode node;
+    SCIP_Real upperbound;
     int c;
 
     /* Candidates in MIS-vertex space (x_v rather than LP column). */
@@ -59,20 +62,30 @@ SCIP_RETCODE scoreCandidates(
 
         vertices[c] = data->mapping.vertexids[index];
         lpvalues[c] = data->mapping.complemented[index] ? 1.0 - value : value;
+
+        MISvertexMappingFillHistory(
+            scip, cands[c], data->mapping.complemented[index], &histories[c]
+        );
     }
 
     MISvertexMappingFillStates(scip, &data->mapping, states);
 
+    /* Same quantities as in a collected sample. */
+    upperbound = SCIPgetUpperbound(scip);
+
+    node.vertex_states = states;
+    node.node_depth = SCIPgetDepth(scip);
+    node.number_of_candidates = ncands;
+    node.candidate_vertices = vertices;
+    node.candidate_lp_values = lpvalues;
+    node.candidate_histories = histories;
+    node.objective_gap = MISbranchingObjectiveGap(
+        SCIPgetLPObjval(scip), upperbound, !SCIPisInfinity(scip, upperbound)
+    );
+
     /* The same function builds the training tables. */
     if( MIScomputeBranchingFeatures(
-            data->graph,
-            states,
-            SCIPgetDepth(scip),
-            ncands,
-            vertices,
-            lpvalues,
-            featurework,
-            features) != 0 )
+            data->graph, &node, featurework, features) != 0 )
         return SCIP_INVALIDDATA;
 
     /* First candidate with the highest score. */
@@ -101,6 +114,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     MISVertexState* states;
     int* vertices;
     double* lpvalues;
+    MISCandidateHistory* histories;
     double* features;
     double* scores;
     double* featurework;
@@ -133,6 +147,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     SCIP_CALL( SCIPallocBufferArray(scip, &states, data->mapping.nvertices) );
     SCIP_CALL( SCIPallocBufferArray(scip, &vertices, ncands) );
     SCIP_CALL( SCIPallocBufferArray(scip, &lpvalues, ncands) );
+    SCIP_CALL( SCIPallocBufferArray(scip, &histories, ncands) );
     SCIP_CALL( SCIPallocBufferArray(
         scip, &features, ncands * MIS_BRANCHING_FEATURE_COUNT
     ) );
@@ -146,7 +161,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     ) );
 
     retcode = scoreCandidates(
-        scip, data, cands, ncands, states, vertices, lpvalues,
+        scip, data, cands, ncands, states, vertices, lpvalues, histories,
         features, scores, featurework, modelwork, &best
     );
 
@@ -166,6 +181,11 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
             decision.number_of_candidates = ncands;
             decision.candidate_vertices = vertices;
             decision.candidate_lp_values = lpvalues;
+            decision.candidate_histories = histories;
+            decision.objective_gap = MISbranchingObjectiveGap(
+                SCIPgetLPObjval(scip), SCIPgetUpperbound(scip),
+                !SCIPisInfinity(scip, SCIPgetUpperbound(scip))
+            );
             decision.features = features;
             decision.scores = scores;
             decision.selected_candidate = best;
@@ -186,6 +206,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     SCIPfreeBufferArray(scip, &featurework);
     SCIPfreeBufferArray(scip, &scores);
     SCIPfreeBufferArray(scip, &features);
+    SCIPfreeBufferArray(scip, &histories);
     SCIPfreeBufferArray(scip, &lpvalues);
     SCIPfreeBufferArray(scip, &vertices);
     SCIPfreeBufferArray(scip, &states);

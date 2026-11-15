@@ -251,6 +251,10 @@ bool featurizeMISStrongBranchingSamples(
 
         const int nSampleIndex = nodeColumns.require("sample_index");
         const int nDepth = nodeColumns.require("node_depth");
+        const int nLpObjective = nodeColumns.require("lp_objective");
+        const int nPrimalBound = nodeColumns.require("primal_bound");
+        const int nPrimalBoundValid =
+            nodeColumns.require("primal_bound_valid");
         const int nCandidates = nodeColumns.require("number_of_candidates");
         const int nSelectionValid =
             nodeColumns.require("expert_selection_valid");
@@ -266,6 +270,17 @@ bool featurizeMISStrongBranchingSamples(
         const int cScore = candidateColumns.require("score");
         const int cRank = candidateColumns.require("expert_rank");
         const int cSelected = candidateColumns.require("expert_selected");
+
+        // Columns of MISCandidateHistory, in the order of its fields.
+        const char* const historyNames[] = {
+            "pseudocost_down", "pseudocost_up",
+            "pseudocost_count_down", "pseudocost_count_up",
+            "inferences_down", "inferences_up",
+            "cutoffs_down", "cutoffs_up", "conflict_score"};
+        int cHistory[9];
+
+        for (int h = 0; h < 9; ++h)
+            cHistory[h] = candidateColumns.require(historyNames[h]);
 
         const std::string evaluatedName =
             misStrongBranchingEvaluationStatusName(MIS_SB_EVALUATED);
@@ -295,6 +310,7 @@ bool featurizeMISStrongBranchingSamples(
         std::vector<double> work(MISbranchingFeatureWorkSize(instance.n));
         std::vector<int> vertices;
         std::vector<double> lpValues;
+        std::vector<MISCandidateHistory> histories;
         std::vector<double> features;
         std::vector<std::string> labels;
         std::string rows;
@@ -349,6 +365,7 @@ bool featurizeMISStrongBranchingSamples(
             // Candidates of this sample, which are consecutive rows.
             vertices.clear();
             lpValues.clear();
+            histories.clear();
             labels.clear();
 
             bool allEvaluated = true;
@@ -395,6 +412,19 @@ bool featurizeMISStrongBranchingSamples(
                 lpValues.push_back(
                     realField(candidateFields, cLpValue, "lp_value"));
 
+                double history[9];
+
+                for (int h = 0; h < 9; ++h)
+                {
+                    history[h] = realField(
+                        candidateFields, cHistory[h], historyNames[h]);
+                }
+
+                histories.push_back(MISCandidateHistory{
+                    history[0], history[1], history[2], history[3],
+                    history[4], history[5], history[6], history[7],
+                    history[8]});
+
                 // Identification and expert answer, copied as written.
                 labels.push_back(
                     std::to_string(sampleIndex) + ','
@@ -414,16 +444,24 @@ bool featurizeMISStrongBranchingSamples(
                 0.0
             );
 
+            MISBranchingNode node;
+            node.vertex_states = states.data();
+            node.node_depth = static_cast<int>(
+                integerField(nodeFields, nDepth, "node_depth"));
+            node.number_of_candidates =
+                static_cast<int>(numberOfCandidates);
+            node.candidate_vertices = vertices.data();
+            node.candidate_lp_values = lpValues.data();
+            node.candidate_histories = histories.data();
+            node.objective_gap = MISbranchingObjectiveGap(
+                realField(nodeFields, nLpObjective, "lp_objective"),
+                realField(nodeFields, nPrimalBound, "primal_bound"),
+                integerField(
+                    nodeFields, nPrimalBoundValid, "primal_bound_valid")
+                    != 0);
+
             if (MIScomputeBranchingFeatures(
-                    &graph,
-                    states.data(),
-                    static_cast<int>(
-                        integerField(nodeFields, nDepth, "node_depth")),
-                    static_cast<int>(numberOfCandidates),
-                    vertices.data(),
-                    lpValues.data(),
-                    work.data(),
-                    features.data()) != 0)
+                    &graph, &node, work.data(), features.data()) != 0)
             {
                 throw std::runtime_error(
                     where + "vertex states and candidates are inconsistent."

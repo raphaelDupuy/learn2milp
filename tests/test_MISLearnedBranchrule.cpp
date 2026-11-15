@@ -120,15 +120,17 @@ void checkDecision(
         MISbranchingFeatureWorkSize(decision->number_of_vertices));
     std::vector<double> expected(static_cast<std::size_t>(k) * K);
 
+    MISBranchingNode node;
+    node.vertex_states = decision->vertex_states;
+    node.node_depth = decision->node_depth;
+    node.number_of_candidates = k;
+    node.candidate_vertices = decision->candidate_vertices;
+    node.candidate_lp_values = decision->candidate_lp_values;
+    node.candidate_histories = decision->candidate_histories;
+    node.objective_gap = decision->objective_gap;
+
     if (MIScomputeBranchingFeatures(
-            recorder.graph,
-            decision->vertex_states,
-            decision->node_depth,
-            k,
-            decision->candidate_vertices,
-            decision->candidate_lp_values,
-            work.data(),
-            expected.data()) != 0)
+            recorder.graph, &node, work.data(), expected.data()) != 0)
     {
         recorder.fail(where + "inputs rejected by the feature function");
         return;

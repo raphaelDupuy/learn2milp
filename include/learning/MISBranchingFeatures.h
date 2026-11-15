@@ -17,8 +17,8 @@ extern "C" {
  * MIS_BRANCHING_FEATURE_SET_VERSION and by the feature names.
  *
  * Inputs are limited to what a collected sample contains: the graph, the
- * state of every vertex, the depth of the node and the LP value of each
- * candidate. Notation for a candidate vertex v with LP value x:
+ * state of every vertex, the depth of the node, its distance to the
+ * incumbent, and the LP value and search history of each candidate. Notation for a candidate vertex v with LP value x:
  *
  *   N     neighbours of v in the graph
  *   free  vertices not fixed by the local bounds
@@ -76,14 +76,39 @@ extern "C" {
  *                                       smaller x
  *   28 neighbour_lp_sum_rank            same for neighbour_lp_sum
  *   29 up_mass_change_rank              same for up_mass_change
+ *   30 pseudocost_down                  history of the candidate (see
+ *   31 pseudocost_up                    MISCandidateHistory)
+ *   32 pseudocost_count_down
+ *   33 pseudocost_count_up
+ *   34 pseudocost_score                 max(pseudocost_down * x, e) *
+ *                                       max(pseudocost_up * (1 - x), e),
+ *                                       e = 1e-6: the score of SCIP's
+ *                                       pseudo-cost branching
+ *   35 pseudocost_score_relative        pseudocost_score / largest one
+ *                                       among candidates
+ *   36 pseudocost_score_rank            share of the candidates with a
+ *                                       smaller pseudocost_score
+ *   37 inferences_down                  history of the candidate
+ *   38 inferences_up
+ *   39 cutoffs_down
+ *   40 cutoffs_up
+ *   41 conflict_score_relative          conflict score / largest one among
+ *                                       candidates (0 if all are 0)
+ *   42 objective_gap                    objective_gap of the node (0 if
+ *                                       there is no incumbent)
+ *   43 has_incumbent                    1 if an incumbent exists, else 0
  *
- * Features 15 to 17 are the same for every candidate of a node.
- * Features 0 to 17 are feature set version 1: their definition must not
- * change, since models may use any subset of the features.
+ * Features 15 to 17, 42 and 43 are the same for every candidate of a
+ * node. Features 0 to 17 are feature set version 1 and 18 to 29 version
+ * 2: their definition must not change, since models may use any subset
+ * of the features.
  */
 
-#define MIS_BRANCHING_FEATURE_SET_VERSION 2
-#define MIS_BRANCHING_FEATURE_COUNT 30
+#define MIS_BRANCHING_FEATURE_SET_VERSION 3
+#define MIS_BRANCHING_FEATURE_COUNT 44
+
+/* Smallest pseudo-cost gain used in pseudocost_score. */
+#define MIS_BRANCHING_FEATURE_PSEUDOCOST_EPSILON 1e-6
 
 /* Tolerance used to decide that an edge constraint is tight. */
 #define MIS_BRANCHING_FEATURE_TIGHT_TOLERANCE 1e-6
@@ -100,6 +125,40 @@ typedef struct
     const int* adjacency;
 } MISFeatureGraph;
 
+/*
+ * One node, as the features see it.
+ *
+ * - vertex_states has one entry per vertex. Exactly the candidates must
+ *   be in state MIS_VERTEX_FRACTIONAL.
+ * - candidate_vertices, candidate_lp_values and candidate_histories have
+ *   number_of_candidates entries; LP values are expressed on the vertex
+ *   variable x_v and lie strictly between 0 and 1.
+ * - objective_gap is given by MISbranchingObjectiveGap().
+ */
+typedef struct
+{
+    const MISVertexState* vertex_states;
+    int node_depth;
+
+    int number_of_candidates;
+    const int* candidate_vertices;
+    const double* candidate_lp_values;
+    const MISCandidateHistory* candidate_histories;
+
+    double objective_gap;
+} MISBranchingNode;
+
+/*
+ * Distance between the LP objective of a node and the incumbent, from
+ * the values recorded in a sample (SCIP's internal minimization space):
+ * primal_bound - lp_objective, at least 0, or -1 without an incumbent.
+ */
+double MISbranchingObjectiveGap(
+    double lp_objective,
+    double primal_bound,
+    int primal_bound_valid
+);
+
 /* Name of a feature, or NULL if the index is out of range. */
 const char* MISbranchingFeatureName(int feature);
 
@@ -109,26 +168,17 @@ int MISbranchingFeatureWorkSize(int number_of_vertices);
 /*
  * Computes the features of every candidate of one node.
  *
- * - vertex_states has one entry per vertex. Exactly the candidates must
- *   be in state MIS_VERTEX_FRACTIONAL.
- * - candidate_vertices and candidate_lp_values have number_of_candidates
- *   entries; LP values are expressed on the vertex variable x_v and lie
- *   strictly between 0 and 1.
  * - work is a scratch array of MISbranchingFeatureWorkSize() doubles.
  * - features receives number_of_candidates rows of
  *   MIS_BRANCHING_FEATURE_COUNT values, one row per candidate, in the
- *   order of candidate_vertices.
+ *   order of node->candidate_vertices.
  *
  * Returns 0 on success, and a non-zero value, without a usable result,
  * if the inputs are inconsistent.
  */
 int MIScomputeBranchingFeatures(
     const MISFeatureGraph* graph,
-    const MISVertexState* vertex_states,
-    int node_depth,
-    int number_of_candidates,
-    const int* candidate_vertices,
-    const double* candidate_lp_values,
+    const MISBranchingNode* node,
     double* work,
     double* features
 );

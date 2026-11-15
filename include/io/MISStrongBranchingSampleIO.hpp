@@ -19,7 +19,8 @@
  * MISStrongBranchingCandidate field by field (see
  * branching/MISStrongBranchingCollector.h for their meaning), except that:
  *
- * - down.* and up.* are flattened into down_* and up_* columns;
+ * - down.* and up.* are flattened into down_* and up_* columns, and
+ *   history.* into columns named after its fields;
  * - evaluation_status is written by name (see
  *   misStrongBranchingEvaluationStatusName());
  * - vertex_states is written as one string with one character per vertex,

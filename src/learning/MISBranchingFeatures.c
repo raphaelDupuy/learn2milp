@@ -32,7 +32,21 @@ static const char* const FEATURE_NAMES[MIS_BRANCHING_FEATURE_COUNT] = {
     "clique_weight_min",
     "lp_value_rank",
     "neighbour_lp_sum_rank",
-    "up_mass_change_rank"
+    "up_mass_change_rank",
+    "pseudocost_down",
+    "pseudocost_up",
+    "pseudocost_count_down",
+    "pseudocost_count_up",
+    "pseudocost_score",
+    "pseudocost_score_relative",
+    "pseudocost_score_rank",
+    "inferences_down",
+    "inferences_up",
+    "cutoffs_down",
+    "cutoffs_up",
+    "conflict_score_relative",
+    "objective_gap",
+    "has_incumbent"
 };
 
 enum
@@ -66,8 +80,38 @@ enum
     F_CLIQUE_WEIGHT_MIN,
     F_LP_VALUE_RANK,
     F_NEIGHBOUR_LP_SUM_RANK,
-    F_UP_MASS_CHANGE_RANK
+    F_UP_MASS_CHANGE_RANK,
+    F_PSEUDOCOST_DOWN,
+    F_PSEUDOCOST_UP,
+    F_PSEUDOCOST_COUNT_DOWN,
+    F_PSEUDOCOST_COUNT_UP,
+    F_PSEUDOCOST_SCORE,
+    F_PSEUDOCOST_SCORE_RELATIVE,
+    F_PSEUDOCOST_SCORE_RANK,
+    F_INFERENCES_DOWN,
+    F_INFERENCES_UP,
+    F_CUTOFFS_DOWN,
+    F_CUTOFFS_UP,
+    F_CONFLICT_SCORE_RELATIVE,
+    F_OBJECTIVE_GAP,
+    F_HAS_INCUMBENT
 };
+
+double MISbranchingObjectiveGap(
+    double lp_objective,
+    double primal_bound,
+    int primal_bound_valid
+)
+{
+    double gap;
+
+    if( !primal_bound_valid )
+        return -1.0;
+
+    gap = primal_bound - lp_objective;
+
+    return (gap > 0.0) ? gap : 0.0;
+}
 
 const char* MISbranchingFeatureName(int feature)
 {
@@ -170,15 +214,19 @@ int isFreeState(MISVertexState state)
 
 int MIScomputeBranchingFeatures(
     const MISFeatureGraph* graph,
-    const MISVertexState* vertex_states,
-    int node_depth,
-    int number_of_candidates,
-    const int* candidate_vertices,
-    const double* candidate_lp_values,
+    const MISBranchingNode* node,
     double* work,
     double* features
 )
 {
+    const MISVertexState* vertex_states;
+    const int* candidate_vertices;
+    const double* candidate_lp_values;
+    const MISCandidateHistory* candidate_histories;
+    int node_depth;
+    int number_of_candidates;
+    double max_pseudocost_score = 0.0;
+    double max_conflict_score = 0.0;
     double* lp_values;
     double* fractional_degrees;
     double* neighbour_sums;
@@ -198,8 +246,15 @@ int MIScomputeBranchingFeatures(
     int c;
     int e;
 
-    if( graph == NULL || number_of_candidates < 0 )
+    if( graph == NULL || node == NULL || node->number_of_candidates < 0 )
         return 1;
+
+    vertex_states = node->vertex_states;
+    candidate_vertices = node->candidate_vertices;
+    candidate_lp_values = node->candidate_lp_values;
+    candidate_histories = node->candidate_histories;
+    node_depth = node->node_depth;
+    number_of_candidates = node->number_of_candidates;
 
     n = graph->number_of_vertices;
 
@@ -213,7 +268,7 @@ int MIScomputeBranchingFeatures(
 
     if( number_of_candidates > 0
         && (candidate_vertices == NULL || candidate_lp_values == NULL
-            || features == NULL) )
+            || candidate_histories == NULL || features == NULL) )
         return 1;
 
     lp_values = work;
@@ -463,6 +518,38 @@ int MIScomputeBranchingFeatures(
             ? clique_weight_sum / (double)number_of_ordered : value;
         row[F_CLIQUE_WEIGHT_MIN] = clique_weight_min;
 
+        {
+            const MISCandidateHistory* history = &candidate_histories[c];
+            double down_gain = history->pseudocost_down * value;
+            double up_gain = history->pseudocost_up * (1.0 - value);
+
+            if( !(down_gain > MIS_BRANCHING_FEATURE_PSEUDOCOST_EPSILON) )
+                down_gain = MIS_BRANCHING_FEATURE_PSEUDOCOST_EPSILON;
+
+            if( !(up_gain > MIS_BRANCHING_FEATURE_PSEUDOCOST_EPSILON) )
+                up_gain = MIS_BRANCHING_FEATURE_PSEUDOCOST_EPSILON;
+
+            row[F_PSEUDOCOST_DOWN] = history->pseudocost_down;
+            row[F_PSEUDOCOST_UP] = history->pseudocost_up;
+            row[F_PSEUDOCOST_COUNT_DOWN] = history->pseudocost_count_down;
+            row[F_PSEUDOCOST_COUNT_UP] = history->pseudocost_count_up;
+            row[F_PSEUDOCOST_SCORE] = down_gain * up_gain;
+            row[F_INFERENCES_DOWN] = history->inferences_down;
+            row[F_INFERENCES_UP] = history->inferences_up;
+            row[F_CUTOFFS_DOWN] = history->cutoffs_down;
+            row[F_CUTOFFS_UP] = history->cutoffs_up;
+
+            if( row[F_PSEUDOCOST_SCORE] > max_pseudocost_score )
+                max_pseudocost_score = row[F_PSEUDOCOST_SCORE];
+
+            if( history->conflict_score > max_conflict_score )
+                max_conflict_score = history->conflict_score;
+        }
+
+        row[F_OBJECTIVE_GAP] =
+            (node->objective_gap > 0.0) ? node->objective_gap : 0.0;
+        row[F_HAS_INCUMBENT] = (node->objective_gap >= 0.0) ? 1.0 : 0.0;
+
         row[F_LP_VALUE] = value;
         row[F_FRACTIONALITY] = (value < 0.5) ? value : 1.0 - value;
         row[F_DEGREE] = (double)(last - first);
@@ -504,6 +591,14 @@ int MIScomputeBranchingFeatures(
         row[F_FRACTIONAL_DEGREE_RELATIVE] =
             (max_fractional_degree > 0.0)
             ? row[F_FRACTIONAL_DEGREE] / max_fractional_degree : 0.0;
+
+        row[F_PSEUDOCOST_SCORE_RELATIVE] =
+            row[F_PSEUDOCOST_SCORE] / max_pseudocost_score;
+
+        row[F_CONFLICT_SCORE_RELATIVE] =
+            (max_conflict_score > 0.0)
+            ? candidate_histories[c].conflict_score / max_conflict_score
+            : 0.0;
     }
 
     /* Ranks: share of the candidates of the node with a smaller value. */
@@ -513,6 +608,7 @@ int MIScomputeBranchingFeatures(
         int smaller_lp_value = 0;
         int smaller_neighbour_lp_sum = 0;
         int smaller_up_mass_change = 0;
+        int smaller_pseudocost_score = 0;
         int other;
 
         for( other = 0; other < number_of_candidates; ++other )
@@ -528,6 +624,9 @@ int MIScomputeBranchingFeatures(
 
             if( other_row[F_UP_MASS_CHANGE] < row[F_UP_MASS_CHANGE] )
                 ++smaller_up_mass_change;
+
+            if( other_row[F_PSEUDOCOST_SCORE] < row[F_PSEUDOCOST_SCORE] )
+                ++smaller_pseudocost_score;
         }
 
         row[F_LP_VALUE_RANK] =
@@ -536,6 +635,8 @@ int MIScomputeBranchingFeatures(
             (double)smaller_neighbour_lp_sum / (double)number_of_candidates;
         row[F_UP_MASS_CHANGE_RANK] =
             (double)smaller_up_mass_change / (double)number_of_candidates;
+        row[F_PSEUDOCOST_SCORE_RANK] =
+            (double)smaller_pseudocost_score / (double)number_of_candidates;
     }
 
     return 0;

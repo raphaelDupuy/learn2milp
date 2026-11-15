@@ -221,7 +221,7 @@ std::vector<std::string> validateDataset(
         return it == metadata.end() ? std::string() : it->second;
     };
 
-    if (firstLine != "MIS_SB_DATASET 1")
+    if (firstLine != "MIS_SB_DATASET 2")
         fail("unexpected metadata header");
 
     if (meta("number_of_vertices") != std::to_string(instance.n)
@@ -283,6 +283,9 @@ std::vector<std::string> validateDataset(
     std::map<long long, NodeInfo> nodeInfo;
     long long cutoffSamples = 0;
     long long agreements = 0;
+
+    // Candidates seen with a pseudo-cost observation.
+    long long observedCandidates = 0;
 
     for (std::size_t r = 0; r < nodes.rows.size(); ++r)
     {
@@ -419,6 +422,31 @@ std::vector<std::string> validateDataset(
                     candidates.integer(c, "expert_rank") == 0;
             }
 
+            // Search history: pseudo-costs come from the branchings of
+            // the search, never from strong branching, so the root has
+            // none. (SCIP shares the gain of a branching between all the
+            // variables whose bounds changed: a vertex can have
+            // observations without having been branched on.)
+            const double observations =
+                candidates.real(c, "pseudocost_count_down")
+                + candidates.real(c, "pseudocost_count_up");
+
+            if (observations < 0.0
+                || candidates.real(c, "pseudocost_down") < 0.0
+                || candidates.real(c, "pseudocost_up") < 0.0
+                || candidates.real(c, "cutoffs_down") < 0.0
+                || candidates.real(c, "cutoffs_up") < 0.0
+                || candidates.real(c, "conflict_score") < 0.0)
+                fail(where + "negative search history value");
+
+            if (observations > 0.0)
+            {
+                ++observedCandidates;
+
+                if (nodes.integer(r, "parent_node_valid") == 0)
+                    fail(where + "pseudo-cost observed at the root");
+            }
+
             if (candidates.text(c, "evaluation_status") == "evaluated")
             {
                 if (candidates.integer(c, "score_valid") != 1
@@ -552,6 +580,10 @@ std::vector<std::string> validateDataset(
     if (!mostFractionalPolicy
         && (result.policyDecisions != 0 || result.policyAgreements != 0))
         fail("policy decisions reported without a policy model");
+
+    // The search history is alive: later nodes see pseudo-costs.
+    if (result.complete && nodes.rows.size() > 20 && observedCandidates == 0)
+        fail("no pseudo-cost was ever observed");
 
     // A complete search ends by pruning nodes: some samples are cut off.
     if (result.complete && nodes.rows.size() > 1 && cutoffSamples == 0)

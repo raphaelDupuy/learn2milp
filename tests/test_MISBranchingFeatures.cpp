@@ -57,6 +57,15 @@ struct Reference
     std::vector<double> values{0.5, 0.5, 0.25};
     int depth = 3;
 
+    // Pseudo-costs down and up, their counts, inferences, cutoffs and
+    // conflict score of each candidate.
+    std::vector<MISCandidateHistory> histories{
+        {2.0, 4.0, 1.0, 3.0, 0.5, 1.5, 0.0, 0.25, 2.0},
+        {1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+        {0.0, 8.0, 2.0, 1.0, 0.0, 0.0, 1.0, 0.0, 4.0}
+    };
+    double gap = 1.5;
+
     std::vector<double> work = std::vector<double>(
         MISbranchingFeatureWorkSize(6), -7.0);
     std::vector<double> features = std::vector<double>(
@@ -66,16 +75,17 @@ struct Reference
     {
         const MISFeatureGraph graph = adjacency.view();
 
+        MISBranchingNode node;
+        node.vertex_states = states.data();
+        node.node_depth = depth;
+        node.number_of_candidates = static_cast<int>(vertices.size());
+        node.candidate_vertices = vertices.data();
+        node.candidate_lp_values = values.data();
+        node.candidate_histories = histories.data();
+        node.objective_gap = gap;
+
         return MIScomputeBranchingFeatures(
-            &graph,
-            states.data(),
-            depth,
-            static_cast<int>(vertices.size()),
-            vertices.data(),
-            values.data(),
-            work.data(),
-            features.data()
-        );
+            &graph, &node, work.data(), features.data());
     }
 };
 
@@ -139,7 +149,11 @@ void testReferenceValues()
     // fixed_fraction; then two_hop_lp_sum, neighbour_lp_min, down_room,
     // blocked_neighbours, clique_weight, clique_size, tight_cliques,
     // clique_weight_mean, clique_weight_min, lp_value_rank,
-    // neighbour_lp_sum_rank, up_mass_change_rank.
+    // neighbour_lp_sum_rank, up_mass_change_rank; then pseudocost_down,
+    // pseudocost_up, pseudocost_count_down, pseudocost_count_up,
+    // pseudocost_score, pseudocost_score_relative, pseudocost_score_rank,
+    // inferences_down, inferences_up, cutoffs_down, cutoffs_up,
+    // conflict_score_relative, objective_gap, has_incumbent.
     //
     // Vertices 0, 1 and 2 form a triangle of LP weight 1.25: every
     // candidate finds it from each of its two fractional neighbours.
@@ -149,7 +163,8 @@ void testReferenceValues()
         rowEquals(reference.features, 0, {
             0.5, 0.5, 3, 3, 2, 0.75, 0.5, 1, 0.25, 4, 1, 0.375,
             1.0, 0.75, 1.0, 3, 0.5, third,
-            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0}),
+            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0,
+            2, 4, 1, 3, 2, 1, 2 * third, 0.5, 1.5, 0, 0.25, 0.5, 1.5, 1}),
         "Vertex 2: free neighbour at 0 counts as free, not fractional"
     );
 
@@ -157,7 +172,8 @@ void testReferenceValues()
         rowEquals(reference.features, 1, {
             0.5, 0.5, 3, 2, 2, 0.75, 0.5, 1, 0.25, 4, 1, 0.375,
             1.0, 0.75, 1.0, 3, 0.5, third,
-            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0}),
+            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0,
+            1, 1, 0, 0, 0.25, 0.125, third, 0, 0, 0, 0, 0, 1.5, 1}),
         "Vertex 0: fixed neighbour is neither free nor fractional"
     );
 
@@ -165,8 +181,24 @@ void testReferenceValues()
         rowEquals(reference.features, 2, {
             0.25, 0.25, 2, 2, 2, 1.0, 0.5, 0, 0.25, 4, 1, 0.25,
             0.5, 1.0, 1.0, 3, 0.5, third,
-            1.5, 0.5, 0, 0, 1.25, 3, 2, 1.25, 1.25, 0, 2 * third, 0}),
-        "Vertex 1: no tight edge, largest neighbour sum, no room"
+            1.5, 0.5, 0, 0, 1.25, 3, 2, 1.25, 1.25, 0, 2 * third, 0,
+            0, 8, 2, 1, 6e-6, 3e-6, 0, 0, 0, 1, 0, 1, 1.5, 1}),
+        "Vertex 1: no tight edge, largest neighbour sum, no room, "
+        "zero pseudo-cost replaced by the smallest gain"
+    );
+
+    // Without incumbent, the gap is reported as 0 and flagged.
+    Reference open;
+    open.gap = MISbranchingObjectiveGap(-10.0, 1e20, 0);
+
+    check(
+        open.gap == -1.0
+        && MISbranchingObjectiveGap(-10.0, -8.5, 1) == 1.5
+        && MISbranchingObjectiveGap(-10.0, -10.5, 1) == 0.0
+        && open.compute() == 0
+        && open.features[MIS_BRANCHING_FEATURE_COUNT - 2] == 0.0
+        && open.features[MIS_BRANCHING_FEATURE_COUNT - 1] == 0.0,
+        "Node without incumbent has no gap"
     );
 }
 
@@ -178,6 +210,8 @@ void testOrderIndependence()
 
     second.vertices = {0, 1, 2};
     second.values = {0.5, 0.25, 0.5};
+    second.histories = {
+        first.histories[1], first.histories[2], first.histories[0]};
 
     const bool computed = first.compute() == 0 && second.compute() == 0;
 
@@ -273,14 +307,37 @@ void testRejections()
     Reference reference;
     const MISFeatureGraph graph = reference.adjacency.view();
 
+    MISBranchingNode complete;
+    complete.vertex_states = reference.states.data();
+    complete.node_depth = 0;
+    complete.number_of_candidates = 3;
+    complete.candidate_vertices = reference.vertices.data();
+    complete.candidate_lp_values = reference.values.data();
+    complete.candidate_histories = reference.histories.data();
+    complete.objective_gap = -1.0;
+
+    MISBranchingNode withoutStates = complete;
+    withoutStates.vertex_states = nullptr;
+
+    MISBranchingNode withoutHistories = complete;
+    withoutHistories.candidate_histories = nullptr;
+
     check(
         MIScomputeBranchingFeatures(
-            nullptr, reference.states.data(), 0, 0,
-            nullptr, nullptr, reference.work.data(), nullptr) != 0
+            nullptr, &complete, reference.work.data(),
+            reference.features.data()) != 0
         && MIScomputeBranchingFeatures(
-            &graph, nullptr, 0, 3, reference.vertices.data(),
-            reference.values.data(), reference.work.data(),
-            reference.features.data()) != 0,
+            &graph, nullptr, reference.work.data(),
+            reference.features.data()) != 0
+        && MIScomputeBranchingFeatures(
+            &graph, &withoutStates, reference.work.data(),
+            reference.features.data()) != 0
+        && MIScomputeBranchingFeatures(
+            &graph, &withoutHistories, reference.work.data(),
+            reference.features.data()) != 0
+        && MIScomputeBranchingFeatures(
+            &graph, &complete, reference.work.data(),
+            reference.features.data()) == 0,
         "Missing arrays are rejected"
     );
 }
@@ -305,9 +362,10 @@ void testNoCandidate()
     const MISAdjacency empty = buildMISAdjacency(MISInstance{0, {}});
     const MISFeatureGraph graph = empty.view();
 
+    MISBranchingNode nothing{};
+
     check(
-        MIScomputeBranchingFeatures(
-            &graph, nullptr, 0, 0, nullptr, nullptr, nullptr, nullptr) == 0
+        MIScomputeBranchingFeatures(&graph, &nothing, nullptr, nullptr) == 0
         && MISbranchingFeatureWorkSize(0) == 0,
         "Empty graph is accepted"
     );

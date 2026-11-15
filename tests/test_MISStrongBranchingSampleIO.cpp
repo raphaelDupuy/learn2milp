@@ -70,6 +70,10 @@ MISStrongBranchingCandidate makeCandidate(int position, int vertex)
     candidate.evaluation_order = position;
     candidate.gain_reference_lp_objective = -1.5;
     candidate.gain_reference_lp_objective_valid = 1;
+    candidate.history.pseudocost_down = 1.0;
+    candidate.history.pseudocost_up = 2.5;
+    candidate.history.pseudocost_count_up = 3.0;
+    candidate.history.cutoffs_up = 0.25;
 
     return candidate;
 }
@@ -186,11 +190,11 @@ void testExactRows()
         std::string(MIS_SB_CANDIDATE_CSV_HEADER) + "\n"
         "0,7,0,0,0.5,1,0.5,-1,0,1,1,0,1,evaluated,0,"
         "-1.5,0,1,1,0,0,0,-1,0.5,1,1,0,0,0,"
-        "0.1,1,0,1,-1.5,1\n"
+        "0.1,1,0,1,-1.5,1,1,2.5,0,3,0,0,0,0.25,0\n"
         "0,7,1,1,0.3333333333333333,1,0.3333333333333333,-1,0,1,1,0,1,"
         "evaluated,1,"
         "-1.5,0,1,1,0,0,0,1e+20,1e+20,1,0,1,0,0,"
-        "1e-06,1,1,0,-1.5,1\n";
+        "1e-06,1,1,0,-1.5,1,1,2.5,0,3,0,0,0,0.25,0\n";
 
     check(
         tables.candidates.str() == expectedCandidates,

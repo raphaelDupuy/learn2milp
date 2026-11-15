@@ -123,61 +123,84 @@ def load_feature_tables(
         paths.extend(found)
         source_of_path.extend([source_index] * len(found))
 
+    # First pass, on the label columns only: which samples are usable and
+    # how large the padded arrays must be.
     feature_names: list[str] | None = None
-    tables = []
-    instance_names = []
+    kept = []
     total_samples = 0
+    samples = 0
+    candidates = 0
 
-    for instance_index, path in enumerate(paths):
-        table = pd.read_csv(path)
+    for path in paths:
+        columns = list(pd.read_csv(path, nrows=0).columns)
 
-        if list(table.columns[: len(LABEL_COLUMNS)]) != LABEL_COLUMNS:
+        if columns[: len(LABEL_COLUMNS)] != LABEL_COLUMNS:
             raise ValueError(f"Unexpected label columns in {path}")
 
-        names = list(table.columns[len(LABEL_COLUMNS):])
+        names = columns[len(LABEL_COLUMNS):]
 
         if feature_names is None:
             feature_names = names
         elif names != feature_names:
             raise ValueError(f"Feature columns of {path} differ from the others")
 
-        total_samples += table["sample_index"].nunique()
-        table = table[_usable_samples(table)].copy()
-        table["instance"] = instance_index
-        tables.append(table)
-        instance_names.append(path.name[: -len(FEATURES_SUFFIX)])
+        labels = pd.read_csv(path, usecols=LABEL_COLUMNS)
+        usable = _usable_samples(labels).to_numpy()
+        total_samples += labels["sample_index"].nunique()
+        samples += labels["sample_index"][usable].nunique()
 
-    rows = pd.concat(tables, ignore_index=True)
+        if usable.any():
+            candidates = max(
+                candidates, int(labels["candidate_position"][usable].max()) + 1
+            )
+
+        kept.append(usable)
+
     assert feature_names is not None
-
-    # One padded row per (instance, sample).
-    keys = rows["instance"].to_numpy(np.int64) * (2**32) + rows[
-        "sample_index"
-    ].to_numpy(np.int64)
-    unique_keys, sample_of_row = np.unique(keys, return_inverse=True)
-    position = rows["candidate_position"].to_numpy(np.int64)
-
-    samples = len(unique_keys)
-    candidates = int(position.max()) + 1 if samples else 0
 
     features = np.zeros((samples, candidates, len(feature_names)), np.float32)
     mask = np.zeros((samples, candidates), bool)
     scores = np.zeros((samples, candidates), np.float32)
-
-    features[sample_of_row, position] = rows[feature_names].to_numpy(np.float32)
-    mask[sample_of_row, position] = True
-    scores[sample_of_row, position] = rows["score"].to_numpy(np.float32)
-
-    selected = rows["expert_selected"].to_numpy() == 1
-
-    if np.bincount(sample_of_row[selected], minlength=samples).tolist() != [1] * samples:
-        raise ValueError("Every sample must have exactly one selected candidate")
-
-    target = np.zeros(samples, np.int64)
-    target[sample_of_row[selected]] = position[selected]
-
+    target = np.full(samples, -1, np.int64)
     instance = np.zeros(samples, np.int64)
-    instance[sample_of_row] = rows["instance"].to_numpy(np.int64)
+    instance_names = []
+
+    # Second pass: one table at a time, written straight into the padded
+    # arrays, so that the tables never sit in memory together.
+    first = 0
+
+    for instance_index, (path, usable) in enumerate(zip(paths, kept)):
+        # Features are used in single precision.
+        table = pd.read_csv(path, dtype={name: np.float32 for name in feature_names})
+        table = table[usable]
+
+        _, sample_of_row = np.unique(
+            table["sample_index"].to_numpy(np.int64), return_inverse=True
+        )
+        count = int(sample_of_row.max()) + 1 if len(table) else 0
+        sample_of_row = sample_of_row + first
+        position = table["candidate_position"].to_numpy(np.int64)
+
+        if mask[sample_of_row, position].any():
+            raise ValueError(f"Duplicate candidate in {path}")
+
+        features[sample_of_row, position] = table[feature_names].to_numpy(np.float32)
+        mask[sample_of_row, position] = True
+        scores[sample_of_row, position] = table["score"].to_numpy(np.float32)
+
+        selected = table["expert_selected"].to_numpy() == 1
+
+        if np.bincount(sample_of_row[selected] - first, minlength=count).tolist() != [1] * count:
+            raise ValueError("Every sample must have exactly one selected candidate")
+
+        target[sample_of_row[selected]] = position[selected]
+        instance[first : first + count] = instance_index
+        instance_names.append(path.name[: -len(FEATURES_SUFFIX)])
+        first += count
+
+    if first != samples:
+        raise ValueError("Inconsistent number of usable samples")
+
     source = np.asarray(source_of_path, np.int64)[instance]
 
     return BranchingDataset(

@@ -135,6 +135,7 @@ Main columns of the candidate table:
 - `score`: strong branching score, computed as in SCIP's `vanillafullstrong` rule;
 - `expert_rank`: number of candidates with a strictly higher score (ties share a rank);
 - `expert_selected`: 1 for the candidate the expert branched on.
+- `pseudocost_down`, `pseudocost_up`, `pseudocost_count_*`, `inferences_*`, `cutoffs_*`, `conflict_score`: what the search has learned about the vertex before the node is branched, as kept by SCIP. Strong branching does not change these statistics: a rule without strong branching sees the same kind of values.
 
 Conventions:
 
@@ -201,7 +202,7 @@ The first learned rule ranks the branching candidates of a node with a small neu
 scripts/featurize_strong_branching.sh build/mis-featurizer INSTANCE_DIR SAMPLES_DIR OUTPUT_DIR 4
 ```
 
-Each candidate is described by 30 features computed from the graph, the state of every vertex and the LP values of the candidates: LP value and fractionality, degree in the graph and among the free or fractional vertices, sum and maximum of the LP values of its neighbours, tight edges, triangles of fractional neighbours, values relative to the other candidates, and the depth and size of the node; then, since feature set version 2, the LP values two steps away, the room left for the neighbours to grow if the candidate is set to 0, the LP weight of cliques through the candidate (a clique of weight 1 is a tight clique inequality) and the rank of the candidate among those of the node. They are listed in `include/learning/MISBranchingFeatures.h`.
+Each candidate is described by 44 features computed from the graph, the state of every vertex, the LP values of the candidates and the history of the search: LP value and fractionality, degree in the graph and among the free or fractional vertices, sum and maximum of the LP values of its neighbours, tight edges, triangles of fractional neighbours, values relative to the other candidates, and the depth and size of the node; then, since feature set version 2, the LP values two steps away, the room left for the neighbours to grow if the candidate is set to 0, the LP weight of cliques through the candidate (a clique of weight 1 is a tight clique inequality) and the rank of the candidate among those of the node; and, since version 3, what the search has learned about the candidate (pseudo-costs and their number of observations, inferences, cutoffs, conflict score) and the distance of the node to the incumbent. They are listed in `include/learning/MISBranchingFeatures.h`.
 
 The features are implemented once, in C, and that single function is used both by the featurizer and by the learned rule inside SCIP. A test checks that the features recomputed from the collected files are identical, bit for bit, to the ones computed during the solve: training and inference cannot disagree on what a feature means. After a change of the feature set, the tables are recomputed in seconds; the samples do not need to be collected again.
 
@@ -272,10 +273,17 @@ First iteration on er125_p01 (20 instances, 3 seeds, shifted geometric means of 
 | `mlp32_dagger1` | 18 | expert + on-policy | 2,606 | 699 |
 | `mlp32_onpolicy1` | 18 | on-policy | 2,582 | 713 |
 | `mlp32_v2` | 30 | expert + on-policy | 2,485 | 732 |
+| `mlp32_h0` | 44 | expert | 2,940 | |
+| `mlp32_h1` | 44 | expert + one on-policy round | 2,583 | 748 |
+| `mlp32_h2` | 44 | expert + two on-policy rounds | 2,598 | 718 |
 
 On-policy samples bring about 4% fewer nodes, on about 42 of the 60 runs of each set. The gain is small (within the instance-to-instance noise), and the offline validation metrics do not improve: with these features and this model size, the nodes visited during training are not what limits the learned rule. The effect of the training seed has not been measured.
 
 The 12 features of version 2 do not settle the matter either: `mlp32_v2` explores 4.5% fewer nodes than `mlp32_dagger1` on the test set but 4% more on the transfer set, both within the noise. A network twice as wide reaches the same validation accuracy (0.137), so the inputs, not the size of the model, are the limit. Two side results are worth keeping in mind. Training the model to maximize the strong branching score of its choice, instead of imitating the expert's choice, raised the offline score ratio (0.64 to 0.69) but gave larger trees (3,096 nodes on the test set): the score ratio must not be used to select a model. And the strong branching score of a vertex at the parent node, used alone to choose, reaches a score ratio of 0.65 on the expert's nodes and 0.83 on the on-policy ones, above every model here: what the search has already learned about a variable says more than the local structure of the graph.
+
+The search history of version 3 (pseudo-costs, inferences, cutoffs, distance to the incumbent) raises the validation accuracy from 0.14 to 0.19 but not the performance in the solver: `mlp32_h1` and `mlp32_h2` are within the noise of `mlp32_v2`. With these features the on-policy samples do matter, since the pseudo-costs seen at a node depend on the rule that drove the search: the model trained on the expert's samples alone is the worst of all, and one on-policy round removes 12% of its nodes. A second round brings nothing more. The `mlp32_v2` samples were collected in the previous sample format and are not reproducible with the current collector; the three `mlp32_h*` models are.
+
+Across all these models, neither the score ratio nor the accuracy measured on the validation samples predicted the size of the search trees: only the benchmark does.
 
 ## Project structure
 

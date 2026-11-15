@@ -93,12 +93,26 @@ void recordOnline(
     // The features, as a learned rule computes them at this node.
     std::vector<int> vertices;
     std::vector<double> lpValues;
+    std::vector<MISCandidateHistory> histories;
 
     for (size_t c = 0; c < numberOfCandidates; ++c)
     {
         vertices.push_back(candidates[c].vertex_id);
         lpValues.push_back(candidates[c].lp_value);
+        histories.push_back(candidates[c].history);
     }
+
+    MISBranchingNode node;
+    node.vertex_states = sample->vertex_states;
+    node.node_depth = sample->node_depth;
+    node.number_of_candidates = static_cast<int>(numberOfCandidates);
+    node.candidate_vertices = vertices.data();
+    node.candidate_lp_values = lpValues.data();
+    node.candidate_histories = histories.data();
+    node.objective_gap = MISbranchingObjectiveGap(
+        sample->lp_objective,
+        sample->primal_bound,
+        sample->primal_bound_valid);
 
     std::vector<double> work(
         MISbranchingFeatureWorkSize(sample->number_of_vertices));
@@ -106,14 +120,7 @@ void recordOnline(
         numberOfCandidates * MIS_BRANCHING_FEATURE_COUNT);
 
     if (MIScomputeBranchingFeatures(
-            &recorder.graph,
-            sample->vertex_states,
-            sample->node_depth,
-            static_cast<int>(numberOfCandidates),
-            vertices.data(),
-            lpValues.data(),
-            work.data(),
-            features.data()) != 0)
+            &recorder.graph, &node, work.data(), features.data()) != 0)
     {
         recorder.failed = true;
         return;

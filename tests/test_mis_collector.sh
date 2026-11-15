@@ -55,7 +55,7 @@ head -n 1 "$NODES" | grep -q '^sample_index,node_id,'
 head -n 1 "$NODES" | grep -q ',vertex_states$'
 head -n 1 "$CANDIDATES" | grep -q '^sample_index,node_id,candidate_position,vertex_id,'
 
-grep -qx 'MIS_SB_DATASET 1' "$META"
+grep -qx 'MIS_SB_DATASET 2' "$META"
 grep -qx 'instance_name "instance_n100.mis"' "$META"
 grep -qx 'number_of_vertices 100' "$META"
 grep -qx 'branching_rule "misfullstrong"' "$META"

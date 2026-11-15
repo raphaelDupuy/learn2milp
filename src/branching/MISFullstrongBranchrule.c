@@ -340,6 +340,12 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
 
         record->gain_reference_lp_objective = lpobjval;
         record->gain_reference_lp_objective_valid = TRUE;
+
+        /* Already in MIS-vertex space, unlike the fields above. */
+        MISvertexMappingFillHistory(
+            scip, var, data->mapping.complemented[mapping],
+            &record->history
+        );
     }
 
     SCIP_CALL( runMISStrongBranching(

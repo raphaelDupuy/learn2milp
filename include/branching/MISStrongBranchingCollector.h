@@ -45,6 +45,41 @@ typedef struct
 } MISStrongBranchingDirection;
 
 /*
+ * What the search has learned so far about one vertex variable x_v, as
+ * kept by SCIP for every variable. "down" is the branch x_v <= 0 and
+ * "up" the branch x_v >= 1.
+ *
+ * - pseudocost_*: average gain of the LP objective per unit of change of
+ *   x_v, over the nodes where a branching changed x_v in that direction.
+ *   When pseudocost_count_* is 0, SCIP returns the average over all
+ *   variables instead (1 before any branching).
+ * - pseudocost_count_*: weight of those observations. SCIP shares the
+ *   gain of a branching between the branching variable and the variables
+ *   fixed as a consequence, so a vertex can have a fractional count and
+ *   observations without having been branched on.
+ * - inferences_* and cutoffs_*: average number of bound changes deduced
+ *   after branching on x_v in that direction, and share of those
+ *   branches that were cut off.
+ * - conflict_score: SCIP's conflict (VSIDS) score of the variable.
+ *
+ * Strong branching does not change these statistics: they only reflect
+ * the branchings of the search, and are what a rule without strong
+ * branching sees too.
+ */
+typedef struct
+{
+    double pseudocost_down;
+    double pseudocost_up;
+    double pseudocost_count_down;
+    double pseudocost_count_up;
+    double inferences_down;
+    double inferences_up;
+    double cutoffs_down;
+    double cutoffs_up;
+    double conflict_score;
+} MISCandidateHistory;
+
+/*
  * One branching candidate at one node.
  *
  * Conventions:
@@ -106,6 +141,10 @@ typedef struct
     /* LP objective used as reference for the recorded gains. */
     double gain_reference_lp_objective;
     int gain_reference_lp_objective_valid;
+
+    /* Statistics of the search on this vertex, before the node is
+     * branched. */
+    MISCandidateHistory history;
 
 } MISStrongBranchingCandidate;
 

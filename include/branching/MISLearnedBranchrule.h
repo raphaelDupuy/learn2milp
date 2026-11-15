@@ -31,6 +31,10 @@ typedef struct
     int number_of_candidates;
     const int* candidate_vertices;
     const double* candidate_lp_values;
+    const MISCandidateHistory* candidate_histories;
+
+    /* See MISbranchingObjectiveGap(). */
+    double objective_gap;
 
     const double* features;
     const double* scores;

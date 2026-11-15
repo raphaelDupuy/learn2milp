@@ -148,9 +148,22 @@ def train(
     torch.manual_seed(seed)
 
     # Standardize with the statistics of the real training candidates.
-    real = train_set.features[train_set.mask].astype(np.float64)
-    mean = real.mean(axis=0)
-    std = real.std(axis=0)
+    # Accumulated in double precision, by blocks of samples, to avoid a
+    # second copy of the training set.
+    count = 0
+    total = np.zeros(train_set.features.shape[2])
+    total_of_squares = np.zeros_like(total)
+
+    for start in range(0, train_set.number_of_samples, 4096):
+        block = train_set.features[start : start + 4096][
+            train_set.mask[start : start + 4096]
+        ].astype(np.float64)
+        count += len(block)
+        total += block.sum(axis=0)
+        total_of_squares += (block * block).sum(axis=0)
+
+    mean = total / count
+    std = np.sqrt(np.maximum(total_of_squares / count - mean * mean, 0.0))
     std[std < 1e-12] = 1.0
 
     model = CandidateScorer(mean, std, hidden)

@@ -99,4 +99,16 @@ void MISvertexMappingFillStates(
     MISVertexState* states
 );
 
+/*
+ * Reads the statistics SCIP keeps on the LP column of a vertex, expressed
+ * on the vertex variable x_v: if complemented is non-zero (x_v = 1 -
+ * column), the two directions are swapped.
+ */
+void MISvertexMappingFillHistory(
+    SCIP* scip,
+    SCIP_VAR* column,
+    int complemented,
+    MISCandidateHistory* history
+);
+
 #endif

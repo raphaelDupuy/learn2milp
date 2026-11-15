@@ -29,7 +29,11 @@ const char* const MIS_SB_CANDIDATE_CSV_HEADER =
     "up_bound,up_gain,up_bound_valid,up_gain_valid,"
     "up_infeasible,up_conflict,up_skipped,"
     "score,score_valid,expert_rank,expert_selected,"
-    "gain_reference_lp_objective,gain_reference_lp_objective_valid";
+    "gain_reference_lp_objective,gain_reference_lp_objective_valid,"
+    "pseudocost_down,pseudocost_up,"
+    "pseudocost_count_down,pseudocost_count_up,"
+    "inferences_down,inferences_up,cutoffs_down,cutoffs_up,"
+    "conflict_score";
 
 char misVertexStateCode(MISVertexState state)
 {
@@ -284,6 +288,21 @@ bool appendCandidateRow(
         && finite;
     rows += ','
         + std::to_string(candidate.gain_reference_lp_objective_valid);
+
+    for (const double value : {
+            candidate.history.pseudocost_down,
+            candidate.history.pseudocost_up,
+            candidate.history.pseudocost_count_down,
+            candidate.history.pseudocost_count_up,
+            candidate.history.inferences_down,
+            candidate.history.inferences_up,
+            candidate.history.cutoffs_down,
+            candidate.history.cutoffs_up,
+            candidate.history.conflict_score})
+    {
+        rows += ',';
+        finite = appendDouble(rows, value) && finite;
+    }
 
     rows += '\n';
 

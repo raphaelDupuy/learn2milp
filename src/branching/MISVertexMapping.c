@@ -417,3 +417,28 @@ void MISvertexMappingFillStates(
             states[v] = (val < 0.5) ? MIS_VERTEX_FREE_LP_ZERO : MIS_VERTEX_FREE_LP_ONE;
     }
 }
+
+void MISvertexMappingFillHistory(
+    SCIP* scip,
+    SCIP_VAR* column,
+    int complemented,
+    MISCandidateHistory* history
+)
+{
+    const SCIP_BRANCHDIR down =
+        complemented ? SCIP_BRANCHDIR_UPWARDS : SCIP_BRANCHDIR_DOWNWARDS;
+    const SCIP_BRANCHDIR up =
+        complemented ? SCIP_BRANCHDIR_DOWNWARDS : SCIP_BRANCHDIR_UPWARDS;
+
+    history->pseudocost_down = SCIPgetVarPseudocost(scip, column, down);
+    history->pseudocost_up = SCIPgetVarPseudocost(scip, column, up);
+    history->pseudocost_count_down =
+        SCIPgetVarPseudocostCount(scip, column, down);
+    history->pseudocost_count_up =
+        SCIPgetVarPseudocostCount(scip, column, up);
+    history->inferences_down = SCIPgetVarAvgInferences(scip, column, down);
+    history->inferences_up = SCIPgetVarAvgInferences(scip, column, up);
+    history->cutoffs_down = SCIPgetVarAvgCutoffs(scip, column, down);
+    history->cutoffs_up = SCIPgetVarAvgCutoffs(scip, column, up);
+    history->conflict_score = SCIPgetVarConflictScore(scip, column);
+}

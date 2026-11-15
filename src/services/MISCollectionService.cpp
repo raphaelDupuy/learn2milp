@@ -127,6 +127,7 @@ struct PolicyState
 
     std::vector<int> vertices;
     std::vector<double> lpValues;
+    std::vector<MISCandidateHistory> histories;
     std::vector<double> features;
     std::vector<double> featureWork;
     std::vector<double> modelWork;
@@ -161,15 +162,24 @@ int selectWithPolicy(
     {
         policy.vertices[c] = candidates[c].vertex_id;
         policy.lpValues[c] = candidates[c].lp_value;
+        policy.histories[c] = candidates[c].history;
     }
+
+    MISBranchingNode node;
+    node.vertex_states = sample->vertex_states;
+    node.node_depth = sample->node_depth;
+    node.number_of_candidates = count;
+    node.candidate_vertices = policy.vertices.data();
+    node.candidate_lp_values = policy.lpValues.data();
+    node.candidate_histories = policy.histories.data();
+    node.objective_gap = MISbranchingObjectiveGap(
+        sample->lp_objective,
+        sample->primal_bound,
+        sample->primal_bound_valid);
 
     if (MIScomputeBranchingFeatures(
             &policy.graph,
-            sample->vertex_states,
-            sample->node_depth,
-            count,
-            policy.vertices.data(),
-            policy.lpValues.data(),
+            &node,
             policy.featureWork.data(),
             policy.features.data()) != 0)
     {
@@ -459,6 +469,7 @@ bool collectMISStrongBranchingSamples(
                 policy.model = &model.view();
                 policy.vertices.resize(n);
                 policy.lpValues.resize(n);
+                policy.histories.resize(n);
                 policy.features.resize(n * MIS_BRANCHING_FEATURE_COUNT);
                 policy.featureWork.resize(static_cast<std::size_t>(
                     MISbranchingFeatureWorkSize(instance.n)));
@@ -521,7 +532,7 @@ bool collectMISStrongBranchingSamples(
             std::ofstream metadataFile = openOutput(temporaryMetadata);
 
             metadataFile
-                << "MIS_SB_DATASET 1\n"
+                << "MIS_SB_DATASET 2\n"
                 << "instance_name "
                 << std::quoted(config.instanceName) << '\n'
                 << "number_of_vertices " << instance.n << '\n'
