@@ -201,7 +201,7 @@ The first learned rule ranks the branching candidates of a node with a small neu
 scripts/featurize_strong_branching.sh build/mis-featurizer INSTANCE_DIR SAMPLES_DIR OUTPUT_DIR 4
 ```
 
-Each candidate is described by 18 features computed from the graph, the state of every vertex and the LP values of the candidates: LP value and fractionality, degree in the graph and among the free or fractional vertices, sum and maximum of the LP values of its neighbours, tight edges, triangles of fractional neighbours, values relative to the other candidates, and the depth and size of the node. They are listed in `include/learning/MISBranchingFeatures.h`.
+Each candidate is described by 30 features computed from the graph, the state of every vertex and the LP values of the candidates: LP value and fractionality, degree in the graph and among the free or fractional vertices, sum and maximum of the LP values of its neighbours, tight edges, triangles of fractional neighbours, values relative to the other candidates, and the depth and size of the node; then, since feature set version 2, the LP values two steps away, the room left for the neighbours to grow if the candidate is set to 0, the LP weight of cliques through the candidate (a clique of weight 1 is a tight clique inequality) and the rank of the candidate among those of the node. They are listed in `include/learning/MISBranchingFeatures.h`.
 
 The features are implemented once, in C, and that single function is used both by the featurizer and by the learned rule inside SCIP. A test checks that the features recomputed from the collected files are identical, bit for bit, to the ones computed during the solve: training and inference cannot disagree on what a feature means. After a change of the feature set, the tables are recomputed in seconds; the samples do not need to be collected again.
 
@@ -225,7 +225,7 @@ The script reports, on the validation set, how the decisions of the model compar
 
 ### 3. Evaluation inside SCIP
 
-The `mislearned` rule loads a model file and evaluates it in C at every node. A model is refused if it was trained on another feature set.
+The `mislearned` rule loads a model file and evaluates it in C at every node. A model names the features it reads, which may be any subset of the computed ones: models trained before a feature was added keep working, and a model that names an unknown feature is refused. `--features` of the training script selects the features of a model.
 
 ```bash
 ./build/mis-benchmark \
@@ -265,14 +265,17 @@ uv run python ml/train_branching_model.py \
 
 First iteration on er125_p01 (20 instances, 3 seeds, shifted geometric means of the node counts; models and result tables are in `experiments/er125_p01/`):
 
-| Model | Training samples | Test nodes | Transfer nodes |
-|---|---|---|---|
-| `relpscost` (SCIP default) | | 3,584 | 732 |
-| `mlp32` | expert | 2,711 | 733 |
-| `mlp32_dagger1` | expert + on-policy | 2,606 | 699 |
-| `mlp32_onpolicy1` | on-policy | 2,582 | 713 |
+| Model | Features | Training samples | Test nodes | Transfer nodes |
+|---|---|---|---|---|
+| `relpscost` (SCIP default) | | | 3,584 | 732 |
+| `mlp32` | 18 | expert | 2,711 | 733 |
+| `mlp32_dagger1` | 18 | expert + on-policy | 2,606 | 699 |
+| `mlp32_onpolicy1` | 18 | on-policy | 2,582 | 713 |
+| `mlp32_v2` | 30 | expert + on-policy | 2,485 | 732 |
 
 On-policy samples bring about 4% fewer nodes, on about 42 of the 60 runs of each set. The gain is small (within the instance-to-instance noise), and the offline validation metrics do not improve: with these features and this model size, the nodes visited during training are not what limits the learned rule. The effect of the training seed has not been measured.
+
+The 12 features of version 2 do not settle the matter either: `mlp32_v2` explores 4.5% fewer nodes than `mlp32_dagger1` on the test set but 4% more on the transfer set, both within the noise. A network twice as wide reaches the same validation accuracy (0.137), so the inputs, not the size of the model, are the limit. Two side results are worth keeping in mind. Training the model to maximize the strong branching score of its choice, instead of imitating the expert's choice, raised the offline score ratio (0.64 to 0.69) but gave larger trees (3,096 nodes on the test set): the score ratio must not be used to select a model. And the strong branching score of a vertex at the parent node, used alone to choose, reaches a score ratio of 0.65 on the expert's nodes and 0.83 on the on-policy ones, above every model here: what the search has already learned about a variable says more than the local structure of the graph.
 
 ## Project structure
 

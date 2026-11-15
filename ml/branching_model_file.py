@@ -11,9 +11,9 @@
 A candidate is scored by standardizing its features, (x - mean) / std,
 then applying the layers in order: y = activation(W x + b). The last
 layer has one output, the score; the candidate with the highest score is
-chosen. The feature names tie the model to the feature set it was
-trained on: the C++ loader refuses a model whose names differ from the
-compiled features.
+chosen. The feature names tie the model to the features it was trained
+on: a model may use any subset of the features computed by the C code,
+and the C++ loader refuses a model that names an unknown feature.
 """
 
 from __future__ import annotations

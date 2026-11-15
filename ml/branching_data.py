@@ -59,6 +59,16 @@ class BranchingDataset:
     def number_of_candidates(self) -> int:
         return int(self.mask.sum())
 
+    def with_features(self, names: list[str]) -> BranchingDataset:
+        """The same samples, described by the given features only."""
+        columns = [self.feature_names.index(name) for name in names]
+
+        return dataclasses.replace(
+            self,
+            feature_names=list(names),
+            features=np.ascontiguousarray(self.features[:, :, columns]),
+        )
+
     def from_source(self, source: int) -> BranchingDataset:
         """The samples that come from one of the loaded directories."""
         keep = self.source == source

@@ -19,8 +19,9 @@
  *   <inputs values>                                one line per output
  *   <outputs values>                               one line of biases
  *
- * The feature names must be the compiled features, in the same order:
- * a model is refused if it was trained on another feature set.
+ * A model reads all the compiled features or a subset of them, in any
+ * order. It is refused if it names a feature that this program does not
+ * compute: it was trained on another feature set.
  */
 
 // A model with the storage its C view points to.
@@ -50,6 +51,7 @@ private:
     friend bool readMISBranchingModel(
         std::istream&, LoadedMISBranchingModel&, std::string&);
 
+    std::vector<int> indices_;
     std::vector<double> means_;
     std::vector<double> stds_;
     std::vector<std::vector<double>> weights_;

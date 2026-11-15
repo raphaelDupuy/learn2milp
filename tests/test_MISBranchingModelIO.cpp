@@ -230,10 +230,28 @@ int main()
         replaced(linear, "feature " + name0 + " ", "feature other_name "));
 
     expectRejection(
-        "Features in another order are rejected",
-        replaced(
-            replaced(linear, "feature " + name0 + " ", "feature @ "),
-            "feature " + name1 + " ", "feature " + name0 + " "));
+        "Feature named twice is rejected",
+        replaced(linear, "feature " + name1 + " ", "feature " + name0 + " "));
+
+    // A model may read a subset of the features, in its own order.
+    {
+        LoadedMISBranchingModel model;
+
+        const bool parsed = parse(
+            HEADER + "features 2\nfeature " + name1 + " 1 2\nfeature "
+                + name0 + " 0 1\nlayers 1\nlayer 2 1 linear\n1 10\n0\n",
+            model);
+
+        // score = (x1 - 1) / 2 + 10 x0
+        check(
+            parsed
+            && MISbranchingModelIsValid(&model.view())
+            && model.view().number_of_features == 2
+            && std::fabs(evaluate(model, {{0, 3.0}, {1, 5.0}, {2, 99.0}})
+                - 32.0) < 1e-12,
+            "Model on a subset of the features is evaluated on its columns"
+        );
+    }
 
     expectRejection(
         "Zero standard deviation is rejected",
@@ -318,6 +336,18 @@ int main()
         MISBranchingModel copy = model.view();
         copy.number_of_features = K - 1;
 
+        // Without indices, a model must read every feature.
+        MISBranchingModel partial = model.view();
+        partial.feature_indices = nullptr;
+
+        MISBranchingModel unindexed = partial;
+        unindexed.number_of_features = K - 1;
+
+        const int outOfRange[1] = {K};
+        MISBranchingModel misplaced = model.view();
+        misplaced.feature_indices = outOfRange;
+        misplaced.number_of_features = 1;
+
         MISBranchingModelLayer activated = model.view().layers[0];
         activated.relu = 1;
 
@@ -327,6 +357,9 @@ int main()
         check(
             !MISbranchingModelIsValid(nullptr)
             && !MISbranchingModelIsValid(&copy)
+            && MISbranchingModelIsValid(&partial)
+            && !MISbranchingModelIsValid(&unindexed)
+            && !MISbranchingModelIsValid(&misplaced)
             && !MISbranchingModelIsValid(&withActivation)
             && MISbranchingModelWorkSize(&model.view()) == 2 * K,
             "Inconsistent hand-built models are not valid"

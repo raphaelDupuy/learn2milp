@@ -52,11 +52,38 @@ extern "C" {
  *   16 candidate_fraction               candidates / vertices
  *   17 fixed_fraction                   fixed vertices / vertices
  *
+ *   18 two_hop_lp_sum                   sum of neighbour_lp_sum(u) over N
+ *   19 neighbour_lp_min                 min of x_u over N & frac (1 if empty)
+ *   20 down_room                        sum over N & free of the room left
+ *                                       for u to grow if x were set to 0:
+ *                                       max(0, 1 - x_u - largest LP value
+ *                                       among the other neighbours of u)
+ *   21 blocked_neighbours               vertices u of N & free for which x
+ *                                       is larger than the LP value of
+ *                                       every other neighbour of u
+ *   22 clique_weight                    LP weight (sum of LP values, x
+ *                                       included) of a clique grown
+ *                                       greedily from v through N & frac
+ *                                       by decreasing LP value
+ *   23 clique_size                      number of vertices of that clique
+ *   24 tight_cliques                    among the cliques grown the same
+ *                                       way from each vertex of N & frac,
+ *                                       those with an LP weight >= 1
+ *   25 clique_weight_mean               mean LP weight of those cliques
+ *                                       (x if N & frac is empty)
+ *   26 clique_weight_min                smallest LP weight of those cliques
+ *   27 lp_value_rank                    share of the candidates with a
+ *                                       smaller x
+ *   28 neighbour_lp_sum_rank            same for neighbour_lp_sum
+ *   29 up_mass_change_rank              same for up_mass_change
+ *
  * Features 15 to 17 are the same for every candidate of a node.
+ * Features 0 to 17 are feature set version 1: their definition must not
+ * change, since models may use any subset of the features.
  */
 
-#define MIS_BRANCHING_FEATURE_SET_VERSION 1
-#define MIS_BRANCHING_FEATURE_COUNT 18
+#define MIS_BRANCHING_FEATURE_SET_VERSION 2
+#define MIS_BRANCHING_FEATURE_COUNT 30
 
 /* Tolerance used to decide that an edge constraint is tight. */
 #define MIS_BRANCHING_FEATURE_TIGHT_TOLERANCE 1e-6

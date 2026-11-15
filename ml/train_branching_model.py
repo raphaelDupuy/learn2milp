@@ -211,6 +211,7 @@ def main() -> None:
     parser.add_argument("--train", required=True, nargs="+", help="directories of training feature tables")
     parser.add_argument("--valid", required=True, nargs="+", help="directories of validation feature tables")
     parser.add_argument("--output", required=True, help="path of the model file to write")
+    parser.add_argument("--features", nargs="+", help="names of the features the model reads (default: all those of the tables)")
     parser.add_argument("--hidden", type=int, nargs="*", default=[32, 32], help="hidden layer sizes; none for a linear model")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -229,6 +230,15 @@ def main() -> None:
 
     if train_set.feature_names != valid_set.feature_names:
         raise SystemExit("Training and validation feature sets differ")
+
+    if arguments.features:
+        unknown = sorted(set(arguments.features) - set(train_set.feature_names))
+
+        if unknown:
+            raise SystemExit(f"Unknown features: {', '.join(unknown)}")
+
+        train_set = train_set.with_features(arguments.features)
+        valid_set = valid_set.with_features(arguments.features)
 
     for name, dataset in [("train", train_set), ("valid", valid_set)]:
         print(

@@ -136,28 +136,37 @@ void testReferenceValues()
     // fractional_triangles, lp_value_times_neighbour_sum,
     // lp_value_relative, neighbour_lp_sum_relative,
     // fractional_degree_relative, node_depth, candidate_fraction,
-    // fixed_fraction.
+    // fixed_fraction; then two_hop_lp_sum, neighbour_lp_min, down_room,
+    // blocked_neighbours, clique_weight, clique_size, tight_cliques,
+    // clique_weight_mean, clique_weight_min, lp_value_rank,
+    // neighbour_lp_sum_rank, up_mass_change_rank.
+    //
+    // Vertices 0, 1 and 2 form a triangle of LP weight 1.25: every
+    // candidate finds it from each of its two fractional neighbours.
     const double third = 1.0 / 3.0;
 
     check(
         rowEquals(reference.features, 0, {
             0.5, 0.5, 3, 3, 2, 0.75, 0.5, 1, 0.25, 4, 1, 0.375,
-            1.0, 0.75, 1.0, 3, 0.5, third}),
+            1.0, 0.75, 1.0, 3, 0.5, third,
+            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0}),
         "Vertex 2: free neighbour at 0 counts as free, not fractional"
     );
 
     check(
         rowEquals(reference.features, 1, {
             0.5, 0.5, 3, 2, 2, 0.75, 0.5, 1, 0.25, 4, 1, 0.375,
-            1.0, 0.75, 1.0, 3, 0.5, third}),
+            1.0, 0.75, 1.0, 3, 0.5, third,
+            3.25, 0.25, 0.5, 1, 1.25, 3, 2, 1.25, 1.25, third, 0, 0}),
         "Vertex 0: fixed neighbour is neither free nor fractional"
     );
 
     check(
         rowEquals(reference.features, 2, {
             0.25, 0.25, 2, 2, 2, 1.0, 0.5, 0, 0.25, 4, 1, 0.25,
-            0.5, 1.0, 1.0, 3, 0.5, third}),
-        "Vertex 1: no tight edge, largest neighbour sum"
+            0.5, 1.0, 1.0, 3, 0.5, third,
+            1.5, 0.5, 0, 0, 1.25, 3, 2, 1.25, 1.25, 0, 2 * third, 0}),
+        "Vertex 1: no tight edge, largest neighbour sum, no room"
     );
 }
 

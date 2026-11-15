@@ -11,7 +11,10 @@ int MISbranchingModelIsValid(const MISBranchingModel* model)
     int f;
 
     if( model == NULL
-        || model->number_of_features != MIS_BRANCHING_FEATURE_COUNT
+        || model->number_of_features < 1
+        || model->number_of_features > MIS_BRANCHING_FEATURE_COUNT
+        || (model->feature_indices == NULL
+            && model->number_of_features != MIS_BRANCHING_FEATURE_COUNT)
         || model->feature_means == NULL
         || model->feature_stds == NULL
         || model->number_of_layers < 1
@@ -22,6 +25,11 @@ int MISbranchingModelIsValid(const MISBranchingModel* model)
     {
         /* Also false for a NaN standard deviation. */
         if( !(model->feature_stds[f] > 0.0) )
+            return 0;
+
+        if( model->feature_indices != NULL
+            && (model->feature_indices[f] < 0
+                || model->feature_indices[f] >= MIS_BRANCHING_FEATURE_COUNT) )
             return 0;
     }
 
@@ -80,8 +88,11 @@ double MISevaluateBranchingModel(
 
     for( i = 0; i < model->number_of_features; ++i )
     {
-        input[i] =
-            (features[i] - model->feature_means[i]) / model->feature_stds[i];
+        const double value =
+            features[model->feature_indices != NULL
+                ? model->feature_indices[i] : i];
+
+        input[i] = (value - model->feature_means[i]) / model->feature_stds[i];
     }
 
     for( l = 0; l < model->number_of_layers; ++l )

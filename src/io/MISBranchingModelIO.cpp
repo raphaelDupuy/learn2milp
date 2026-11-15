@@ -158,7 +158,7 @@ bool readMISBranchingModel(
         return false;
     }
 
-    if (featureCount != MIS_BRANCHING_FEATURE_COUNT)
+    if (featureCount > MIS_BRANCHING_FEATURE_COUNT)
     {
         errorMessage =
             "The model expects " + std::to_string(featureCount)
@@ -183,15 +183,34 @@ bool readMISBranchingModel(
             return false;
         }
 
-        if (tokens[1] != MISbranchingFeatureName(f))
+        int index = -1;
+
+        for (int k = 0; k < MIS_BRANCHING_FEATURE_COUNT; ++k)
+        {
+            if (tokens[1] == MISbranchingFeatureName(k))
+                index = k;
+        }
+
+        if (index < 0)
         {
             errorMessage =
-                "Feature " + std::to_string(f) + " of the model is '"
-                + tokens[1] + "', but this program computes '"
-                + MISbranchingFeatureName(f)
-                + "': the model was trained on another feature set.";
+                "Feature '" + tokens[1] + "' of the model is not computed "
+                "by this program: the model was trained on another "
+                "feature set.";
             return false;
         }
+
+        for (const int used : parsed.indices_)
+        {
+            if (used == index)
+            {
+                errorMessage =
+                    "Feature '" + tokens[1] + "' appears twice.";
+                return false;
+            }
+        }
+
+        parsed.indices_.push_back(index);
 
         if (!(std > 0.0))
         {
@@ -311,6 +330,7 @@ bool readMISBranchingModel(
     }
 
     parsed.model_.number_of_features = featureCount;
+    parsed.model_.feature_indices = parsed.indices_.data();
     parsed.model_.feature_means = parsed.means_.data();
     parsed.model_.feature_stds = parsed.stds_.data();
     parsed.model_.number_of_layers = layerCount;

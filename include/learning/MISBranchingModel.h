@@ -9,7 +9,9 @@ extern "C" {
  * A small fully connected network that scores one branching candidate
  * from its features (learning/MISBranchingFeatures.h).
  *
- * The features are first standardized, (x - mean) / std, then every
+ * A model reads all the computed features or a subset of them, so that
+ * a model stays usable when features are added. The features are first
+ * standardized, (x - mean) / std, then every
  * layer computes y = W x + b, followed by max(y, 0) if the layer uses the
  * ReLU activation. The last layer has a single output: the score. Among
  * the candidates of a node, the one with the highest score is chosen.
@@ -35,7 +37,11 @@ typedef struct
 
 typedef struct
 {
+    /* Features read by the model, in the order of its first layer:
+     * feature_indices[i] is a column of the computed feature row. A NULL
+     * feature_indices stands for every computed feature, in order. */
     int number_of_features;
+    const int* feature_indices;
     const double* feature_means;
     const double* feature_stds;
 
@@ -44,8 +50,9 @@ typedef struct
 } MISBranchingModel;
 
 /*
- * Whether the model can be evaluated: it expects exactly the compiled
- * features, its layers chain correctly and end with a single output.
+ * Whether the model can be evaluated: it reads existing features (all of
+ * them if feature_indices is NULL), its layers chain correctly and end
+ * with a single output.
  */
 int MISbranchingModelIsValid(const MISBranchingModel* model);
 
@@ -53,7 +60,9 @@ int MISbranchingModelIsValid(const MISBranchingModel* model);
 int MISbranchingModelWorkSize(const MISBranchingModel* model);
 
 /*
- * Score of one candidate. features has number_of_features values; work is
+ * Score of one candidate. features is a full row of
+ * MIS_BRANCHING_FEATURE_COUNT computed features, of which the model
+ * reads its own; work is
  * a scratch array of MISbranchingModelWorkSize() doubles. The model must
  * be valid.
  */

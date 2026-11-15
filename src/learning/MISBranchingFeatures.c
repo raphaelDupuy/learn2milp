@@ -20,7 +20,19 @@ static const char* const FEATURE_NAMES[MIS_BRANCHING_FEATURE_COUNT] = {
     "fractional_degree_relative",
     "node_depth",
     "candidate_fraction",
-    "fixed_fraction"
+    "fixed_fraction",
+    "two_hop_lp_sum",
+    "neighbour_lp_min",
+    "down_room",
+    "blocked_neighbours",
+    "clique_weight",
+    "clique_size",
+    "tight_cliques",
+    "clique_weight_mean",
+    "clique_weight_min",
+    "lp_value_rank",
+    "neighbour_lp_sum_rank",
+    "up_mass_change_rank"
 };
 
 enum
@@ -42,7 +54,19 @@ enum
     F_FRACTIONAL_DEGREE_RELATIVE,
     F_NODE_DEPTH,
     F_CANDIDATE_FRACTION,
-    F_FIXED_FRACTION
+    F_FIXED_FRACTION,
+    F_TWO_HOP_LP_SUM,
+    F_NEIGHBOUR_LP_MIN,
+    F_DOWN_ROOM,
+    F_BLOCKED_NEIGHBOURS,
+    F_CLIQUE_WEIGHT,
+    F_CLIQUE_SIZE,
+    F_TIGHT_CLIQUES,
+    F_CLIQUE_WEIGHT_MEAN,
+    F_CLIQUE_WEIGHT_MIN,
+    F_LP_VALUE_RANK,
+    F_NEIGHBOUR_LP_SUM_RANK,
+    F_UP_MASS_CHANGE_RANK
 };
 
 const char* MISbranchingFeatureName(int feature)
@@ -55,8 +79,9 @@ const char* MISbranchingFeatureName(int feature)
 
 int MISbranchingFeatureWorkSize(int number_of_vertices)
 {
-    /* LP value and fractional degree of every vertex. */
-    return number_of_vertices > 0 ? 2 * number_of_vertices : 0;
+    /* Per vertex: LP value, fractional degree, neighbour LP sum, the two
+     * largest neighbour LP values, and two lists used to grow cliques. */
+    return number_of_vertices > 0 ? 7 * number_of_vertices : 0;
 }
 
 /* Whether u and w are adjacent, by binary search in the sorted list of u. */
@@ -87,6 +112,54 @@ int areAdjacent(
     return 0;
 }
 
+/*
+ * LP weight and size of a clique containing the candidate and one of its
+ * fractional neighbours, grown greedily. ordered holds the fractional
+ * neighbours of the candidate by decreasing LP value; the clique starts
+ * with ordered[seed], then takes, in the order of the list, every other
+ * vertex that is adjacent to all its members. The candidate itself is
+ * counted in both results.
+ */
+static
+double growClique(
+    const MISFeatureGraph* graph,
+    const double* lp_values,
+    double candidate_value,
+    const double* ordered,
+    int number_of_ordered,
+    int seed,
+    double* members,
+    int* size
+)
+{
+    double weight = candidate_value;
+    int count = 0;
+    int i;
+    int m;
+
+    members[count++] = ordered[seed];
+    weight += lp_values[(int)ordered[seed]];
+
+    for( i = 0; i < number_of_ordered; ++i )
+    {
+        const int vertex = (int)ordered[i];
+        int adjacent = (i != seed);
+
+        for( m = 0; adjacent && m < count; ++m )
+            adjacent = areAdjacent(graph, (int)members[m], vertex);
+
+        if( adjacent )
+        {
+            members[count++] = ordered[i];
+            weight += lp_values[vertex];
+        }
+    }
+
+    *size = count + 1;
+
+    return weight;
+}
+
 static
 int isFreeState(MISVertexState state)
 {
@@ -108,6 +181,11 @@ int MIScomputeBranchingFeatures(
 {
     double* lp_values;
     double* fractional_degrees;
+    double* neighbour_sums;
+    double* largest;
+    double* second_largest;
+    double* ordered;
+    double* members;
     double max_lp_value = 0.0;
     double max_neighbour_lp_sum = 0.0;
     double max_fractional_degree = 0.0;
@@ -140,6 +218,11 @@ int MIScomputeBranchingFeatures(
 
     lp_values = work;
     fractional_degrees = (n > 0) ? work + n : work;
+    neighbour_sums = (n > 0) ? work + 2 * n : work;
+    largest = (n > 0) ? work + 3 * n : work;
+    second_largest = (n > 0) ? work + 4 * n : work;
+    ordered = (n > 0) ? work + 5 * n : work;
+    members = (n > 0) ? work + 6 * n : work;
 
     /* LP value of every vertex, from its state. Fractional vertices get
      * a negative marker until their candidate provides the value. */
@@ -215,6 +298,35 @@ int MIScomputeBranchingFeatures(
     if( number_of_candidates == 0 )
         return 0;
 
+    /* LP values around every vertex: their sum and the two largest. */
+    for( v = 0; v < n; ++v )
+    {
+        double sum = 0.0;
+        double first_value = 0.0;
+        double second_value = 0.0;
+
+        for( e = graph->adjacency_offsets[v];
+             e < graph->adjacency_offsets[v + 1];
+             ++e )
+        {
+            const double value = lp_values[graph->adjacency[e]];
+
+            sum += value;
+
+            if( value > first_value )
+            {
+                second_value = first_value;
+                first_value = value;
+            }
+            else if( value > second_value )
+                second_value = value;
+        }
+
+        neighbour_sums[v] = sum;
+        largest[v] = first_value;
+        second_largest[v] = second_value;
+    }
+
     candidate_fraction = (double)number_of_candidates / (double)n;
     fixed_fraction = (double)number_of_fixed / (double)n;
 
@@ -229,9 +341,19 @@ int MIScomputeBranchingFeatures(
         double neighbour_lp_sum = 0.0;
         double neighbour_lp_max = 0.0;
         double neighbour_fractional_degree_sum = 0.0;
+        double two_hop_lp_sum = 0.0;
+        double neighbour_lp_min = 1.0;
+        double down_room = 0.0;
+        double clique_weight = value;
+        double clique_weight_sum = 0.0;
+        double clique_weight_min = value;
         int free_degree = 0;
         int tight_edges = 0;
         int triangles = 0;
+        int blocked_neighbours = 0;
+        int number_of_ordered = 0;
+        int clique_size = 1;
+        int tight_cliques = 0;
         int f;
 
         for( e = first; e < last; ++e )
@@ -240,12 +362,27 @@ int MIScomputeBranchingFeatures(
             const double neighbour_value = lp_values[neighbour];
 
             neighbour_lp_sum += neighbour_value;
+            two_hop_lp_sum += neighbour_sums[neighbour];
 
             if( neighbour_value > neighbour_lp_max )
                 neighbour_lp_max = neighbour_value;
 
             if( isFreeState(vertex_states[neighbour]) )
             {
+                /* Largest LP value around the neighbour, the candidate
+                 * excluded: it bounds how much the neighbour can grow
+                 * when the candidate is set to 0. */
+                const double others =
+                    (value >= largest[neighbour])
+                    ? second_largest[neighbour] : largest[neighbour];
+                const double room = 1.0 - neighbour_value - others;
+
+                if( room > 0.0 )
+                    down_room += room;
+
+                if( value > others )
+                    ++blocked_neighbours;
+
                 ++free_degree;
 
                 if( neighbour_value + value
@@ -255,6 +392,23 @@ int MIScomputeBranchingFeatures(
 
             if( vertex_states[neighbour] == MIS_VERTEX_FRACTIONAL )
             {
+                int position = number_of_ordered++;
+
+                /* Insert by decreasing LP value; ties keep the vertex
+                 * order of the adjacency list. */
+                while( position > 0
+                    && lp_values[(int)ordered[position - 1]]
+                        < neighbour_value )
+                {
+                    ordered[position] = ordered[position - 1];
+                    --position;
+                }
+
+                ordered[position] = (double)neighbour;
+
+                if( neighbour_value < neighbour_lp_min )
+                    neighbour_lp_min = neighbour_value;
+
                 neighbour_fractional_degree_sum +=
                     fractional_degrees[neighbour];
 
@@ -269,6 +423,45 @@ int MIScomputeBranchingFeatures(
                 }
             }
         }
+
+        /* Cliques through the candidate, one per fractional neighbour:
+         * a clique whose LP values add up to 1 is a tight clique
+         * inequality, whether or not the solver separated it. */
+        for( f = 0; f < number_of_ordered; ++f )
+        {
+            int size;
+            const double weight = growClique(
+                graph, lp_values, value, ordered, number_of_ordered, f,
+                members, &size
+            );
+
+            if( f == 0 )
+            {
+                clique_weight = weight;
+                clique_weight_min = weight;
+                clique_size = size;
+            }
+
+            if( weight < clique_weight_min )
+                clique_weight_min = weight;
+
+            if( weight >= 1.0 - MIS_BRANCHING_FEATURE_TIGHT_TOLERANCE )
+                ++tight_cliques;
+
+            clique_weight_sum += weight;
+        }
+
+        row[F_TWO_HOP_LP_SUM] = two_hop_lp_sum;
+        row[F_NEIGHBOUR_LP_MIN] = neighbour_lp_min;
+        row[F_DOWN_ROOM] = down_room;
+        row[F_BLOCKED_NEIGHBOURS] = (double)blocked_neighbours;
+        row[F_CLIQUE_WEIGHT] = clique_weight;
+        row[F_CLIQUE_SIZE] = (double)clique_size;
+        row[F_TIGHT_CLIQUES] = (double)tight_cliques;
+        row[F_CLIQUE_WEIGHT_MEAN] =
+            (number_of_ordered > 0)
+            ? clique_weight_sum / (double)number_of_ordered : value;
+        row[F_CLIQUE_WEIGHT_MIN] = clique_weight_min;
 
         row[F_LP_VALUE] = value;
         row[F_FRACTIONALITY] = (value < 0.5) ? value : 1.0 - value;
@@ -311,6 +504,38 @@ int MIScomputeBranchingFeatures(
         row[F_FRACTIONAL_DEGREE_RELATIVE] =
             (max_fractional_degree > 0.0)
             ? row[F_FRACTIONAL_DEGREE] / max_fractional_degree : 0.0;
+    }
+
+    /* Ranks: share of the candidates of the node with a smaller value. */
+    for( c = 0; c < number_of_candidates; ++c )
+    {
+        double* row = features + (size_t)c * MIS_BRANCHING_FEATURE_COUNT;
+        int smaller_lp_value = 0;
+        int smaller_neighbour_lp_sum = 0;
+        int smaller_up_mass_change = 0;
+        int other;
+
+        for( other = 0; other < number_of_candidates; ++other )
+        {
+            const double* other_row =
+                features + (size_t)other * MIS_BRANCHING_FEATURE_COUNT;
+
+            if( other_row[F_LP_VALUE] < row[F_LP_VALUE] )
+                ++smaller_lp_value;
+
+            if( other_row[F_NEIGHBOUR_LP_SUM] < row[F_NEIGHBOUR_LP_SUM] )
+                ++smaller_neighbour_lp_sum;
+
+            if( other_row[F_UP_MASS_CHANGE] < row[F_UP_MASS_CHANGE] )
+                ++smaller_up_mass_change;
+        }
+
+        row[F_LP_VALUE_RANK] =
+            (double)smaller_lp_value / (double)number_of_candidates;
+        row[F_NEIGHBOUR_LP_SUM_RANK] =
+            (double)smaller_neighbour_lp_sum / (double)number_of_candidates;
+        row[F_UP_MASS_CHANGE_RANK] =
+            (double)smaller_up_mass_change / (double)number_of_candidates;
     }
 
     return 0;
