@@ -1,6 +1,7 @@
 #include "services/MISDatasetInspectionService.hpp"
 
 #include "io/CsvReader.hpp"
+#include "io/MISInstanceIO.hpp"
 #include "io/MISStrongBranchingSampleIO.hpp"
 #include "services/MISFeaturizationService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
@@ -14,36 +15,6 @@
 
 namespace
 {
-
-const std::string INSTANCE_EXTENSION = ".mis";
-
-bool endsWith(const std::string& text, const std::string& suffix)
-{
-    return text.size() >= suffix.size()
-        && text.compare(text.size() - suffix.size(), suffix.size(), suffix)
-            == 0;
-}
-
-// Files of the directory whose name ends with suffix, in name order.
-std::vector<std::filesystem::path> filesEndingWith(
-    const std::filesystem::path& directory,
-    const std::string& suffix
-)
-{
-    std::vector<std::filesystem::path> files;
-
-    for (const auto& entry : std::filesystem::directory_iterator(directory))
-    {
-        if (entry.is_regular_file()
-            && endsWith(entry.path().filename().string(), suffix))
-        {
-            files.push_back(entry.path());
-        }
-    }
-
-    std::sort(files.begin(), files.end());
-    return files;
-}
 
 std::ifstream openInput(const std::filesystem::path& path)
 {
@@ -151,7 +122,7 @@ MISInstanceSetSummary inspectInstances(
     std::vector<double> vertices;
     std::vector<double> edges;
 
-    for (const auto& path : filesEndingWith(directory, INSTANCE_EXTENSION))
+    for (const auto& path : listMISInstances(directory))
     {
         LoadedMISInstance loaded;
         std::string error;
@@ -245,7 +216,7 @@ MISCollectionSetSummary inspectCollections(
     std::vector<double> samples;
     std::vector<double> times;
 
-    for (const auto& path : filesEndingWith(directory, MIS_SB_METADATA_SUFFIX))
+    for (const auto& path : listMISCollections(directory))
     {
         CollectionFigures figures;
 

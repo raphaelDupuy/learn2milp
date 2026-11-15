@@ -1,4 +1,4 @@
-#include "io/MISBranchingModelIO.hpp"
+#include "io/MISInstanceIO.hpp"
 #include "services/MISBenchmarkService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
 #include "tools/CommandLine.hpp"
@@ -41,18 +41,12 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  --settings    study: settings used for data collection"
         << " (default)\n"
         << "                default: SCIP with no parameter changed\n"
-        << "  --time-limit  Time limit per run in seconds (default 3600)\n"
+        << "  --time-limit  Time limit per run in seconds (default "
+        << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
         << "  -h, --help    Show this help and exit\n";
 }
 
-struct RuleSummary
-{
-    std::size_t runs = 0;
-    std::size_t solved = 0;
-    std::vector<double> nodes;
-    std::vector<double> times;
-};
-}
+} // namespace
 
 int main(int argc, char* argv[])
 {
@@ -67,7 +61,7 @@ int main(int argc, char* argv[])
     std::vector<std::string> rules;
     std::vector<unsigned int> seeds{0};
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
-    double timeLimit = 3600.0;
+    double timeLimit = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     std::string modelPath;
 
     try
@@ -94,53 +88,36 @@ int main(int argc, char* argv[])
         return reportCommandLineError(argv[0], error);
     }
 
-    for (const std::string& rule : rules)
-    {
-        if (!isMISBenchmarkRuleAvailable(rule))
-        {
-            std::cerr << "Unknown branching rule: " << rule << '\n';
-            return 2;
-        }
-    }
-
+    // Every rule is checked, and the model loaded, before any run.
     const bool usesModel =
         std::find(rules.begin(), rules.end(), "mislearned") != rules.end();
 
-    if (usesModel != !modelPath.empty())
+    if (!modelPath.empty() && !usesModel)
     {
-        std::cerr
-            << (usesModel
-                ? "The mislearned rule needs --model.\n"
-                : "--model is only used by the mislearned rule.\n");
+        std::cerr << "--model is only used by the mislearned rule.\n";
         return 2;
     }
 
-    if (usesModel)
+    for (const std::string& rule : rules)
     {
-        LoadedMISBranchingModel model;
-        std::string modelError;
+        std::string ruleError;
 
-        if (!loadMISBranchingModel(modelPath, model, modelError))
+        if (!validateMISBenchmarkRule(
+                rule, rule == "mislearned" ? modelPath : "", ruleError))
         {
-            std::cerr << modelError << '\n';
-            return 1;
+            std::cerr << ruleError << '\n';
+            return 2;
         }
     }
 
     // Instances, in a fixed order.
     std::vector<std::filesystem::path> instancePaths;
-    std::error_code directoryError;
 
-    for (const auto& entry : std::filesystem::directory_iterator(
-            instanceDirectory, directoryError))
+    try
     {
-        if (entry.path().extension() == ".mis")
-        {
-            instancePaths.push_back(entry.path());
-        }
+        instancePaths = listMISInstances(instanceDirectory);
     }
-
-    if (directoryError)
+    catch (const std::filesystem::filesystem_error&)
     {
         std::cerr << "Cannot read instance directory: "
                   << instanceDirectory << '\n';
@@ -153,8 +130,6 @@ int main(int argc, char* argv[])
                   << instanceDirectory << '\n';
         return 1;
     }
-
-    std::sort(instancePaths.begin(), instancePaths.end());
 
     if (std::filesystem::exists(outputPath))
     {
@@ -177,7 +152,7 @@ int main(int argc, char* argv[])
     const std::size_t totalRuns =
         instancePaths.size() * seeds.size() * rules.size();
 
-    std::map<std::string, RuleSummary> summaries;
+    std::map<std::string, MISRuleSummary> summaries;
     std::size_t run = 0;
 
     // Rules are interleaved on each instance, so that a drift of the
@@ -250,12 +225,7 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                RuleSummary& summary = summaries[rule];
-                ++summary.runs;
-                summary.solved += result.solved ? 1 : 0;
-                summary.nodes.push_back(
-                    static_cast<double>(result.exploredNodes));
-                summary.times.push_back(result.solvingTimeSeconds);
+                summaries[rule].add(result);
 
                 ++run;
 
@@ -283,7 +253,7 @@ int main(int argc, char* argv[])
 
     for (const std::string& rule : rules)
     {
-        const RuleSummary& summary = summaries[rule];
+        const MISRuleSummary& summary = summaries[rule];
 
         std::ostringstream solved;
         solved << summary.solved << '/' << summary.runs;
@@ -292,9 +262,9 @@ int main(int argc, char* argv[])
             << std::left << std::setw(22) << rule
             << std::right << std::setw(10) << solved.str()
             << std::setw(12) << std::fixed << std::setprecision(1)
-            << misShiftedGeometricMean(summary.nodes, MIS_NODES_SHIFT)
+            << summary.meanNodes()
             << std::setw(12) << std::setprecision(2)
-            << misShiftedGeometricMean(summary.times, MIS_TIME_SHIFT_SECONDS) << '\n';
+            << summary.meanTimeSeconds() << '\n';
     }
 
     std::cout << "\nResults: " << outputPath << '\n';

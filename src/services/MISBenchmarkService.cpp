@@ -58,6 +58,24 @@ void ignoreSample(
 {
 }
 
+// The mislearned rule, and only it, takes a model file.
+void requireModelOfRule(
+    const std::string& branchingRule,
+    const std::filesystem::path& learnedModelPath
+)
+{
+    const bool learned = branchingRule == MIS_LEARNED_RULE;
+
+    if (learned == learnedModelPath.empty())
+    {
+        throw std::invalid_argument(
+            learned
+            ? "The mislearned rule needs a model file."
+            : "A model file is only used by the mislearned rule."
+        );
+    }
+}
+
 } // namespace
 
 const char* misBenchmarkSettingsName(MISBenchmarkSettings settings)
@@ -122,6 +140,42 @@ bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
             != nullptr;
 }
 
+bool validateMISBenchmarkRule(
+    const std::string& branchingRule,
+    const std::filesystem::path& learnedModelPath,
+    std::string& errorMessage
+)
+{
+    try
+    {
+        requireModelOfRule(branchingRule, learnedModelPath);
+
+        if (!isMISBenchmarkRuleAvailable(branchingRule))
+        {
+            throw std::invalid_argument(
+                "Unknown branching rule: " + branchingRule
+            );
+        }
+
+        if (!learnedModelPath.empty())
+        {
+            LoadedMISBranchingModel model;
+            std::string modelError;
+
+            if (!loadMISBranchingModel(learnedModelPath, model, modelError))
+                throw std::invalid_argument(modelError);
+        }
+
+        errorMessage.clear();
+        return true;
+    }
+    catch (const std::exception& exception)
+    {
+        errorMessage = exception.what();
+        return false;
+    }
+}
+
 bool benchmarkMIS(
     const MISInstance& instance,
     const MISBenchmarkConfig& config,
@@ -157,14 +211,7 @@ bool benchmarkMIS(
 
         const bool learned = config.branchingRule == MIS_LEARNED_RULE;
 
-        if (learned == config.learnedModelPath.empty())
-        {
-            throw std::invalid_argument(
-                learned
-                ? "The mislearned rule needs a model file."
-                : "A model file is only used by the mislearned rule."
-            );
-        }
+        requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
         // Declared before the solver: the learned rule points to them,
         // so they must be destroyed after it.
@@ -321,4 +368,22 @@ bool benchmarkMIS(
         errorMessage = exception.what();
         return false;
     }
+}
+
+void MISRuleSummary::add(const MISBenchmarkResult& result)
+{
+    ++runs;
+    solved += result.solved ? 1 : 0;
+    nodes.push_back(static_cast<double>(result.exploredNodes));
+    times.push_back(result.solvingTimeSeconds);
+}
+
+double MISRuleSummary::meanNodes() const
+{
+    return misShiftedGeometricMean(nodes, MIS_NODES_SHIFT);
+}
+
+double MISRuleSummary::meanTimeSeconds() const
+{
+    return misShiftedGeometricMean(times, MIS_TIME_SHIFT_SECONDS);
 }

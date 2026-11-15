@@ -1,15 +1,17 @@
 #include "ui/TerminalUI.hpp"
 
 #include "generators/MISGenerator.hpp"
-#include "io/MISBranchingModelIO.hpp"
+#include "io/MISInstanceIO.hpp"
+#include "io/MISStrongBranchingSampleIO.hpp"
 #include "services/MISBenchmarkService.hpp"
 #include "services/MISDatasetInspectionService.hpp"
 #include "services/MISGenerationService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
+#include "services/MISSolverLimits.hpp"
+#include "tools/CommandLine.hpp"
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <iomanip>
@@ -21,7 +23,6 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace
@@ -31,9 +32,6 @@ const std::filesystem::path SINGLE_DIRECTORY = "data/instances/single";
 const std::filesystem::path BATCH_DIRECTORY = "data/instances/batch";
 const std::filesystem::path GENERATE_AND_SOLVE_DIRECTORY =
     "data/instances/generated_and_solved";
-
-// Default solving options, as in mis-benchmark.
-const double DEFAULT_TIME_LIMIT_SECONDS = 3600.0;
 
 // A solution is printed in full up to this many vertices; beyond, only
 // its first vertices are.
@@ -84,30 +82,17 @@ bool readNonEmptyLine(const std::string& prompt, std::string& value)
     }
 }
 
-// The whole text must be one value of type T.
-template <typename T>
-bool parseValue(const std::string& text, T& value)
-{
-    std::istringstream stream(text);
-    T parsed{};
-    char extra = '\0';
-
-    if (!(stream >> parsed) || (stream >> extra))
-        return false;
-
-    value = parsed;
-    return true;
-}
-
 /*
- * Reads one number accepted by valid; requirement tells what a valid
- * answer is. An empty answer gives defaultValue when there is one.
+ * Reads one value with parser(text, value), one of the value parsers
+ * shared with the command line tools (tools/CommandLine.hpp), so that the
+ * menu and the tools accept the same values. requirement tells what a
+ * valid answer is. An empty answer gives defaultValue when there is one.
  */
-template <typename T, typename Valid>
-bool readNumber(
+template <typename T, typename Parser>
+bool readValue(
     const std::string& prompt,
     T& value,
-    Valid valid,
+    Parser parser,
     const std::string& requirement,
     std::optional<T> defaultValue = std::nullopt
 )
@@ -127,7 +112,7 @@ bool readNumber(
 
         T parsed{};
 
-        if (parseValue(line, parsed) && valid(parsed))
+        if (parser(line, parsed))
         {
             value = parsed;
             return true;
@@ -138,15 +123,15 @@ bool readNumber(
 }
 
 /*
- * Reads a comma-separated list of distinct numbers accepted by valid. An
- * empty answer stands for defaultText when it is not empty.
+ * Reads a comma-separated list of distinct values, each read by parser,
+ * as the list options of the tools. An empty answer stands for
+ * defaultText when it is not empty.
  */
-template <typename T, typename Valid>
+template <typename T, typename Parser>
 bool readList(
     const std::string& prompt,
     std::vector<T>& values,
-    Valid valid,
-    const std::string& requirement,
+    Parser parser,
     const std::string& defaultText = ""
 )
 {
@@ -160,35 +145,15 @@ bool readList(
         if (line.empty())
             line = defaultText;
 
-        std::istringstream stream(line);
-        std::string token;
-        std::vector<T> parsedValues;
-        std::string error;
-
-        while (error.empty() && std::getline(stream, token, ','))
+        try
         {
-            T value{};
-
-            if (!parseValue(trim(token), value) || !valid(value))
-                error = "every value must be " + requirement;
-            else if (std::find(parsedValues.begin(), parsedValues.end(),
-                         value) != parsedValues.end())
-                error = "a value appears twice";
-            else
-                parsedValues.push_back(value);
-        }
-
-        if (error.empty() && parsedValues.empty())
-            error = "the list must not be empty";
-
-        if (error.empty())
-        {
-            values = std::move(parsedValues);
+            values = parseCommaSeparated<T>(line, parser, "the list");
             return true;
         }
-
-        std::cout << "Invalid list (comma-separated values): "
-                  << error << ".\n";
+        catch (const CommandLineError& error)
+        {
+            std::cout << error.what() << ".\n";
+        }
     }
 }
 
@@ -207,11 +172,11 @@ bool readChoice(
 
     int number = 0;
 
-    if (!readNumber<int>(
+    if (!readValue<int>(
             "Choice [" + std::to_string(defaultChoice + 1) + "]: ",
             number,
-            [&](int value) {
-                return value >= 1
+            [&](const std::string& text, int& value) {
+                return parsePositiveInt(text, value)
                     && static_cast<std::size_t>(value) <= options.size();
             },
             "choose a number from 1 to " + std::to_string(options.size()),
@@ -236,6 +201,8 @@ const std::size_t BROWSER_PAGE_SIZE = 20;
 using BrowsedKind = std::string;
 
 const BrowsedKind DIRECTORY_KIND;
+const BrowsedKind INSTANCE_KIND = MIS_INSTANCE_EXTENSION;
+const BrowsedKind MODEL_KIND = ".model";
 
 std::map<BrowsedKind, std::filesystem::path>& lastBrowsedDirectories()
 {
@@ -252,8 +219,8 @@ std::filesystem::path browserStart(const BrowsedKind& kind)
         return found->second;
 
     const std::filesystem::path preferred =
-        kind == ".mis" ? "data/instances"
-        : kind == ".model" ? "experiments"
+        kind == INSTANCE_KIND ? "data/instances"
+        : kind == MODEL_KIND ? "experiments"
         : "data";
 
     std::error_code error;
@@ -328,10 +295,10 @@ DirectoryListing listDirectory(
         {
             if (kind == DIRECTORY_KIND)
             {
-                listing.instances += hasExtension(path, ".mis") ? 1 : 0;
-                listing.collections += name.size() > 8
-                        && name.compare(name.size() - 8, 8, ".sb.meta") == 0
-                    ? 1 : 0;
+                listing.instances +=
+                    hasExtension(path, INSTANCE_KIND) ? 1 : 0;
+                listing.collections +=
+                    isMISCollectionMetadataFile(path) ? 1 : 0;
             }
             else if (hasExtension(path, kind))
             {
@@ -402,7 +369,8 @@ bool browse(
             if (pickDirectory && (listing.instances > 0 || listing.collections > 0))
             {
                 std::cout << "  " << listing.instances << " .mis, "
-                          << listing.collections << " .sb.meta";
+                          << listing.collections << ' '
+                          << MIS_SB_METADATA_SUFFIX;
             }
             else if (!pickDirectory)
             {
@@ -471,7 +439,7 @@ bool browse(
         }
 
         std::filesystem::path target;
-        long long number = 0;
+        int number = 0;
 
         if (answer.empty())
         {
@@ -479,7 +447,7 @@ bool browse(
             continue;
         }
 
-        if (parseValue(answer, number))
+        if (parseNonNegativeInt(answer, number))
         {
             if (entries.empty())
             {
@@ -595,36 +563,12 @@ bool readPath(
     }
 }
 
-bool isNonNegative(int value)
-{
-    return value >= 0;
-}
-
-bool isPositive(int value)
-{
-    return value > 0;
-}
-
-bool isProbability(double value)
-{
-    return std::isfinite(value) && value >= 0.0 && value <= 1.0;
-}
-
-// Seeds are read as signed integers so that negative values are refused
-// instead of wrapping around.
-bool isSeed(long long value)
-{
-    return value >= 0 && value <= std::numeric_limits<unsigned int>::max();
-}
-
-// SCIP's randomization/randomseedshift stops at INT_MAX.
-bool isSCIPSeed(long long value)
-{
-    return value >= 0 && value <= std::numeric_limits<int>::max();
-}
-
-const char* const SEED_REQUIREMENT = "a non-negative integer";
-const std::string SCIP_SEED_REQUIREMENT =
+// What the shared parsers accept, for the messages.
+const char* const NON_NEGATIVE = "a non-negative integer";
+const char* const POSITIVE = "a positive integer";
+const char* const PROBABILITY = "a number between 0 and 1";
+const char* const SEED = "a non-negative integer";
+const std::string SCIP_SEED =
     "an integer from 0 to " + std::to_string(std::numeric_limits<int>::max());
 
 // Shortest usual notation: 3600, 0.5.
@@ -689,54 +633,33 @@ bool readGeneratorConfig(MISGeneratorConfig& config)
     while (true)
     {
         int n = 0;
-        long long seed = 0;
+        double p = 0.0;
+        int k = 0;
+        unsigned int seed = 0;
 
-        if (!readNumber<int>(
-                "Number of vertices (n): ", n,
-                isNonNegative, "a non-negative integer"))
+        if (!readValue("Number of vertices (n): ", n,
+                parseNonNegativeInt, NON_NEGATIVE))
         {
             return false;
         }
 
-        if (family == MISGraphFamily::ErdosRenyi)
-        {
-            double p = 0.0;
+        const bool erdosRenyi = family == MISGraphFamily::ErdosRenyi;
 
-            if (!readNumber<double>(
-                    "Edge probability (p): ", p,
-                    isProbability, "a number between 0 and 1"))
-            {
-                return false;
-            }
-
-            config = ErdosRenyiConfig{n, p, 0};
-        }
-        else
-        {
-            int k = 0;
-
-            if (!readNumber<int>(
-                    "Edges of every new vertex (k): ", k,
-                    isPositive, "a positive integer"))
-            {
-                return false;
-            }
-
-            config = BarabasiAlbertConfig{n, k, 0};
-        }
-
-        if (!readNumber<long long>(
-                "Random seed: ", seed, isSeed, SEED_REQUIREMENT))
+        if (erdosRenyi
+            ? !readValue("Edge probability (p): ", p,
+                  parseProbability, PROBABILITY)
+            : !readValue("Edges of every new vertex (k): ", k,
+                  parsePositiveInt, POSITIVE))
         {
             return false;
         }
 
-        std::visit(
-            [&](auto& parameters) {
-                parameters.seed = static_cast<unsigned int>(seed);
-            },
-            config
-        );
+        if (!readValue("Random seed: ", seed, parseSeed, SEED))
+            return false;
+
+        config = erdosRenyi
+            ? MISGeneratorConfig{ErdosRenyiConfig{n, p, seed}}
+            : MISGeneratorConfig{BarabasiAlbertConfig{n, k, seed}};
 
         try
         {
@@ -765,7 +688,7 @@ bool generateInstance(
     if (!readGeneratorConfig(config))
         return false;
 
-    outputPath = directory / (misInstanceId(config) + ".mis");
+    outputPath = directory / (misInstanceId(config) + MIS_INSTANCE_EXTENSION);
 
     try
     {
@@ -837,24 +760,19 @@ bool readModelPath(std::filesystem::path& modelPath)
     {
         std::filesystem::path path;
 
-        if (!readPath("Model file (.model)", ".model", path))
+        if (!readPath("Model file (.model)", MODEL_KIND, path))
             return false;
 
-        // Loaded once here so that a wrong file is reported before
-        // solving; the solver loads it again.
-        LoadedMISBranchingModel model;
+        // Checked here so that a wrong file is reported before solving.
         std::string errorMessage;
 
-        if (loadMISBranchingModel(path, model, errorMessage))
+        if (validateMISBenchmarkRule("mislearned", path, errorMessage))
         {
-            std::cout << "Model loaded: " << model.numberOfLayers()
-                      << " layer(s), " << model.numberOfParameters()
-                      << " parameters.\n";
             modelPath = path;
             return true;
         }
 
-        std::cout << "Cannot load the model: " << errorMessage << '\n';
+        std::cout << errorMessage << '\n';
     }
 }
 
@@ -901,15 +819,17 @@ bool readBranchingRule(MISBenchmarkConfig& config)
         if (!readNonEmptyLine("Rule name (e.g. pscost): ", name))
             return false;
 
-        if (isMISBenchmarkRuleAvailable(name))
-        {
-            config.branchingRule = name;
+        config.branchingRule = name;
 
-            return name != "mislearned"
-                || readModelPath(config.learnedModelPath);
-        }
+        if (name == "mislearned")
+            return readModelPath(config.learnedModelPath);
 
-        std::cout << "Unknown branching rule: " << name << '\n';
+        std::string errorMessage;
+
+        if (validateMISBenchmarkRule(name, {}, errorMessage))
+            return true;
+
+        std::cout << errorMessage << '\n';
     }
 }
 
@@ -934,13 +854,13 @@ bool readSettingsAndTimeLimit(MISBenchmarkConfig& config)
         ? MISBenchmarkSettings::Study
         : MISBenchmarkSettings::Default;
 
-    return readNumber<double>(
+    return readValue(
         "Time limit in seconds ["
-            + formatNumber(DEFAULT_TIME_LIMIT_SECONDS) + "]: ",
+            + formatNumber(MIS_DEFAULT_TIME_LIMIT_SECONDS) + "]: ",
         config.timeLimitSeconds,
-        [](double value) { return std::isfinite(value) && value > 0.0; },
+        parsePositiveDouble,
         "a positive number",
-        DEFAULT_TIME_LIMIT_SECONDS
+        std::optional<double>(MIS_DEFAULT_TIME_LIMIT_SECONDS)
     );
 }
 
@@ -953,17 +873,8 @@ bool readSolveOptions(MISBenchmarkConfig& config)
     if (!readBranchingRule(config) || !readSettingsAndTimeLimit(config))
         return false;
 
-    long long seed = 0;
-
-    if (!readNumber<long long>(
-            "SCIP random seed [0]: ", seed, isSCIPSeed, SCIP_SEED_REQUIREMENT,
-            0LL))
-    {
-        return false;
-    }
-
-    config.scipSeed = static_cast<unsigned int>(seed);
-    return true;
+    return readValue("SCIP random seed [0]: ", config.scipSeed,
+        parseSCIPSeed, SCIP_SEED, std::optional<unsigned int>(0));
 }
 
 std::string describeRule(const MISBenchmarkConfig& config)
@@ -1124,31 +1035,11 @@ bool parseComparedRule(
 {
     const std::filesystem::path path(text);
 
-    if (path.extension() == ".model")
-    {
-        LoadedMISBranchingModel model;
+    rule = path.extension() == MODEL_KIND
+        ? ComparedRule{path.stem().string(), "mislearned", path}
+        : ComparedRule{text, text, {}};
 
-        if (!loadMISBranchingModel(path, model, error))
-            return false;
-
-        rule = ComparedRule{path.stem().string(), "mislearned", path};
-        return true;
-    }
-
-    if (text == "mislearned")
-    {
-        error = "give the model file (.model) instead of mislearned";
-        return false;
-    }
-
-    if (!isMISBenchmarkRuleAvailable(text))
-    {
-        error = "unknown branching rule: " + text;
-        return false;
-    }
-
-    rule = ComparedRule{text, text, {}};
-    return true;
+    return validateMISBenchmarkRule(rule.branchingRule, rule.modelPath, error);
 }
 
 bool readComparedRules(std::vector<ComparedRule>& rules)
@@ -1180,7 +1071,7 @@ bool readComparedRules(std::vector<ComparedRule>& rules)
             {
                 std::filesystem::path model;
 
-                if (!browse(".model", browserStart(".model"), model))
+                if (!browse(MODEL_KIND, browserStart(MODEL_KIND), model))
                     return false;
 
                 if (model.empty())
@@ -1219,7 +1110,8 @@ bool readComparedRules(std::vector<ComparedRule>& rules)
             return true;
         }
 
-        std::cout << "Invalid list: " << error << ".\n";
+        std::cout << "Invalid list: " << error
+                  << (error.back() == '.' ? "\n" : ".\n");
     }
 }
 
@@ -1253,12 +1145,12 @@ void compareRules(const std::filesystem::path& instancePath)
 
     std::vector<ComparedRule> rules;
     MISBenchmarkConfig common;
-    std::vector<long long> seeds;
+    std::vector<unsigned int> seeds;
 
     if (!readComparedRules(rules) || !readSettingsAndTimeLimit(common)
-        || !readList<long long>(
+        || !readList<unsigned int>(
             "SCIP random seeds (comma-separated) [0]: ",
-            seeds, isSCIPSeed, SCIP_SEED_REQUIREMENT, "0"))
+            seeds, parseSCIPSeed, "0"))
     {
         return;
     }
@@ -1275,20 +1167,17 @@ void compareRules(const std::filesystem::path& instancePath)
     printComparisonRow(labelWidth, "rule", "seed", "status", "nodes",
         "LP iter.", "time (s)", "size");
 
-    // Per rule: node counts and times of the runs, and solved runs.
-    std::vector<std::vector<double>> nodes(rules.size());
-    std::vector<std::vector<double>> times(rules.size());
-    std::vector<std::size_t> solved(rules.size(), 0);
+    std::vector<MISRuleSummary> summaries(rules.size());
     std::vector<double> optimalSizes;
 
     for (std::size_t r = 0; r < rules.size(); ++r)
     {
-        for (const long long seed : seeds)
+        for (const unsigned int seed : seeds)
         {
             MISBenchmarkConfig config = common;
             config.branchingRule = rules[r].branchingRule;
             config.learnedModelPath = rules[r].modelPath;
-            config.scipSeed = static_cast<unsigned int>(seed);
+            config.scipSeed = seed;
 
             MISBenchmarkResult result;
             std::string errorMessage;
@@ -1300,14 +1189,10 @@ void compareRules(const std::filesystem::path& instancePath)
                 return;
             }
 
-            nodes[r].push_back(static_cast<double>(result.exploredNodes));
-            times[r].push_back(result.solvingTimeSeconds);
+            summaries[r].add(result);
 
             if (result.solved)
-            {
-                ++solved[r];
                 optimalSizes.push_back(result.primalBound);
-            }
 
             printComparisonRow(
                 labelWidth, rules[r].label, std::to_string(seed),
@@ -1328,14 +1213,13 @@ void compareRules(const std::filesystem::path& instancePath)
             std::cout << std::left
                       << std::setw(static_cast<int>(labelWidth))
                       << rules[r].label << std::right
-                      << "solved " << solved[r] << '/' << seeds.size()
+                      << "solved " << summaries[r].solved << '/'
+                      << summaries[r].runs
                       << std::setw(11)
-                      << formatFixed(misShiftedGeometricMean(
-                             nodes[r], MIS_NODES_SHIFT), 0)
+                      << formatFixed(summaries[r].meanNodes(), 0)
                       << " nodes"
                       << std::setw(10)
-                      << formatFixed(misShiftedGeometricMean(
-                             times[r], MIS_TIME_SHIFT_SECONDS), 3)
+                      << formatFixed(summaries[r].meanTimeSeconds(), 3)
                       << " s\n";
         }
     }
@@ -1552,9 +1436,10 @@ void TerminalUI::run()
 
         int choice = 0;
 
-        if (!readNumber<int>(
-                "Select an option: ", choice,
-                [](int value) { return value >= 1 && value <= 7; },
+        if (!readValue("Select an option: ", choice,
+                [](const std::string& text, int& value) {
+                    return parsePositiveInt(text, value) && value <= 7;
+                },
                 "choose a number from 1 to 7"))
         {
             return;
@@ -1610,40 +1495,20 @@ void TerminalUI::handleBatchGeneration()
     if (!readFamily(config.family))
         return;
 
-    if (!readList<int>(
-            "Numbers of vertices (n, comma-separated): ",
-            config.nValues, isNonNegative, "a non-negative integer"))
+    const bool erdosRenyi = config.family == MISGraphFamily::ErdosRenyi;
+
+    if (!readList("Numbers of vertices (n, comma-separated): ",
+            config.nValues, parseNonNegativeInt)
+        || (erdosRenyi
+            ? !readList("Edge probabilities (p, comma-separated): ",
+                  config.pValues, parseProbability)
+            : !readList("Edges of every new vertex (k, comma-separated): ",
+                  config.kValues, parsePositiveInt))
+        || !readList("Random seeds (comma-separated): ",
+            config.seeds, parseSeed))
     {
         return;
     }
-
-    if (config.family == MISGraphFamily::ErdosRenyi)
-    {
-        if (!readList<double>(
-                "Edge probabilities (p, comma-separated): ",
-                config.pValues, isProbability, "a number between 0 and 1"))
-        {
-            return;
-        }
-    }
-    else if (!readList<int>(
-                 "Edges of every new vertex (k, comma-separated): ",
-                 config.kValues, isPositive, "a positive integer"))
-    {
-        return;
-    }
-
-    std::vector<long long> seeds;
-
-    if (!readList<long long>(
-            "Random seeds (comma-separated): ",
-            seeds, isSeed, SEED_REQUIREMENT))
-    {
-        return;
-    }
-
-    for (const long long seed : seeds)
-        config.seeds.push_back(static_cast<unsigned int>(seed));
 
     std::string batchName;
 
@@ -1707,7 +1572,7 @@ void TerminalUI::handleSolveExisting()
 
     std::filesystem::path instancePath;
 
-    if (!readPath("MIS instance (.mis)", ".mis", instancePath))
+    if (!readPath("MIS instance (.mis)", INSTANCE_KIND, instancePath))
         return;
 
     loadAndSolve(instancePath);
@@ -1729,7 +1594,7 @@ void TerminalUI::handleCompareRules()
 
     std::filesystem::path instancePath;
 
-    if (!readPath("MIS instance (.mis)", ".mis", instancePath))
+    if (!readPath("MIS instance (.mis)", INSTANCE_KIND, instancePath))
         return;
 
     compareRules(instancePath);

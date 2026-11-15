@@ -83,6 +83,7 @@ target_include_directories(learn2milp
 
 target_link_libraries(learn2milp
     PRIVATE
+    command_line
     mis_branching
 )
 

@@ -146,7 +146,7 @@ bool parseText(const std::string& text, std::string& value)
 
 std::vector<std::string> splitCommaSeparated(
     const std::string& text,
-    const std::string& option
+    const std::string& listName
 )
 {
     std::vector<std::string> items;
@@ -161,7 +161,7 @@ std::vector<std::string> splitCommaSeparated(
         if (end == start)
         {
             throw CommandLineError(
-                "Empty item in the list of " + option + ": '" + text + "'"
+                "Empty item in " + listName + ": '" + text + "'"
             );
         }
 

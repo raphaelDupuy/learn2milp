@@ -8,8 +8,10 @@
 #include <vector>
 
 /*
- * Command line arguments of the mis-* tools: options written as pairs
- * "--option value", each given at most once.
+ * Values typed by the user, shared by the mis-* tools and the interactive
+ * menu so that both accept the same values: value parsers, lists, and the
+ * options of the tools, written as pairs "--option value", each given at
+ * most once.
  *
  * Every malformed argument is reported by a CommandLineError, which the
  * tools turn into exit code 2.
@@ -48,13 +50,51 @@ bool parseText(const std::string& text, std::string& value);
 
 /*
  * Items of a comma-separated list. Throws CommandLineError, naming
- * option, if the list or one of its items is empty (as with a trailing
+ * listName, if the list or one of its items is empty (as with a trailing
  * comma).
  */
 std::vector<std::string> splitCommaSeparated(
     const std::string& text,
-    const std::string& option
+    const std::string& listName
 );
+
+/*
+ * Comma-separated distinct values, each read by parser(text, value).
+ * Throws CommandLineError, naming listName, for an empty item, an invalid
+ * value or a value given twice.
+ */
+template <typename T, typename Parser>
+std::vector<T> parseCommaSeparated(
+    const std::string& text,
+    Parser parser,
+    const std::string& listName
+)
+{
+    std::vector<T> values;
+
+    for (const std::string& item : splitCommaSeparated(text, listName))
+    {
+        T value{};
+
+        if (!parser(item, value))
+        {
+            throw CommandLineError(
+                "Invalid value for " + listName + ": '" + item + "'"
+            );
+        }
+
+        if (std::find(values.begin(), values.end(), value) != values.end())
+        {
+            throw CommandLineError(
+                "Duplicate value in " + listName + ": '" + item + "'"
+            );
+        }
+
+        values.push_back(std::move(value));
+    }
+
+    return values;
+}
 
 class CommandLineOptions
 {
@@ -94,25 +134,7 @@ public:
     template <typename T, typename Parser>
     std::vector<T> list(const std::string& option, Parser parser) const
     {
-        std::vector<T> values;
-
-        for (const std::string& item :
-                splitCommaSeparated(text(option), option))
-        {
-            T value = parseOrThrow<T>(option, item, parser);
-
-            if (std::find(values.begin(), values.end(), value)
-                != values.end())
-            {
-                throw CommandLineError(
-                    "Duplicate value in " + option + ": '" + item + "'"
-                );
-            }
-
-            values.push_back(std::move(value));
-        }
-
-        return values;
+        return parseCommaSeparated<T>(text(option), parser, option);
     }
 
 private:

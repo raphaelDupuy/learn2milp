@@ -122,7 +122,7 @@ learn2milp/
 │   ├── learning/    branching features and model evaluation (C)
 │   ├── problems/
 │   ├── services/    generation, collection, featurization, benchmark, ...
-│   ├── tools/       command line parsing
+│   ├── tools/       parsing of typed values, shared by the tools and the menu
 │   └── ui/          interactive menu
 ├── ml/              training (Python)
 ├── pyproject.toml

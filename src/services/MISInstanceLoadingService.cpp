@@ -38,9 +38,8 @@ bool loadMISInstance(
 
     instanceFile.close();
 
-    const std::filesystem::path metadataPath(
-        instancePath.string() + ".meta"
-    );
+    const std::filesystem::path metadataPath =
+        misInstanceMetadataPath(instancePath);
 
     InstanceMetadata parsedMetadata;
 

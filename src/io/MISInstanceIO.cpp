@@ -1,10 +1,39 @@
 #include "io/MISInstanceIO.hpp"
 
+#include <algorithm>
 #include <istream>
 #include <ostream>
 #include <set>
 #include <string>
 #include <utility>
+
+const char* const MIS_INSTANCE_EXTENSION = ".mis";
+
+std::filesystem::path misInstanceMetadataPath(
+    const std::filesystem::path& instancePath
+)
+{
+    return std::filesystem::path(instancePath.string() + ".meta");
+}
+
+std::vector<std::filesystem::path> listMISInstances(
+    const std::filesystem::path& directory
+)
+{
+    std::vector<std::filesystem::path> instances;
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory))
+    {
+        if (entry.is_regular_file()
+            && entry.path().extension() == MIS_INSTANCE_EXTENSION)
+        {
+            instances.push_back(entry.path());
+        }
+    }
+
+    std::sort(instances.begin(), instances.end());
+    return instances;
+}
 
 bool validateMISInstance(
     const MISInstance& instance,
