@@ -3,6 +3,12 @@
 A feature table has one row per branching candidate. This module groups
 the rows by sample (one branching decision) and keeps the samples in
 which the expert's choice is meaningful.
+
+The candidates of all samples are stored one after the other, without
+padding: graph families with many candidates per node (Barabasi-Albert
+graphs have twice as many as Erdos-Renyi ones of the same density) would
+otherwise make every sample as large as the largest one. Padded arrays
+are built only for small groups of samples (padded_batch()).
 """
 
 from __future__ import annotations
@@ -31,20 +37,23 @@ FEATURES_SUFFIX = ".sb.features.csv"
 
 @dataclasses.dataclass
 class BranchingDataset:
-    """Samples padded to the same number of candidates.
+    """Samples whose candidates are stored one after the other.
 
-    features  [samples, candidates, features], float32, 0 where padded
-    mask      [samples, candidates], True for real candidates
-    scores    [samples, candidates], strong branching score, 0 where padded
-    target    [samples], position of the candidate chosen by the expert
+    features  [candidates, features], float32
+    scores    [candidates], strong branching score of each candidate
+    offsets   [samples + 1], the candidates of sample s are the rows
+              offsets[s] to offsets[s + 1] - 1, in candidate order
+    target    [samples], position, within its sample, of the candidate
+              chosen by the expert
     instance  [samples], index of the instance each sample comes from
-    source    [samples], index of the directory each sample comes from
+    source    [samples], index of the directory each sample comes from;
+              the samples of one directory are consecutive
     """
 
     feature_names: list[str]
     features: np.ndarray
-    mask: np.ndarray
     scores: np.ndarray
+    offsets: np.ndarray
     target: np.ndarray
     instance: np.ndarray
     source: np.ndarray
@@ -53,11 +62,52 @@ class BranchingDataset:
 
     @property
     def number_of_samples(self) -> int:
-        return self.features.shape[0]
+        return len(self.offsets) - 1
 
     @property
     def number_of_candidates(self) -> int:
-        return int(self.mask.sum())
+        return int(self.offsets[-1] - self.offsets[0])
+
+    @property
+    def starts(self) -> np.ndarray:
+        """Row of the first candidate of every sample."""
+        return self.offsets[:-1]
+
+    @property
+    def lengths(self) -> np.ndarray:
+        """Number of candidates of every sample."""
+        return np.diff(self.offsets)
+
+    @property
+    def max_candidates(self) -> int:
+        return int(self.lengths.max()) if self.number_of_samples else 0
+
+    def padded_batch(
+        self, samples: np.ndarray, width: int | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Features of some samples, padded to the same number of candidates.
+
+        Returns features [len(samples), width, features], 0 where padded,
+        and mask [len(samples), width], True for real candidates. width
+        defaults to the largest number of candidates of the dataset, so
+        that every batch has the same shape.
+        """
+        width = self.max_candidates if width is None else width
+        lengths = self.lengths[samples]
+        rows = np.repeat(np.arange(len(samples)), lengths)
+        columns = np.arange(int(lengths.sum())) - np.repeat(
+            np.cumsum(lengths) - lengths, lengths
+        )
+        sources = np.repeat(self.starts[samples], lengths) + columns
+
+        features = np.zeros(
+            (len(samples), width, self.features.shape[1]), np.float32
+        )
+        mask = np.zeros((len(samples), width), bool)
+        features[rows, columns] = self.features[sources]
+        mask[rows, columns] = True
+
+        return features, mask
 
     def with_features(self, names: list[str]) -> BranchingDataset:
         """The same samples, described by the given features only."""
@@ -66,22 +116,50 @@ class BranchingDataset:
         return dataclasses.replace(
             self,
             feature_names=list(names),
-            features=np.ascontiguousarray(self.features[:, :, columns]),
+            features=np.ascontiguousarray(self.features[:, columns]),
         )
 
     def from_source(self, source: int) -> BranchingDataset:
         """The samples that come from one of the loaded directories."""
-        keep = self.source == source
+        chosen = np.flatnonzero(self.source == source)
+
+        if len(chosen) == 0:
+            first = last = 0
+        else:
+            first, last = int(chosen[0]), int(chosen[-1]) + 1
+
+            if last - first != len(chosen):
+                raise ValueError("Samples of a directory are not consecutive")
+
+        rows = slice(int(self.offsets[first]), int(self.offsets[last]))
 
         return dataclasses.replace(
             self,
-            features=self.features[keep],
-            mask=self.mask[keep],
-            scores=self.scores[keep],
-            target=self.target[keep],
-            instance=self.instance[keep],
-            source=self.source[keep],
+            features=self.features[rows],
+            scores=self.scores[rows],
+            offsets=self.offsets[first : last + 1] - self.offsets[first],
+            target=self.target[first:last],
+            instance=self.instance[first:last],
+            source=self.source[first:last],
         )
+
+
+def segment_argmax(values: np.ndarray, offsets: np.ndarray) -> np.ndarray:
+    """Per sample, position of the first candidate with the largest value.
+
+    values has one entry per candidate, laid out as described by offsets;
+    every sample must have at least one candidate.
+    """
+    starts = offsets[:-1]
+    lengths = np.diff(offsets)
+    largest = np.maximum.reduceat(values, starts)
+    is_largest = np.flatnonzero(values == np.repeat(largest, lengths))
+    sample = np.repeat(np.arange(len(starts)), lengths)[is_largest]
+
+    # First largest candidate of each sample.
+    _, first = np.unique(sample, return_index=True)
+
+    return is_largest[first] - starts
 
 
 def _usable_samples(table: pd.DataFrame) -> pd.Series:
@@ -106,7 +184,8 @@ def load_feature_tables(
 
     Several directories are aggregated into one dataset, for example the
     samples collected along the expert's search and those collected along
-    the search of a learned policy on the same instances.
+    the search of a learned policy on the same instances, or the samples
+    of several graph families.
     """
     if isinstance(directories, (str, pathlib.Path)):
         directories = [directories]
@@ -124,7 +203,7 @@ def load_feature_tables(
         source_of_path.extend([source_index] * len(found))
 
     # First pass, on the label columns only: which samples are usable and
-    # how large the padded arrays must be.
+    # how large the arrays must be.
     feature_names: list[str] | None = None
     kept = []
     total_samples = 0
@@ -148,57 +227,67 @@ def load_feature_tables(
         usable = _usable_samples(labels).to_numpy()
         total_samples += labels["sample_index"].nunique()
         samples += labels["sample_index"][usable].nunique()
-
-        if usable.any():
-            candidates = max(
-                candidates, int(labels["candidate_position"][usable].max()) + 1
-            )
-
+        candidates += int(usable.sum())
         kept.append(usable)
 
     assert feature_names is not None
 
-    features = np.zeros((samples, candidates, len(feature_names)), np.float32)
-    mask = np.zeros((samples, candidates), bool)
-    scores = np.zeros((samples, candidates), np.float32)
+    features = np.zeros((candidates, len(feature_names)), np.float32)
+    scores = np.zeros(candidates, np.float32)
+    offsets = np.zeros(samples + 1, np.int64)
     target = np.full(samples, -1, np.int64)
     instance = np.zeros(samples, np.int64)
     instance_names = []
 
-    # Second pass: one table at a time, written straight into the padded
-    # arrays, so that the tables never sit in memory together.
-    first = 0
+    # Second pass: one table at a time, appended to the arrays, so that
+    # the tables never sit in memory together.
+    first_sample = 0
+    first_row = 0
 
     for instance_index, (path, usable) in enumerate(zip(paths, kept)):
         # Features are used in single precision.
         table = pd.read_csv(path, dtype={name: np.float32 for name in feature_names})
         table = table[usable]
 
-        _, sample_of_row = np.unique(
-            table["sample_index"].to_numpy(np.int64), return_inverse=True
-        )
-        count = int(sample_of_row.max()) + 1 if len(table) else 0
-        sample_of_row = sample_of_row + first
+        sample_index = table["sample_index"].to_numpy(np.int64)
         position = table["candidate_position"].to_numpy(np.int64)
 
-        if mask[sample_of_row, position].any():
-            raise ValueError(f"Duplicate candidate in {path}")
+        # Rows are grouped by sample, in candidate order 0, 1, 2, ...
+        new_sample = np.ones(len(table), bool)
+        new_sample[1:] = sample_index[1:] != sample_index[:-1]
+        sample_of_row = np.cumsum(new_sample) - 1
+        count = int(new_sample.sum())
 
-        features[sample_of_row, position] = table[feature_names].to_numpy(np.float32)
-        mask[sample_of_row, position] = True
-        scores[sample_of_row, position] = table["score"].to_numpy(np.float32)
+        if len(np.unique(sample_index)) != count:
+            raise ValueError(f"Rows of a sample are not consecutive in {path}")
+
+        lengths = np.bincount(sample_of_row, minlength=count)
+        expected = np.arange(len(table)) - np.repeat(
+            np.cumsum(lengths) - lengths, lengths
+        )
+
+        if not np.array_equal(position, expected):
+            raise ValueError(f"Candidates out of order in {path}")
+
+        rows = slice(first_row, first_row + len(table))
+        features[rows] = table[feature_names].to_numpy(np.float32)
+        scores[rows] = table["score"].to_numpy(np.float32)
+        offsets[first_sample + 1 : first_sample + count + 1] = (
+            first_row + np.cumsum(lengths)
+        )
 
         selected = table["expert_selected"].to_numpy() == 1
 
-        if np.bincount(sample_of_row[selected] - first, minlength=count).tolist() != [1] * count:
+        if np.bincount(sample_of_row[selected], minlength=count).tolist() != [1] * count:
             raise ValueError("Every sample must have exactly one selected candidate")
 
-        target[sample_of_row[selected]] = position[selected]
-        instance[first : first + count] = instance_index
+        target[first_sample + sample_of_row[selected]] = position[selected]
+        instance[first_sample : first_sample + count] = instance_index
         instance_names.append(path.name[: -len(FEATURES_SUFFIX)])
-        first += count
+        first_sample += count
+        first_row += len(table)
 
-    if first != samples:
+    if first_sample != samples or first_row != candidates:
         raise ValueError("Inconsistent number of usable samples")
 
     source = np.asarray(source_of_path, np.int64)[instance]
@@ -206,8 +295,8 @@ def load_feature_tables(
     return BranchingDataset(
         feature_names=feature_names,
         features=features,
-        mask=mask,
         scores=scores,
+        offsets=offsets,
         target=target,
         instance=instance,
         source=source,

@@ -242,6 +242,8 @@ uv run python ml/train_branching_model.py \
 
 The script reports, on the validation set, how the decisions of the model compare with the expert's: `accuracy` (same candidate), `top5` (the expert's candidate is among the model's five best) and `score ratio` (strong branching score of the model's candidate divided by the best score of the node; 1 means as good as the expert). It writes the model as a text file, checks that this file reproduces the decisions of the trained network, and stores the training history next to it as JSON.
 
+`--train` and `--valid` accept several directories, aggregated into one dataset; the metrics are also reported per validation directory. The candidates of all samples are stored one after the other, without padding, so that a family with many candidates per node does not inflate the others: training on the five two-family sets below (200,000 samples) peaks at 5.3 GB.
+
 ### 3. Evaluation inside SCIP
 
 The `mislearned` rule loads a model file and evaluates it in C at every node. A model names the features it reads, which may be any subset of the computed ones: models trained before a feature was added keep working, and a model that names an unknown feature is refused. `--features` of the training script selects the features of a model.
@@ -268,7 +270,7 @@ The first dataset only contains nodes visited by the expert's own search. Inside
 
 The tables have the same format. The metadata file records the model (`branching_policy`, `policy_model`), the number of branching decisions it took and how many of them agree with the expert (`policy_decisions`, `policy_expert_agreements`). Nodes that strong branching proves prunable are still pruned, so the tree is smaller than the one the model explores on its own.
 
-`experiments/er125_p01/collect_on_policy.sh` collects and featurizes such samples for the training and validation instances. The training script accepts several directories, so that a new model is trained on the expert's samples and the on-policy ones together:
+`scripts/collect_on_policy.sh DATASET MODEL NAME [BUILD_DIR] [JOBS]` collects and featurizes such samples for the training and validation instances of a dataset, into `data/raw/strong_branching/DATASET_NAME` and `data/processed/features/DATASET_NAME`; `experiments/er125_p01/collect_on_policy.sh` is the same for `er125_p01`. A new model is then trained on the expert's samples and the on-policy ones together:
 
 ```bash
 experiments/er125_p01/collect_on_policy.sh experiments/er125_p01/models/mlp32.model dagger1 build 4
@@ -295,7 +297,7 @@ First iteration on er125_p01 (20 instances, 3 seeds, shifted geometric means of 
 | `mlp32_h1` | 44 | expert + one on-policy round | 2,583 | 748 |
 | `mlp32_h2` | 44 | expert + two on-policy rounds | 2,598 | 718 |
 
-On-policy samples bring about 4% fewer nodes, on about 42 of the 60 runs of each set. The gain is small (within the instance-to-instance noise), and the offline validation metrics do not improve: with these features and this model size, the nodes visited during training are not what limits the learned rule. The effect of the training seed has not been measured.
+On-policy samples bring about 4% fewer nodes, on about 42 of the 60 runs of each set. The gain is small (within the instance-to-instance noise), and the offline validation metrics do not improve: with these features and this model size, the nodes visited during training are not what limits the learned rule. The training seed, measured later on the history models, moves the node counts by about 2%.
 
 The 12 features of version 2 do not settle the matter either: `mlp32_v2` explores 4.5% fewer nodes than `mlp32_dagger1` on the test set but 4% more on the transfer set, both within the noise. A network twice as wide reaches the same validation accuracy (0.137), so the inputs, not the size of the model, are the limit. Two side results are worth keeping in mind. Training the model to maximize the strong branching score of its choice, instead of imitating the expert's choice, raised the offline score ratio (0.64 to 0.69) but gave larger trees (3,096 nodes on the test set): the score ratio must not be used to select a model. And the strong branching score of a vertex at the parent node, used alone to choose, reaches a score ratio of 0.65 on the expert's nodes and 0.83 on the on-policy ones, above every model here: what the search has already learned about a variable says more than the local structure of the graph.
 
@@ -309,6 +311,17 @@ Another graph family tells the two kinds of features apart. On 20 Barabási–Al
 ./build/mis-generator batch --family barabasi_albert --n-values 200 --k-values 8 \
     --seeds $(seq -s, 81 100) --output-dir data/instances/ba200_k8/test
 ```
+
+Training on this family does not do better. `experiments/ba200_k8/build_dataset.sh` builds a dataset with the same splits as `er125_p01` (training seeds 1 to 60, validation 61 to 80, test 81 to 100): the expert's samples took about 1.5 hours with 7 parallel jobs (383 s per training instance on average, 19 minutes at most), and one on-policy round (`ba200_k8_mix1`, driven by a first two-family model) as long again. Three models are compared, each trained twice with different training seeds (results of the first in `experiments/*/results/`):
+
+| Model | Training samples | Barabási–Albert test | Erdős–Rényi test | Transfer (first seed) |
+|---|---|---|---|---|
+| `relpscost` | | 846 | 3,584 | 732 |
+| `mlp32_h2` | Erdős–Rényi: expert + two rounds | 861 / 877 | 2,598 / 2,660 | 718 |
+| `mlp32_ba1` | Barabási–Albert: expert + one round | 864 / 854 | 2,788 / 2,750 | 746 |
+| `mlp32_mix1` | both | 936 / 1,000 | 2,712 / 2,684 | 742 |
+
+The training seed moves the node counts by about 2%. The model trained on Erdős–Rényi graphs alone is as good on Barabási–Albert graphs as the one trained on them, and the model trained on both families is the worst on Barabási–Albert graphs (8% and 15% more nodes than `mlp32_h2`), although each family alone does well; why mixing hurts has not been established. More data of the family would not help either: `mlp32_ba1` trained on half of its instances (seeds 1 to 30) explores 848 and 862 nodes. No learned rule explores fewer nodes than relpscost on this family, while all of them solve about twice as fast.
 
 ## Project structure
 

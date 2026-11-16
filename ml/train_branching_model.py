@@ -30,7 +30,7 @@ import time
 import numpy as np
 import torch
 
-from branching_data import BranchingDataset, load_feature_tables
+from branching_data import BranchingDataset, load_feature_tables, segment_argmax
 from branching_model_file import BranchingModel, read_model, write_model
 
 
@@ -48,33 +48,41 @@ def decision_metrics(
     mean_rank    average number of candidates the expert scores strictly
                  higher than the pick (0 = best)
     """
-    scores = np.where(dataset.mask, model_scores, -np.inf)
-    rows = np.arange(dataset.number_of_samples)
-    pick = scores.argmax(axis=1)
+    # One model score per candidate, laid out like dataset.scores.
+    starts = dataset.starts
+    lengths = dataset.lengths
+    pick = segment_argmax(model_scores, dataset.offsets)
 
     expert_scores = dataset.scores
-    best = expert_scores.max(axis=1)
-    picked = expert_scores[rows, pick]
+    best = np.maximum.reduceat(expert_scores, starts)
+    picked = expert_scores[starts + pick]
 
-    target_score = scores[rows, dataset.target]
-    better_than_target = (scores > target_score[:, None]).sum(axis=1)
+    target_score = model_scores[starts + dataset.target]
+    better_than_target = np.add.reduceat(
+        (model_scores > np.repeat(target_score, lengths)).astype(np.int64), starts
+    )
+    better_than_pick = np.add.reduceat(
+        (expert_scores > np.repeat(picked, lengths)).astype(np.int64), starts
+    )
 
     return {
         "accuracy": float((pick == dataset.target).mean()),
         "top5": float((better_than_target < 5).mean()),
         "score_ratio": float((picked / best).mean()),
-        "mean_rank": float((expert_scores > picked[:, None]).sum(axis=1).mean()),
+        "mean_rank": float(better_than_pick.mean()),
     }
 
 
 def reference_metrics(dataset: BranchingDataset) -> dict[str, dict[str, float]]:
     """Simple decision rules, to put the model's metrics in context."""
     rng = np.random.default_rng(0)
-    references = {"random": decision_metrics(rng.random(dataset.mask.shape), dataset)}
+    references = {
+        "random": decision_metrics(rng.random(dataset.number_of_candidates), dataset)
+    }
 
     for name in ["fractionality", "neighbour_lp_sum", "fractional_degree"]:
         if name in dataset.feature_names:
-            column = dataset.features[:, :, dataset.feature_names.index(name)]
+            column = dataset.features[:, dataset.feature_names.index(name)]
             references[f"largest {name}"] = decision_metrics(column, dataset)
 
     return references
@@ -125,15 +133,30 @@ class CandidateScorer(torch.nn.Module):
 
 
 def predict(model: CandidateScorer, dataset: BranchingDataset) -> np.ndarray:
+    """Score of every candidate (the model scores candidates one by one)."""
     model.eval()
     outputs = []
 
     with torch.no_grad():
-        for start in range(0, dataset.number_of_samples, 4096):
-            batch = torch.from_numpy(dataset.features[start : start + 4096])
-            outputs.append(model(batch).numpy())
+        for start in range(0, dataset.number_of_candidates, 65536):
+            block = torch.from_numpy(dataset.features[start : start + 65536])
+            outputs.append(model(block).numpy())
 
-    return np.concatenate(outputs)
+    return np.concatenate(outputs) if outputs else np.zeros(0, np.float32)
+
+
+def file_scores(model: BranchingModel, dataset: BranchingDataset) -> np.ndarray:
+    """Score of every candidate under a model read from its file.
+
+    Computed by blocks: the double precision activations of a whole
+    validation set would take several gigabytes.
+    """
+    return np.concatenate(
+        [
+            model.scores(dataset.features[start : start + 65536])
+            for start in range(0, dataset.number_of_candidates, 65536)
+        ]
+    )
 
 
 def train(
@@ -147,17 +170,17 @@ def train(
 ) -> tuple[CandidateScorer, list[dict[str, float]]]:
     torch.manual_seed(seed)
 
-    # Standardize with the statistics of the real training candidates.
+    # Standardize with the statistics of the training candidates.
     # Accumulated in double precision, by blocks of samples, to avoid a
     # second copy of the training set.
     count = 0
-    total = np.zeros(train_set.features.shape[2])
+    total = np.zeros(train_set.features.shape[1])
     total_of_squares = np.zeros_like(total)
+    offsets = train_set.offsets
 
     for start in range(0, train_set.number_of_samples, 4096):
-        block = train_set.features[start : start + 4096][
-            train_set.mask[start : start + 4096]
-        ].astype(np.float64)
+        stop = min(start + 4096, train_set.number_of_samples)
+        block = train_set.features[offsets[start] : offsets[stop]].astype(np.float64)
         count += len(block)
         total += block.sum(axis=0)
         total_of_squares += (block * block).sum(axis=0)
@@ -169,8 +192,6 @@ def train(
     model = CandidateScorer(mean, std, hidden)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    features = torch.from_numpy(train_set.features)
-    mask = torch.from_numpy(train_set.mask)
     target = torch.from_numpy(train_set.target)
 
     history = []
@@ -184,7 +205,13 @@ def train(
 
         for start in range(0, len(order), batch_size):
             batch = order[start : start + batch_size]
-            scores = model(features[batch]).masked_fill(~mask[batch], -1e9)
+
+            # Padded to the largest number of candidates of the dataset:
+            # every batch has the same shape.
+            features, mask = train_set.padded_batch(batch.numpy())
+            scores = model(torch.from_numpy(features)).masked_fill(
+                ~torch.from_numpy(mask), -1e9
+            )
 
             # The expert's choice should get the highest score of its node.
             loss = torch.nn.functional.cross_entropy(scores, target[batch])
@@ -289,13 +316,13 @@ def main() -> None:
     # The file is what SCIP will use: check that it reproduces the
     # decisions of the trained network.
     from_torch = predict(model, valid_set)
-    from_file = read_model(output).scores(valid_set.features)
+    from_file = file_scores(read_model(output), valid_set)
     file_metrics = decision_metrics(from_file, valid_set)
 
     same_pick = float(
         (
-            np.where(valid_set.mask, from_file, -np.inf).argmax(axis=1)
-            == np.where(valid_set.mask, from_torch, -np.inf).argmax(axis=1)
+            segment_argmax(from_file, valid_set.offsets)
+            == segment_argmax(from_torch, valid_set.offsets)
         ).mean()
     )
 
@@ -318,7 +345,11 @@ def main() -> None:
     if len(arguments.valid) > 1:
         for index, directory in enumerate(arguments.valid):
             part = valid_set.from_source(index)
-            metrics = decision_metrics(from_file[valid_set.source == index], part)
+            rows = slice(
+                int(valid_set.offsets[np.searchsorted(valid_set.source, index)]),
+                int(valid_set.offsets[np.searchsorted(valid_set.source, index, "right")]),
+            )
+            metrics = decision_metrics(from_file[rows], part)
             valid_by_directory[directory] = metrics
             print(
                 f"  {directory}: {part.number_of_samples} samples, "

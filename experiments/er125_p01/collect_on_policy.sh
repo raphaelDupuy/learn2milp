@@ -28,36 +28,13 @@
 #       --output experiments/er125_p01/models/mlp32_NAME.model
 set -euo pipefail
 
+# Kept for the commands of the README: same as
+#   scripts/collect_on_policy.sh er125_p01 MODEL NAME [BUILD_DIR] [JOBS]
 if [[ $# -lt 2 || $# -gt 4 ]]; then
     sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 fi
 
-MODEL="$1"
-NAME="$2"
-BUILD_DIR="${3:-build}"
-JOBS="${4:-4}"
-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-INSTANCES="$ROOT/data/instances/er125_p01"
-SAMPLES="$ROOT/data/raw/strong_branching/er125_p01_$NAME"
-FEATURES="$ROOT/data/processed/features/er125_p01_$NAME"
 
-for split in train valid; do
-    "$ROOT/scripts/collect_strong_branching.sh" \
-        "$BUILD_DIR/mis-collector" \
-        "$INSTANCES/$split" \
-        "$SAMPLES/$split" \
-        "$JOBS" \
-        3600 \
-        "$MODEL"
-done
-
-for split in train valid; do
-    "$ROOT/scripts/featurize_strong_branching.sh" \
-        "$BUILD_DIR/mis-featurizer" \
-        "$INSTANCES/$split" \
-        "$SAMPLES/$split" \
-        "$FEATURES/$split" \
-        "$JOBS"
-done
+exec "$ROOT/scripts/collect_on_policy.sh" er125_p01 "$@"
