@@ -8,8 +8,10 @@
 
 namespace
 {
+    // Not the name of the test executable, which ctest runs from the same
+    // directory: removing it would delete the executable.
     const std::filesystem::path testDirectory =
-        "test_MISInstanceLoadingService";
+        "test_mis_instance_loading_service";
 
 
     bool writeTestFiles(
