@@ -117,6 +117,13 @@ double evaluate(
 const std::vector<int> NODE_VERTICES = {2, 0, 1, 4};
 const std::vector<double> NODE_LP_VALUES = {0.2, 0.1, 0.5, 0.4};
 
+// States of that node: the candidates are fractional, vertex 3 is free
+// with LP value 0 and vertex 5 is fixed to 0 (so edge 4-5 constrains
+// nothing).
+const std::vector<MISVertexState> NODE_STATES = {
+    MIS_VERTEX_FRACTIONAL, MIS_VERTEX_FRACTIONAL, MIS_VERTEX_FRACTIONAL,
+    MIS_VERTEX_FREE_LP_ZERO, MIS_VERTEX_FRACTIONAL, MIS_VERTEX_FIXED_ZERO};
+
 MISAdjacency nodeGraph()
 {
     return buildMISAdjacency(MISInstance{6, {{0, 1}, {1, 2}, {0, 3}, {4, 5}}});
@@ -140,13 +147,14 @@ bool evaluateNode(
         features[static_cast<std::size_t>(c) * K] = NODE_LP_VALUES[c];
 
     std::vector<double> work(static_cast<std::size_t>(
-        MISbranchingModelNodeWorkSize(&model.view(), n)));
-    std::vector<int> positions(static_cast<std::size_t>(graph.number_of_vertices));
+        MISbranchingModelNodeWorkSize(&model.view(), &graph, n)));
+    std::vector<int> intWork(static_cast<std::size_t>(
+        MISbranchingModelNodeIntWorkSize(&model.view(), &graph, n)));
     scores.assign(static_cast<std::size_t>(n), 0.0);
 
     return MISevaluateBranchingModelOnNode(
-        &model.view(), &graph, n, vertices.data(), features.data(),
-        work.data(), positions.data(), scores.data()) == 0;
+        &model.view(), &graph, NODE_STATES.data(), n, vertices.data(),
+        features.data(), work.data(), intWork.data(), scores.data()) == 0;
 }
 
 bool near(const std::vector<double>& values, const std::vector<double>& expected)
@@ -333,18 +341,118 @@ int main()
 
         std::vector<double> scores;
         bool same = evaluateNode(model, NODE_VERTICES, scores);
+        const MISAdjacency adjacency = nodeGraph();
+        const MISFeatureGraph graph = adjacency.view();
 
         for (std::size_t c = 0; same && c < NODE_VERTICES.size(); ++c)
             same = scores[c] == evaluate(model, {{0, NODE_LP_VALUES[c]}});
 
         check(
             same && !MISbranchingModelHasGraphLayers(&model.view())
-            && MISbranchingModelNodeWorkSize(&model.view(), 4)
+            && MISbranchingModelNodeWorkSize(&model.view(), &graph, 4)
                 == MISbranchingModelWorkSize(&model.view()),
             "Node evaluation of a model without graph layer is the candidate "
             "evaluation, bit for bit"
         );
     }
+
+
+    // Bipartite models (version 3).
+    std::string inputLines =
+        "vertex_inputs 6\n";
+
+    for (int i = 0; i < MIS_BRANCHING_VERTEX_INPUT_COUNT; ++i)
+        inputLines += std::string("vertex_input ") + MISbranchingVertexInputName(i) + " 0 1\n";
+
+    inputLines += "constraint_inputs 3\n";
+
+    for (int i = 0; i < MIS_BRANCHING_CONSTRAINT_INPUT_COUNT; ++i)
+        inputLines += std::string("constraint_input ") + MISbranchingConstraintInputName(i) + " 0 1\n";
+
+    // A vertex is [x (candidate feature lp_value), the 6 vertex inputs].
+    // score = mean of the slacks of its active constraints + x.
+    const std::string bipartiteSlack =
+        "MIS_BRANCHING_MODEL 3\nfeatures 1\nfeature " + name0 + " 0 1\n"
+        + inputLines
+        + "vertex_layers 0\nconstraint_layers 0\nmessage_layers 1\n"
+          "message_layer to_vertices 7 3 1 1 linear\n"
+          "0 0 0 0 0 0 0\n1 0 0\n0\n1\n1 0 0 0 0 0 0\n0\n"
+          "layers 1\nlayer 1 1 linear\n1\n0\n";
+
+    {
+        LoadedMISBranchingModel model;
+        std::vector<double> scores;
+
+        // Active constraints 0-1, 1-2 and 0-3, slacks 0.4, 0.3 and 0.9.
+        check(
+            parse(bipartiteSlack, model)
+            && MISbranchingModelIsValid(&model.view())
+            && model.view().encoder != nullptr
+            && model.numberOfLayers() == 2
+            && model.numberOfParameters() == 7 + 3 + 1 + 1 + 7 + 1 + 1 + 1
+            && evaluateNode(model, NODE_VERTICES, scores)
+            && near(scores, {0.3 + 0.2, 0.65 + 0.1, 0.35 + 0.5, 0.0 + 0.4}),
+            "Bipartite model averages over the active constraints of a vertex"
+        );
+
+        check(
+            !evaluateNode(model, {2, 0, 1}, scores)
+            && !evaluateNode(model, {2, 0, 1, 1}, scores),
+            "Bipartite model refuses candidates that are not the fractional "
+            "vertices"
+        );
+
+        // A moved model keeps a valid encoder.
+        LoadedMISBranchingModel moved = std::move(model);
+
+        check(
+            MISbranchingModelIsValid(&moved.view())
+            && evaluateNode(moved, NODE_VERTICES, scores)
+            && near(scores, {0.5, 0.75, 0.85, 0.4}),
+            "A moved bipartite model can still be evaluated"
+        );
+    }
+
+    {
+        // Constraints first take the mean candidate LP value of their two
+        // vertices (0 for vertex 3, not a candidate): 0.3, 0.35 and 0.05;
+        // a vertex then takes the mean over its active constraints.
+        LoadedMISBranchingModel model;
+        std::vector<double> scores;
+
+        check(
+            parse("MIS_BRANCHING_MODEL 3\nfeatures 1\nfeature " + name0
+                    + " 0 1\n" + inputLines
+                    + "vertex_layers 0\nconstraint_layers 0\nmessage_layers 2\n"
+                      "message_layer to_constraints 3 7 1 1 relu\n"
+                      "0 0 0\n1 0 0 0 0 0 0\n0\n1\n0 0 0\n0\n"
+                      "message_layer to_vertices 7 1 1 1 linear\n"
+                      "0 0 0 0 0 0 0\n1\n0\n1\n0 0 0 0 0 0 0\n0\n"
+                      "layers 1\nlayer 1 1 linear\n1\n0\n",
+                model)
+            && evaluateNode(model, NODE_VERTICES, scores)
+            && near(scores, {0.35, 0.175, 0.325, 0.0}),
+            "Messages go from vertices to constraints and back"
+        );
+    }
+
+    expectRejection(
+        "Bipartite encoder in a version 2 file is rejected",
+        replaced(bipartiteSlack, "MIS_BRANCHING_MODEL 3", "MIS_BRANCHING_MODEL 2"));
+
+    expectRejection(
+        "Unknown vertex input is rejected",
+        replaced(bipartiteSlack, "vertex_input degree", "vertex_input other"));
+
+    expectRejection(
+        "Message layer with the wrong source width is rejected",
+        replaced(bipartiteSlack, "message_layer to_vertices 7 3 1 1 linear\n"
+            "0 0 0 0 0 0 0\n1 0 0\n", "message_layer to_vertices 7 2 1 1 linear\n"
+            "0 0 0 0 0 0 0\n1 0\n"));
+
+    expectRejection(
+        "Message layer with a missing matrix line is rejected",
+        replaced(bipartiteSlack, "1\n1 0 0 0 0 0 0\n0\nlayers", "1\n0\nlayers"));
 
     expectRejection(
         "Graph layer in a version 1 file is rejected",

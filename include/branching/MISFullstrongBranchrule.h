@@ -63,6 +63,19 @@ SCIP_RETCODE SCIPsetMISFullstrongSelector(
     void* userdata
 );
 
+/*
+ * Whether a node that strong branching proves prunable is pruned (TRUE,
+ * the default, as vanillafullstrong does). With FALSE, the rule branches
+ * on the expert's candidate anyway, as a rule that does not solve the
+ * children's LPs would: SCIP then solves and prunes the children. The
+ * tree is the one a perfect imitation of the expert's choices would
+ * explore. The samples are unchanged. The rule must have been included.
+ */
+SCIP_RETCODE SCIPsetMISFullstrongPruning(
+    SCIP* scip,
+    SCIP_Bool prune
+);
+
 #ifdef __cplusplus
 }
 #endif

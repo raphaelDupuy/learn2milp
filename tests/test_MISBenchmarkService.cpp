@@ -123,6 +123,29 @@ int main(int argc, char* argv[])
         );
     }
 
+    // Without its strong branching pruning, the expert branches where it
+    // would prune: same optimum, never fewer nodes.
+    {
+        MISBenchmarkResult pruned;
+        MISBenchmarkResult unpruned;
+
+        const bool ran =
+            isMISBenchmarkRuleAvailable("misfullstrong_nocutoff")
+            && run(instance, "misfullstrong", MISBenchmarkSettings::Study, 0, pruned)
+            && run(instance, "misfullstrong_nocutoff", MISBenchmarkSettings::Study,
+                0, unpruned);
+
+        check(
+            ran
+            && unpruned.solved
+            && std::fabs(unpruned.primalBound - pruned.primalBound) < 1e-6
+            && unpruned.exploredNodes >= pruned.exploredNodes,
+            "The expert without pruning reaches the same optimum ("
+                + std::to_string(pruned.exploredNodes) + " nodes pruned, "
+                + std::to_string(unpruned.exploredNodes) + " unpruned)"
+        );
+    }
+
     // Node counts are reproducible for a given seed.
     {
         MISBenchmarkResult first;

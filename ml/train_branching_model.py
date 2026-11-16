@@ -21,6 +21,14 @@ candidate's state with the mean state of its candidate neighbours and of
 all the candidates (see branching_model_file.py). The graphs are read from
 the instance files, searched for by name under --instances.
 
+With --bipartite-rounds K, the network is a bipartite model after Gasse et
+al. (2019): the free vertices and the edge constraints between two free
+vertices form a bipartite graph, the --hidden layers embed the vertices
+(candidate features and vertex inputs), and K rounds of messages go from
+the vertices to the constraints and back before the candidates are
+scored. The vertex states are read from the raw samples that match each
+feature directory (see branching_data.with_vertex_states()).
+
 --device cuda trains on the GPU; it needs a CUDA build of PyTorch, which
 the project's CPU environment does not install. Training on the CPU (the
 default) is reproducible bit for bit; on the GPU it is not.
@@ -42,6 +50,9 @@ import numpy as np
 import torch
 
 from branching_data import (
+    CONSTRAINT_INPUT_NAMES,
+    VERTEX_INPUT_NAMES,
+    BipartiteBatch,
     BranchingDataset,
     GraphBatch,
     load_feature_tables,
@@ -50,8 +61,10 @@ from branching_data import (
 from branching_model_file import (
     DENSE,
     GRAPH,
+    BipartiteEncoder,
     BranchingModel,
     Layer,
+    MessageLayer,
     read_model,
     write_model,
 )
@@ -255,6 +268,167 @@ class GraphScorer(torch.nn.Module):
         )
 
 
+class MessagePassing(torch.nn.Module):
+    """t' = relu(P mean(relu(L t + R s + b_hidden), s source of t) + Q t + b)."""
+
+    def __init__(self, direction: str, targets: int, sources: int, hidden: int, outputs: int):
+        super().__init__()
+        self.direction = direction
+        self.target = torch.nn.Linear(targets, hidden)
+        self.source = torch.nn.Linear(sources, hidden, bias=False)
+        self.message = torch.nn.Linear(hidden, outputs)
+        self.own = torch.nn.Linear(targets, outputs, bias=False)
+
+    def forward(
+        self,
+        targets: torch.Tensor,
+        sources: torch.Tensor,
+        target_index: torch.Tensor,
+        source_index: torch.Tensor,
+        count: torch.Tensor | float,
+    ) -> torch.Tensor:
+        messages = torch.relu(self.target(targets)[target_index] + self.source(sources)[source_index])
+        mean = messages.new_zeros((len(targets), messages.shape[1])).index_add_(
+            0, target_index, messages
+        ) / count
+        return torch.relu(self.message(mean) + self.own(targets))
+
+    def export(self) -> MessageLayer:
+        def array(tensor: torch.Tensor) -> np.ndarray:
+            return tensor.detach().cpu().numpy().astype(np.float64)
+
+        return MessageLayer(
+            self.direction,
+            array(self.target.weight),
+            array(self.source.weight),
+            array(self.target.bias),
+            array(self.message.weight),
+            array(self.own.weight),
+            array(self.message.bias),
+        )
+
+
+class BipartiteScorer(torch.nn.Module):
+    """Bipartite model over the free vertices and the active edge
+    constraints (after Gasse et al. 2019): dense layers on each side, then
+    `rounds` pairs of message layers, vertices to constraints and back, and
+    a linear output on the candidates."""
+
+    def __init__(
+        self,
+        mean: np.ndarray,
+        std: np.ndarray,
+        vertex_mean: np.ndarray,
+        vertex_std: np.ndarray,
+        constraint_mean: np.ndarray,
+        constraint_std: np.ndarray,
+        hidden: list[int],
+        rounds: int,
+    ):
+        super().__init__()
+
+        if not hidden:
+            raise ValueError("A bipartite model needs at least one hidden layer")
+
+        for name, values in [
+            ("mean", mean), ("std", std), ("vertex_mean", vertex_mean), ("vertex_std", vertex_std),
+            ("constraint_mean", constraint_mean), ("constraint_std", constraint_std),
+        ]:
+            self.register_buffer(name, torch.tensor(values, dtype=torch.float32))
+
+        width = hidden[-1]
+        sizes = [len(mean) + len(vertex_mean), *hidden]
+        self.vertex = torch.nn.ModuleList(
+            torch.nn.Linear(sizes[i], sizes[i + 1]) for i in range(len(hidden))
+        )
+        self.constraint = torch.nn.ModuleList([torch.nn.Linear(len(constraint_mean), width)])
+        self.messages = torch.nn.ModuleList()
+
+        for _ in range(rounds):
+            self.messages.append(MessagePassing("to_constraints", width, width, width, width))
+            self.messages.append(MessagePassing("to_vertices", width, width, width, width))
+
+        self.output = torch.nn.Linear(width, 1)
+
+    def forward(self, batch: BipartiteBatch) -> torch.Tensor:
+        device = self.mean.device
+
+        def tensor(array: np.ndarray) -> torch.Tensor:
+            return torch.from_numpy(array).to(device)
+
+        features = (tensor(batch.candidate_features) - self.mean) / self.std
+        features = features * tensor(batch.is_candidate).unsqueeze(1).to(features.dtype)
+        v = torch.cat([features, (tensor(batch.vertex_inputs) - self.vertex_mean) / self.vertex_std], 1)
+        c = (tensor(batch.constraint_inputs) - self.constraint_mean) / self.constraint_std
+
+        for layer in self.vertex:
+            v = torch.relu(layer(v))
+
+        for layer in self.constraint:
+            c = torch.relu(layer(c))
+
+        endpoints = tensor(batch.endpoints)
+        incident_vertex = endpoints.t().reshape(-1)
+        incident_constraint = torch.arange(len(c), device=device).repeat(2)
+        degree = torch.bincount(incident_vertex, minlength=len(v)).clamp(min=1).unsqueeze(1).to(v.dtype)
+
+        for layer in self.messages:
+            if layer.direction == "to_constraints":
+                c = layer(c, v, incident_constraint, incident_vertex, 2.0)
+            else:
+                v = layer(v, c, incident_vertex, incident_constraint, degree)
+
+        return self.output(v[tensor(batch.candidate_rows)]).squeeze(-1)
+
+    def export(self, feature_names: list[str]) -> BranchingModel:
+        def array(tensor: torch.Tensor) -> np.ndarray:
+            return tensor.detach().cpu().numpy().astype(np.float64)
+
+        encoder = BipartiteEncoder(
+            list(VERTEX_INPUT_NAMES), array(self.vertex_mean), array(self.vertex_std),
+            list(CONSTRAINT_INPUT_NAMES), array(self.constraint_mean), array(self.constraint_std),
+            [_dense_layer(layer, "relu") for layer in self.vertex],
+            [_dense_layer(layer, "relu") for layer in self.constraint],
+            [layer.export() for layer in self.messages],
+        )
+
+        return BranchingModel(
+            feature_names,
+            array(self.mean),
+            array(self.std),
+            [_dense_layer(self.output, "linear")],
+            encoder,
+        )
+
+
+def bipartite_input_statistics(
+    dataset: BranchingDataset,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Mean and standard deviation of the vertex and constraint inputs over
+    every free vertex and active constraint of the dataset."""
+    sums = {"vertex": [0, 0.0, 0.0], "constraint": [0, 0.0, 0.0]}
+
+    for start in range(0, dataset.number_of_samples, GRAPH_BLOCK):
+        batch = dataset.bipartite_batch(np.arange(start, min(start + GRAPH_BLOCK, dataset.number_of_samples)))
+
+        for side, values in [("vertex", batch.vertex_inputs), ("constraint", batch.constraint_inputs)]:
+            values = values.astype(np.float64)
+            sums[side][0] += len(values)
+            sums[side][1] = sums[side][1] + values.sum(axis=0)
+            sums[side][2] = sums[side][2] + (values * values).sum(axis=0)
+
+    statistics = []
+
+    for side in ["vertex", "constraint"]:
+        count, total, squares = sums[side]
+        mean = total / max(count, 1)
+        std = np.sqrt(np.maximum(squares / max(count, 1) - mean * mean, 0.0))
+        std[std < 1e-12] = 1.0
+        statistics.extend([mean, std])
+
+    return tuple(statistics)  # type: ignore[return-value]
+
+
 # Samples per block when a graph model scores a whole dataset.
 GRAPH_BLOCK = 1024
 
@@ -266,7 +440,11 @@ def predict(model: torch.nn.Module, dataset: BranchingDataset) -> np.ndarray:
     device = model.mean.device
 
     with torch.no_grad():
-        if isinstance(model, GraphScorer):
+        if isinstance(model, BipartiteScorer):
+            for start in range(0, dataset.number_of_samples, GRAPH_BLOCK):
+                samples = np.arange(start, min(start + GRAPH_BLOCK, dataset.number_of_samples))
+                outputs.append(model(dataset.bipartite_batch(samples)).cpu().numpy())
+        elif isinstance(model, GraphScorer):
             for start in range(0, dataset.number_of_samples, GRAPH_BLOCK):
                 samples = np.arange(start, min(start + GRAPH_BLOCK, dataset.number_of_samples))
                 outputs.append(model(dataset.graph_batch(samples)).cpu().numpy())
@@ -284,6 +462,25 @@ def file_scores(model: BranchingModel, dataset: BranchingDataset) -> np.ndarray:
     Computed by blocks: the double precision activations of a whole
     validation set would take several gigabytes.
     """
+    if model.is_bipartite:
+        parts = []
+
+        for start in range(0, dataset.number_of_samples, GRAPH_BLOCK // 4):
+            samples = np.arange(start, min(start + GRAPH_BLOCK // 4, dataset.number_of_samples))
+            batch = dataset.bipartite_batch(samples)
+            parts.append(
+                model.bipartite_scores(
+                    batch.candidate_features,
+                    batch.is_candidate,
+                    batch.vertex_inputs,
+                    batch.constraint_inputs,
+                    batch.endpoints,
+                    batch.candidate_rows,
+                )
+            )
+
+        return np.concatenate(parts)
+
     if model.has_graph_layers:
         parts = []
 
@@ -315,6 +512,15 @@ def batch_scores(
 ) -> torch.Tensor:
     """Model scores of the candidates of some samples, [samples, width],
     padded with a very low score."""
+    if isinstance(model, BipartiteScorer):
+        bipartite = dataset.bipartite_batch(batch)
+        flat = model(bipartite)
+        scores = flat.new_full((len(batch), int(bipartite.position.max()) + 1), -1e9)
+        rows = torch.from_numpy(bipartite.sample_of_candidate).to(flat.device)
+        columns = torch.from_numpy(bipartite.position).to(flat.device)
+        scores[rows, columns] = flat
+        return scores
+
     if isinstance(model, GraphScorer):
         graph = dataset.graph_batch(batch)
         flat = model(graph)
@@ -338,6 +544,7 @@ def train(
     valid_set: BranchingDataset,
     hidden: list[int],
     graph_layers: int,
+    bipartite_rounds: int,
     epochs: int,
     learning_rate: float,
     batch_size: int,
@@ -367,7 +574,11 @@ def train(
 
     model: torch.nn.Module
 
-    if graph_layers > 0:
+    if bipartite_rounds > 0:
+        model = BipartiteScorer(
+            mean, std, *bipartite_input_statistics(train_set), hidden, bipartite_rounds
+        )
+    elif graph_layers > 0:
         model = GraphScorer(mean, std, hidden, graph_layers)
     else:
         model = CandidateScorer(mean, std, hidden)
@@ -435,6 +646,7 @@ def main() -> None:
     parser.add_argument("--features", nargs="+", help="names of the features the model reads (default: all those of the tables)")
     parser.add_argument("--hidden", type=int, nargs="*", default=[32, 32], help="hidden layer sizes; none for a linear model")
     parser.add_argument("--graph-layers", type=int, default=0, help="graph layers after the hidden layers (0: each candidate is scored on its own)")
+    parser.add_argument("--bipartite-rounds", type=int, default=0, help="bipartite model over the free vertices and the edge constraints, with that many rounds of messages (vertices to constraints and back)")
     parser.add_argument("--instances", default="data/instances", help="directory searched for the instance files of the graphs (graph models only)")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -470,12 +682,22 @@ def main() -> None:
     if arguments.graph_layers < 0:
         raise SystemExit("--graph-layers must be at least 0")
 
-    if arguments.graph_layers > 0:
-        if not arguments.hidden:
-            raise SystemExit("A graph model needs at least one hidden layer")
+    if arguments.bipartite_rounds < 0:
+        raise SystemExit("--bipartite-rounds must be at least 0")
 
+    if arguments.graph_layers > 0 and arguments.bipartite_rounds > 0:
+        raise SystemExit("--graph-layers and --bipartite-rounds are exclusive")
+
+    if (arguments.graph_layers > 0 or arguments.bipartite_rounds > 0) and not arguments.hidden:
+        raise SystemExit("A graph model needs at least one hidden layer")
+
+    if arguments.graph_layers > 0:
         train_set = train_set.with_candidate_graphs(arguments.instances)
         valid_set = valid_set.with_candidate_graphs(arguments.instances)
+
+    if arguments.bipartite_rounds > 0:
+        train_set = train_set.with_vertex_states(arguments.instances)
+        valid_set = valid_set.with_vertex_states(arguments.instances)
 
     for name, dataset in [("train", train_set), ("valid", valid_set)]:
         edges = (
@@ -506,6 +728,7 @@ def main() -> None:
         valid_set,
         arguments.hidden,
         arguments.graph_layers,
+        arguments.bipartite_rounds,
         arguments.epochs,
         arguments.learning_rate,
         arguments.batch_size,

@@ -62,6 +62,14 @@ uv run python ml/train_branching_model.py \
 
 The samples need no new collection: the feature tables keep the vertex of every candidate, and the edges between candidates are read from the instance files, found by name under `--instances` (`data/instances` by default). A graph model is written in version 2 of the model format (`graph_layer` entries, see `ml/branching_model_file.py`); a model without graph layer is still written in version 1, byte for byte as before.
 
+With `--bipartite-rounds K`, the network follows Gasse et al. (2019) instead: a bipartite graph of variables and constraints. For MIS, the constraints are the edges \(x_u + x_v \le 1\); the graph of a node keeps the free vertices and the edges between two free vertices (an edge with a fixed end constrains nothing). A vertex starts from its candidate features (zero for a free vertex that is not a candidate) and from six vertex inputs: its state (free at 0, free at 1, fractional), LP value, degree and number of free neighbours; a constraint starts from its slack \(1 - x_u - x_v\), whether it is tight, and how many of its ends are fractional. The `--hidden` layers embed the vertices, one layer embeds the constraints, then each round updates the constraints from their two vertices and the vertices from their constraints,
+
+\[
+t' = \mathrm{ReLU}\Big(P\, \operatorname{mean}_{s}\, \mathrm{ReLU}(L t + R s + b_h) + Q t + b\Big),
+\]
+
+and a linear layer scores each candidate from its vertex state. The vertex states are read from the raw samples (`data/raw/strong_branching/X` for the features of `data/processed/features/X`), so no new collection is needed. Such a model is written in version 3 of the model format. The constraint duals, which Gasse et al. also use, are not recorded in the samples.
+
 Training on the CPU, the default, is reproducible bit for bit. `--device cuda` trains on the GPU, about four times faster per epoch for a graph model; it needs a CUDA build of PyTorch, which the project's environment does not install, and its results are not reproducible bit for bit (the GPU sums in parallel, in no fixed order). SCIP, the collection and the evaluation inside SCIP always run on the CPU.
 
 ## 3. Evaluation inside SCIP
@@ -77,7 +85,7 @@ The `mislearned` rule loads a model file and evaluates it in C at every node. A 
     --output experiments/er125_p01/results/test_learned_mlp32.csv
 ```
 
-The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about \(10^{-14}\), and a test solves an instance with a graph model while an independent implementation recomputes every score.
+The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about \(10^{-14}\) for a graph model and \(10^{-7}\) for a bipartite one (whose constraint inputs are rounded to single precision in Python), with the same choice at every node; tests solve an instance with each kind of model while an independent implementation recomputes every score.
 
 A model can also be tried on one instance, or compared with other rules and models, from the [interactive menu](interactive-menu.md).
 

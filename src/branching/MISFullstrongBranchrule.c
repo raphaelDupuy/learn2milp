@@ -27,6 +27,9 @@ typedef struct
     MISBranchingSelector selector;
     void* selectoruserdata;
 
+    /* Whether a node that strong branching proves prunable is pruned. */
+    SCIP_Bool prune;
+
 } MISFullstrongBranchruleData;
 
 static
@@ -444,7 +447,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISFullstrong)
     /* Branching, identical to vanillafullstrong with idempotent = TRUE
      * when the expert is followed: no local bound update, no child lower
      * bound update. */
-    if( cutoff )
+    if( cutoff && data->prune )
     {
         *result = SCIP_CUTOFF;
     }
@@ -571,6 +574,7 @@ SCIP_RETCODE SCIPincludeBranchruleMISFullstrong(
     data->userdata = userdata;
     data->selector = NULL;
     data->selectoruserdata = NULL;
+    data->prune = TRUE;
 
     /* Copy the original MIS variable pointers (not captured, see
      * MISVertexMapping). */
@@ -655,6 +659,30 @@ SCIP_RETCODE SCIPsetMISFullstrongSelector(
 
     data->selector = selector;
     data->selectoruserdata = selector != NULL ? userdata : NULL;
+
+    return SCIP_OKAY;
+}
+
+SCIP_RETCODE SCIPsetMISFullstrongPruning(
+    SCIP* scip,
+    SCIP_Bool prune
+)
+{
+    SCIP_BRANCHRULE* branchrule;
+    MISFullstrongBranchruleData* data;
+
+    if( scip == NULL )
+        return SCIP_INVALIDDATA;
+
+    branchrule = SCIPfindBranchrule(scip, MIS_FULLSTRONG_NAME);
+
+    if( branchrule == NULL )
+        return SCIP_INVALIDDATA;
+
+    data = (MISFullstrongBranchruleData*)SCIPbranchruleGetData(branchrule);
+    assert(data != NULL);
+
+    data->prune = prune;
 
     return SCIP_OKAY;
 }

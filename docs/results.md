@@ -64,4 +64,30 @@ A graph neural network over the candidates of the node (`--hidden 32 --graph-lay
 
 A graph model leads the search to other nodes than the samples it was trained on, which a perceptron's on-policy round does not cover. An on-policy round driven by the graph model itself (`ba200_k8_gnn1`, collected with `scripts/collect_on_policy.sh` and `gnn32x2_ba1`: 41,150 samples, the model agreeing with the expert at 29% of the nodes) does not close the gap: trained on the same samples, the graph model explores 959 nodes and the perceptron 874 (ratio 1.087, [1.02, 1.17]). The cost of the graph model inside SCIP is small: on an idle machine, `gnn32x2_ba1` solves in 2.97 s per instance against 2.86 s for `mlp32_ba1`, and `gnn32x2_h2` in 2.83 s against 2.63 s; the solving times follow the node counts. (The other graph-model runs were timed while other computations ran: only their node counts are reported.)
 
-This network sees only the candidates and the edges between them. The reference graph model for imitating strong branching (Gasse et al., 2019) works on the bipartite graph of all the variables and the constraints, with features on both sides; it is the next one to try.
+This network sees only the candidates and the edges between them. The reference graph model for imitating strong branching (Gasse et al., 2019) works on the bipartite graph of all the variables and the constraints, with features on both sides; the next section tries it.
+
+## Bipartite graph model
+
+The bipartite model (`--hidden 32 --bipartite-rounds 1`, see [learning-to-branch.md](learning-to-branch.md#graph-models)) follows Gasse et al. (2019) on the free vertices and the edge constraints between them, without the constraint duals that the samples do not record. Trained on the same Barabási–Albert samples as `mlp32_ba1` (expert + mix1, 20 epochs, 9 minutes on a GTX 1050 Ti), it sits between the perceptron and the candidate graph model offline and explores the most nodes of the three in SCIP, while each node costs about 0.9 ms more to score:
+
+| Model | Validation accuracy | Validation score ratio | Barabási–Albert test nodes | Time per instance |
+|---|---|---|---|---|
+| `mlp32_ba1` | 0.194 | 0.645 | 864 | 2.86 s |
+| `gnn32x2_ba1` | 0.211 | 0.662 | 946 | 2.97 s |
+| `gcnn32x1_ba1` | 0.205 | 0.653 | 966 | 4.17 s |
+
+(times on an idle machine; ratio of `gcnn32x1_ba1` to `mlp32_ba1` 1.106, 95% interval [1.04, 1.19], more nodes on 17 of the 20 instances.)
+
+## How far imitation can go
+
+The expert prunes a node as soon as strong branching proves that its bound reaches the cutoff. A learned rule cannot: it does not solve the children's LPs, so SCIP creates, solves and prunes those children, each of them a node. The rule `misfullstrong_nocutoff` makes the expert's choices without this pruning, which gives the tree a perfect imitation of the expert would explore (SCIP seed 0, 20 test instances, all solved; results in `experiments/*/results/test_expert*.csv`):
+
+| SCIP seed 0, test nodes | Erdős–Rényi | Barabási–Albert |
+|---|---|---|
+| expert, `misfullstrong` | 1,282 | 514 |
+| expert without pruning, `misfullstrong_nocutoff` | 1,882 | 725 |
+| `mlp32_h2` (Erdős–Rényi) | 2,679 | 815 |
+| `mlp32_ba1` (Barabási–Albert) | | 903 |
+| `relpscost` | 3,596 | 863 |
+
+The pruning accounts for about 30% of the expert's tree (47% more nodes without it on Erdős–Rényi, 41% on Barabási–Albert): the target of imitation is 1,882 nodes, not 1,282. The best perceptron is still 42% above it on Erdős–Rényi and 12% on Barabási–Albert, so a better imitation would pay; but the models agree with the expert at about one node in five, and the graph models, closer to the expert offline, are not closer to it in the solver.

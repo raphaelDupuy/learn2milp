@@ -34,6 +34,9 @@ struct MISBenchmarkConfig
      *   "pscost" or "vanillafullstrong";
      * - "misfullstrong", the full strong branching expert that the data
      *   collection records;
+     * - "misfullstrong_nocutoff", the same expert without its pruning of
+     *   the nodes that strong branching proves prunable: the tree that a
+     *   perfect imitation of its choices would explore;
      * - "mislearned", the rule driven by the model of learnedModelPath;
      * - empty to keep SCIP's own priorities.
      */

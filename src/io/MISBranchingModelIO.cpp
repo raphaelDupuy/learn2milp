@@ -107,6 +107,325 @@ bool parseReal(const std::string& text, double& value)
     }
 }
 
+// Count of a section header "<keyword> <count>", from minimum to maximum.
+bool readCount(
+    std::istream& input,
+    const std::string& keyword,
+    int minimum,
+    int maximum,
+    int& value,
+    std::string& errorMessage
+)
+{
+    std::vector<std::string> tokens;
+
+    if (readTokens(input, tokens) && tokens.size() == 2 && tokens[0] == keyword)
+    {
+        if (minimum == 0 && tokens[1] == "0")
+        {
+            value = 0;
+            return true;
+        }
+
+        if (parseCount(tokens[1], maximum, value) && value >= minimum)
+            return true;
+    }
+
+    errorMessage = "Expected " + keyword + " <integer>.";
+    return false;
+}
+
+// Reads rows lines of columns finite numbers as one stored matrix;
+// nullptr if a line is malformed.
+const double* readMatrix(
+    std::istream& input,
+    int rows,
+    int columns,
+    std::vector<std::vector<double>>& storage
+)
+{
+    std::vector<double> values;
+
+    for (int r = 0; r < rows; ++r)
+    {
+        std::vector<double> row;
+
+        if (!readNumbers(input, columns, row)
+            || row.size() != static_cast<std::size_t>(columns))
+        {
+            return nullptr;
+        }
+
+        values.insert(values.end(), row.begin(), row.end());
+    }
+
+    storage.push_back(std::move(values));
+    return storage.back().data();
+}
+
+// Reads count dense (or, if allowed, graph) layers chaining from width.
+bool readLayers(
+    std::istream& input,
+    int count,
+    bool graphAllowed,
+    const std::string& stage,
+    int& width,
+    std::vector<MISBranchingModelLayer>& layers,
+    std::vector<std::vector<double>>& storage,
+    std::string& errorMessage
+)
+{
+    std::vector<std::string> tokens;
+
+    for (int l = 0; l < count; ++l)
+    {
+        const std::string where = stage + " " + std::to_string(l) + ": ";
+        int inputs = 0;
+        int outputs = 0;
+
+        if (!readTokens(input, tokens)
+            || tokens.size() != 4
+            || (tokens[0] != "layer"
+                && !(graphAllowed && tokens[0] == "graph_layer"))
+            || !parseCount(tokens[1], MAX_LAYER_WIDTH, inputs)
+            || !parseCount(tokens[2], MAX_LAYER_WIDTH, outputs)
+            || (tokens[3] != "relu" && tokens[3] != "linear"))
+        {
+            errorMessage = where
+                + (graphAllowed
+                    ? "expected: layer|graph_layer <inputs> <outputs> "
+                      "<relu|linear>."
+                    : "expected: layer <inputs> <outputs> <relu|linear>.");
+            return false;
+        }
+
+        if (inputs != width)
+        {
+            errorMessage =
+                where + "takes " + std::to_string(inputs)
+                + " inputs, but the previous stage produces "
+                + std::to_string(width) + ".";
+            return false;
+        }
+
+        // A graph layer has three matrices, W, W_neighbours and W_node.
+        MISBranchingModelLayer layer{};
+        layer.number_of_inputs = inputs;
+        layer.number_of_outputs = outputs;
+        layer.relu = tokens[3] == "relu" ? 1 : 0;
+        layer.graph = tokens[0] == "graph_layer" ? 1 : 0;
+        layer.weights = readMatrix(input, outputs, inputs, storage);
+
+        if (layer.graph && layer.weights != nullptr)
+        {
+            layer.neighbour_weights =
+                readMatrix(input, outputs, inputs, storage);
+
+            if (layer.neighbour_weights != nullptr)
+            {
+                layer.node_weights =
+                    readMatrix(input, outputs, inputs, storage);
+            }
+        }
+
+        if (layer.weights == nullptr
+            || (layer.graph
+                && (layer.neighbour_weights == nullptr
+                    || layer.node_weights == nullptr)))
+        {
+            errorMessage = where + "every weight row must have "
+                + std::to_string(inputs) + " finite numbers.";
+            return false;
+        }
+
+        layer.biases = readMatrix(input, 1, outputs, storage);
+
+        if (layer.biases == nullptr)
+        {
+            errorMessage = where + "bias row must have "
+                + std::to_string(outputs) + " finite numbers.";
+            return false;
+        }
+
+        layers.push_back(layer);
+        width = outputs;
+    }
+
+    return true;
+}
+
+// Reads the named inputs of one side of a bipartite model: exactly the
+// expected names, in order, with positive deviations.
+bool readInputs(
+    std::istream& input,
+    const std::string& side,
+    int expectedCount,
+    const char* (*name)(int),
+    const double*& means,
+    const double*& stds,
+    std::vector<std::vector<double>>& storage,
+    std::string& errorMessage
+)
+{
+    int count = 0;
+
+    if (!readCount(input, side + "_inputs", 1, MAX_LAYER_WIDTH, count,
+            errorMessage))
+    {
+        return false;
+    }
+
+    if (count != expectedCount)
+    {
+        errorMessage = "The model has " + std::to_string(count) + " " + side
+            + " inputs, but this program computes "
+            + std::to_string(expectedCount) + ".";
+        return false;
+    }
+
+    std::vector<double> meanValues;
+    std::vector<double> stdValues;
+    std::vector<std::string> tokens;
+
+    for (int i = 0; i < count; ++i)
+    {
+        double mean = 0.0;
+        double std = 0.0;
+
+        if (!readTokens(input, tokens)
+            || tokens.size() != 4
+            || tokens[0] != side + "_input"
+            || tokens[1] != name(i)
+            || !parseReal(tokens[2], mean)
+            || !parseReal(tokens[3], std)
+            || !(std > 0.0))
+        {
+            errorMessage = "Expected " + side + "_input " + name(i)
+                + " <mean> <positive std>.";
+            return false;
+        }
+
+        meanValues.push_back(mean);
+        stdValues.push_back(std);
+    }
+
+    storage.push_back(std::move(meanValues));
+    means = storage.back().data();
+    storage.push_back(std::move(stdValues));
+    stds = storage.back().data();
+    return true;
+}
+
+// Reads the encoder of a bipartite model; vertexWidth receives the width
+// of the final vertex states.
+bool readEncoder(
+    std::istream& input,
+    int featureCount,
+    MISBranchingBipartiteEncoder& encoder,
+    std::vector<MISBranchingModelLayer>& vertexLayers,
+    std::vector<MISBranchingModelLayer>& constraintLayers,
+    std::vector<MISBranchingMessageLayer>& messageLayers,
+    std::vector<std::vector<double>>& storage,
+    int& vertexWidth,
+    std::string& errorMessage
+)
+{
+    int constraintWidth = MIS_BRANCHING_CONSTRAINT_INPUT_COUNT;
+    int count = 0;
+
+    vertexWidth = featureCount + MIS_BRANCHING_VERTEX_INPUT_COUNT;
+
+    if (!readInputs(input, "vertex", MIS_BRANCHING_VERTEX_INPUT_COUNT,
+            MISbranchingVertexInputName, encoder.vertex_input_means,
+            encoder.vertex_input_stds, storage, errorMessage)
+        || !readInputs(input, "constraint",
+            MIS_BRANCHING_CONSTRAINT_INPUT_COUNT,
+            MISbranchingConstraintInputName, encoder.constraint_input_means,
+            encoder.constraint_input_stds, storage, errorMessage)
+        || !readCount(input, "vertex_layers", 0, MAX_LAYERS, count,
+            errorMessage)
+        || !readLayers(input, count, false, "Vertex layer", vertexWidth,
+            vertexLayers, storage, errorMessage)
+        || !readCount(input, "constraint_layers", 0, MAX_LAYERS, count,
+            errorMessage)
+        || !readLayers(input, count, false, "Constraint layer",
+            constraintWidth, constraintLayers, storage, errorMessage)
+        || !readCount(input, "message_layers", 0, MAX_LAYERS, count,
+            errorMessage))
+    {
+        return false;
+    }
+
+    std::vector<std::string> tokens;
+
+    for (int l = 0; l < count; ++l)
+    {
+        const std::string where = "Message layer " + std::to_string(l) + ": ";
+        MISBranchingMessageLayer layer{};
+
+        if (!readTokens(input, tokens)
+            || tokens.size() != 7
+            || tokens[0] != "message_layer"
+            || (tokens[1] != "to_constraints" && tokens[1] != "to_vertices")
+            || !parseCount(tokens[2], MAX_LAYER_WIDTH, layer.number_of_target_inputs)
+            || !parseCount(tokens[3], MAX_LAYER_WIDTH, layer.number_of_source_inputs)
+            || !parseCount(tokens[4], MAX_LAYER_WIDTH, layer.number_of_hidden)
+            || !parseCount(tokens[5], MAX_LAYER_WIDTH, layer.number_of_outputs)
+            || (tokens[6] != "relu" && tokens[6] != "linear"))
+        {
+            errorMessage = where + "expected: message_layer "
+                "<to_constraints|to_vertices> <targets> <sources> <hidden> "
+                "<outputs> <relu|linear>.";
+            return false;
+        }
+
+        layer.to_vertices = tokens[1] == "to_vertices" ? 1 : 0;
+        layer.relu = tokens[6] == "relu" ? 1 : 0;
+
+        int& targetWidth = layer.to_vertices ? vertexWidth : constraintWidth;
+        const int sourceWidth =
+            layer.to_vertices ? constraintWidth : vertexWidth;
+
+        if (layer.number_of_target_inputs != targetWidth
+            || layer.number_of_source_inputs != sourceWidth)
+        {
+            errorMessage = where + "takes " + tokens[2] + " target and "
+                + tokens[3] + " source inputs, but the previous stages "
+                "produce " + std::to_string(targetWidth) + " and "
+                + std::to_string(sourceWidth) + ".";
+            return false;
+        }
+
+        const int targets = layer.number_of_target_inputs;
+        const int hidden = layer.number_of_hidden;
+        const int outputs = layer.number_of_outputs;
+
+        layer.target_weights = readMatrix(input, hidden, targets, storage);
+        layer.source_weights = layer.target_weights == nullptr ? nullptr
+            : readMatrix(input, hidden, layer.number_of_source_inputs, storage);
+        layer.hidden_biases = layer.source_weights == nullptr ? nullptr
+            : readMatrix(input, 1, hidden, storage);
+        layer.message_weights = layer.hidden_biases == nullptr ? nullptr
+            : readMatrix(input, outputs, hidden, storage);
+        layer.own_weights = layer.message_weights == nullptr ? nullptr
+            : readMatrix(input, outputs, targets, storage);
+        layer.biases = layer.own_weights == nullptr ? nullptr
+            : readMatrix(input, 1, outputs, storage);
+
+        if (layer.biases == nullptr)
+        {
+            errorMessage = where + "a matrix or bias line has the wrong "
+                "number of finite numbers.";
+            return false;
+        }
+
+        messageLayers.push_back(layer);
+        targetWidth = outputs;
+    }
+
+    return true;
+}
+
 } // namespace
 
 const MISBranchingModel& LoadedMISBranchingModel::view() const
@@ -116,16 +435,23 @@ const MISBranchingModel& LoadedMISBranchingModel::view() const
 
 int LoadedMISBranchingModel::numberOfLayers() const
 {
-    return static_cast<int>(layers_.size());
+    return static_cast<int>(
+        layers_.size() + vertexLayers_.size() + constraintLayers_.size()
+        + messageLayers_.size());
 }
 
 std::size_t LoadedMISBranchingModel::numberOfParameters() const
 {
     std::size_t count = 0;
 
-    for (std::size_t l = 0; l < layers_.size(); ++l)
+    for (const std::vector<double>& values : storage_)
+        count += values.size();
+
+    // The means and deviations of the inputs are not parameters.
+    if (encoder_ != nullptr)
     {
-        count += weights_[l].size() + biases_[l].size();
+        count -= 2 * (MIS_BRANCHING_VERTEX_INPUT_COUNT
+            + MIS_BRANCHING_CONSTRAINT_INPUT_COUNT);
     }
 
     return count;
@@ -143,15 +469,14 @@ bool readMISBranchingModel(
     if (!readTokens(input, tokens)
         || tokens.size() != 2
         || tokens[0] != "MIS_BRANCHING_MODEL"
-        || (tokens[1] != "1" && tokens[1] != "2"))
+        || (tokens[1] != "1" && tokens[1] != "2" && tokens[1] != "3"))
     {
         errorMessage = "Invalid header or unsupported model format version.";
         return false;
     }
 
-    // Graph layers exist from version 2 on.
-    const bool graphLayersAllowed = tokens[1] == "2";
-
+    // Graph layers exist in version 2, bipartite encoders in version 3.
+    const int version = tokens[1][0] - '0';
     int featureCount = 0;
 
     if (!readTokens(input, tokens)
@@ -229,103 +554,30 @@ bool readMISBranchingModel(
         parsed.stds_.push_back(std);
     }
 
+    int width = featureCount;
+
+    if (version == 3)
+    {
+        parsed.encoder_ = std::make_unique<MISBranchingBipartiteEncoder>();
+
+        if (!readEncoder(input, featureCount, *parsed.encoder_,
+                parsed.vertexLayers_, parsed.constraintLayers_,
+                parsed.messageLayers_, parsed.storage_, width, errorMessage))
+        {
+            return false;
+        }
+    }
+
     int layerCount = 0;
 
-    if (!readTokens(input, tokens)
-        || tokens.size() != 2
-        || tokens[0] != "layers"
-        || !parseCount(tokens[1], MAX_LAYERS, layerCount))
+    if (!readCount(input, "layers", 1, MAX_LAYERS, layerCount, errorMessage)
+        || !readLayers(input, layerCount, version == 2, "Layer", width,
+            parsed.layers_, parsed.storage_, errorMessage))
     {
-        errorMessage = "Expected layer-count field: layers <integer>.";
         return false;
     }
 
-    int expectedInputs = featureCount;
-    std::vector<int> relu;
-
-    for (int l = 0; l < layerCount; ++l)
-    {
-        const std::string where = "Layer " + std::to_string(l) + ": ";
-        int inputs = 0;
-        int outputs = 0;
-
-        if (!readTokens(input, tokens)
-            || tokens.size() != 4
-            || (tokens[0] != "layer"
-                && !(graphLayersAllowed && tokens[0] == "graph_layer"))
-            || !parseCount(tokens[1], MAX_LAYER_WIDTH, inputs)
-            || !parseCount(tokens[2], MAX_LAYER_WIDTH, outputs)
-            || (tokens[3] != "relu" && tokens[3] != "linear"))
-        {
-            errorMessage = where
-                + (graphLayersAllowed
-                    ? "expected: layer|graph_layer <inputs> <outputs> "
-                      "<relu|linear>."
-                    : "expected: layer <inputs> <outputs> <relu|linear>.");
-            return false;
-        }
-
-        if (inputs != expectedInputs)
-        {
-            errorMessage =
-                where + "takes " + std::to_string(inputs)
-                + " inputs, but the previous stage produces "
-                + std::to_string(expectedInputs) + ".";
-            return false;
-        }
-
-        // A graph layer has three matrices, W, W_neighbours and W_node,
-        // stored one after the other.
-        const bool graph = tokens[0] == "graph_layer";
-        const int matrices = graph ? 3 : 1;
-        std::vector<double> weights;
-
-        for (int m = 0; m < matrices; ++m)
-        {
-            for (int o = 0; o < outputs; ++o)
-            {
-                std::vector<double> row;
-
-                if (!readNumbers(input, inputs, row)
-                    || row.size() != static_cast<std::size_t>(inputs))
-                {
-                    errorMessage =
-                        where + "weight row "
-                        + std::to_string(m * outputs + o) + " must have "
-                        + std::to_string(inputs) + " finite numbers.";
-                    return false;
-                }
-
-                weights.insert(weights.end(), row.begin(), row.end());
-            }
-        }
-
-        std::vector<double> biases;
-
-        if (!readNumbers(input, outputs, biases)
-            || biases.size() != static_cast<std::size_t>(outputs))
-        {
-            errorMessage =
-                where + "bias row must have " + std::to_string(outputs)
-                + " finite numbers.";
-            return false;
-        }
-
-        parsed.weights_.push_back(std::move(weights));
-        parsed.biases_.push_back(std::move(biases));
-        relu.push_back(tokens[3] == "relu" ? 1 : 0);
-
-        MISBranchingModelLayer layer{};
-        layer.number_of_inputs = inputs;
-        layer.number_of_outputs = outputs;
-        layer.relu = relu.back();
-        layer.graph = graph ? 1 : 0;
-        parsed.layers_.push_back(layer);
-
-        expectedInputs = outputs;
-    }
-
-    if (expectedInputs != 1 || relu.back() != 0)
+    if (width != 1 || parsed.layers_.back().relu != 0)
     {
         errorMessage =
             "The last layer must be linear and have a single output.";
@@ -341,30 +593,27 @@ bool readMISBranchingModel(
     }
 
     // Point the C view to the final storage.
-    for (std::size_t l = 0; l < parsed.layers_.size(); ++l)
-    {
-        MISBranchingModelLayer& layer = parsed.layers_[l];
-        const double* weights = parsed.weights_[l].data();
-        const std::size_t matrix =
-            static_cast<std::size_t>(layer.number_of_outputs)
-            * static_cast<std::size_t>(layer.number_of_inputs);
-
-        layer.weights = weights;
-        layer.biases = parsed.biases_[l].data();
-
-        if (layer.graph)
-        {
-            layer.neighbour_weights = weights + matrix;
-            layer.node_weights = weights + 2 * matrix;
-        }
-    }
-
     parsed.model_.number_of_features = featureCount;
     parsed.model_.feature_indices = parsed.indices_.data();
     parsed.model_.feature_means = parsed.means_.data();
     parsed.model_.feature_stds = parsed.stds_.data();
     parsed.model_.number_of_layers = layerCount;
     parsed.model_.layers = parsed.layers_.data();
+
+    if (parsed.encoder_ != nullptr)
+    {
+        MISBranchingBipartiteEncoder& encoder = *parsed.encoder_;
+        encoder.number_of_vertex_layers =
+            static_cast<int>(parsed.vertexLayers_.size());
+        encoder.vertex_layers = parsed.vertexLayers_.data();
+        encoder.number_of_constraint_layers =
+            static_cast<int>(parsed.constraintLayers_.size());
+        encoder.constraint_layers = parsed.constraintLayers_.data();
+        encoder.number_of_message_layers =
+            static_cast<int>(parsed.messageLayers_.size());
+        encoder.message_layers = parsed.messageLayers_.data();
+        parsed.model_.encoder = parsed.encoder_.get();
+    }
 
     if (!MISbranchingModelIsValid(&parsed.model_))
     {

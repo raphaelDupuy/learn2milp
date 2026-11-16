@@ -90,8 +90,8 @@ SCIP_RETCODE scoreCandidates(
         return SCIP_INVALIDDATA;
 
     if( MISevaluateBranchingModelOnNode(
-            data->model, data->graph, ncands, vertices, features, modelwork,
-            positions, scores) != 0 )
+            data->model, data->graph, states, ncands, vertices, features,
+            modelwork, positions, scores) != 0 )
         return SCIP_INVALIDDATA;
 
     /* First candidate with the highest score. */
@@ -158,10 +158,12 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
         MISbranchingFeatureWorkSize(data->mapping.nvertices)
     ) );
     SCIP_CALL( SCIPallocBufferArray(
-        scip, &modelwork, MISbranchingModelNodeWorkSize(data->model, ncands)
+        scip, &modelwork,
+        MISbranchingModelNodeWorkSize(data->model, data->graph, ncands)
     ) );
     SCIP_CALL( SCIPallocBufferArray(
-        scip, &positions, data->mapping.nvertices
+        scip, &positions,
+        MISbranchingModelNodeIntWorkSize(data->model, data->graph, ncands)
     ) );
 
     retcode = scoreCandidates(

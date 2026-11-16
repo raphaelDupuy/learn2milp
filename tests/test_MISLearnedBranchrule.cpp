@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -267,6 +268,306 @@ void checkGraphDecision(
             break;
         }
     }
+}
+
+// Deterministic pseudo-random weights in [-0.5, 0.5].
+std::string weightLines(int rows, int columns, int seed)
+{
+    std::ostringstream text;
+
+    for (int r = 0; r < rows; ++r)
+    {
+        for (int c = 0; c < columns; ++c)
+        {
+            const double x = std::sin(12.9898 * seed + 78.233 * (r * columns + c + 1)) * 43758.5453;
+            text << (c > 0 ? " " : "") << (x - std::floor(x) - 0.5);
+        }
+
+        text << '\n';
+    }
+
+    return text.str();
+}
+
+// Bipartite model reading three features: vertex and constraint layers of
+// width 4, one round of messages, then a linear output.
+bool bipartiteModel(LoadedMISBranchingModel& model)
+{
+    std::ostringstream text;
+
+    text << "MIS_BRANCHING_MODEL 3\nfeatures 3\n"
+         << "feature " << MISbranchingFeatureName(0) << " 0.4 0.2\n"
+         << "feature " << MISbranchingFeatureName(1) << " 0.35 0.12\n"
+         << "feature " << MISbranchingFeatureName(2) << " 10 3\n"
+         << "vertex_inputs " << MIS_BRANCHING_VERTEX_INPUT_COUNT << '\n';
+
+    for (int i = 0; i < MIS_BRANCHING_VERTEX_INPUT_COUNT; ++i)
+        text << "vertex_input " << MISbranchingVertexInputName(i) << ' ' << 0.1 * i << ' ' << 1.0 + 0.5 * i << '\n';
+
+    text << "constraint_inputs " << MIS_BRANCHING_CONSTRAINT_INPUT_COUNT << '\n';
+
+    for (int i = 0; i < MIS_BRANCHING_CONSTRAINT_INPUT_COUNT; ++i)
+        text << "constraint_input " << MISbranchingConstraintInputName(i) << " 0.2 0.7\n";
+
+    text << "vertex_layers 1\nlayer 9 4 relu\n" << weightLines(4, 9, 1) << weightLines(1, 4, 2)
+         << "constraint_layers 1\nlayer 3 4 relu\n" << weightLines(4, 3, 3) << weightLines(1, 4, 4)
+         << "message_layers 2\nmessage_layer to_constraints 4 4 3 4 relu\n"
+         << weightLines(3, 4, 5) << weightLines(3, 4, 6) << weightLines(1, 3, 7)
+         << weightLines(4, 3, 8) << weightLines(4, 4, 9) << weightLines(1, 4, 10)
+         << "message_layer to_vertices 4 4 3 4 relu\n"
+         << weightLines(3, 4, 11) << weightLines(3, 4, 12) << weightLines(1, 3, 13)
+         << weightLines(4, 3, 14) << weightLines(4, 4, 15) << weightLines(1, 4, 16)
+         << "layers 1\nlayer 4 1 linear\n" << weightLines(1, 4, 17) << "0\n";
+
+    std::istringstream input(text.str());
+    std::string error;
+    const bool ok = readMISBranchingModel(input, model, error);
+
+    if (!ok)
+        std::cerr << "  bipartite model: " << error << '\n';
+
+    return ok;
+}
+
+// Scores of a bipartite model, computed here without the library.
+std::vector<double> referenceBipartiteScores(
+    const MISBranchingModel& model,
+    const MISFeatureGraph& graph,
+    const MISVertexState* states,
+    int candidates,
+    const int* vertices,
+    const double* features)
+{
+    const MISBranchingBipartiteEncoder& encoder = *model.encoder;
+    using Vector = std::vector<double>;
+
+    const auto dense = [](const MISBranchingModelLayer& layer, const Vector& x)
+    {
+        Vector y;
+
+        for (int o = 0; o < layer.number_of_outputs; ++o)
+        {
+            double sum = layer.biases[o];
+
+            for (int i = 0; i < layer.number_of_inputs; ++i)
+                sum += layer.weights[o * layer.number_of_inputs + i] * x[i];
+
+            y.push_back(layer.relu ? std::max(sum, 0.0) : sum);
+        }
+
+        return y;
+    };
+
+    std::map<int, int> candidateOf;
+
+    for (int c = 0; c < candidates; ++c)
+        candidateOf[vertices[c]] = c;
+
+    std::vector<int> freeVertices;
+    std::map<int, int> rowOf;
+    std::vector<double> lp(static_cast<std::size_t>(graph.number_of_vertices), 0.0);
+
+    for (int v = 0; v < graph.number_of_vertices; ++v)
+    {
+        if (states[v] == MIS_VERTEX_FREE_LP_ZERO || states[v] == MIS_VERTEX_FREE_LP_ONE
+            || states[v] == MIS_VERTEX_FRACTIONAL)
+        {
+            rowOf[v] = static_cast<int>(freeVertices.size());
+            freeVertices.push_back(v);
+        }
+
+        if (states[v] == MIS_VERTEX_FREE_LP_ONE)
+            lp[v] = 1.0;
+
+        if (candidateOf.count(v) > 0)
+            lp[v] = features[candidateOf[v] * K];
+    }
+
+    std::vector<std::pair<int, int>> constraints;
+
+    for (const int v : freeVertices)
+    {
+        for (int k = graph.adjacency_offsets[v]; k < graph.adjacency_offsets[v + 1]; ++k)
+        {
+            const int u = graph.adjacency[k];
+
+            if (u > v && rowOf.count(u) > 0)
+                constraints.push_back({v, u});
+        }
+    }
+
+    std::vector<Vector> vertexStates;
+
+    for (const int v : freeVertices)
+    {
+        Vector x;
+        int freeDegree = 0;
+
+        for (const auto& [a, b] : constraints)
+            freeDegree += (a == v) + (b == v);
+
+        for (int f = 0; f < model.number_of_features; ++f)
+        {
+            x.push_back(candidateOf.count(v) == 0 ? 0.0
+                : (features[candidateOf[v] * K + model.feature_indices[f]]
+                    - model.feature_means[f]) / model.feature_stds[f]);
+        }
+
+        const double inputs[] = {
+            static_cast<double>(states[v] == MIS_VERTEX_FREE_LP_ZERO),
+            static_cast<double>(states[v] == MIS_VERTEX_FREE_LP_ONE),
+            static_cast<double>(states[v] == MIS_VERTEX_FRACTIONAL),
+            lp[v],
+            static_cast<double>(graph.adjacency_offsets[v + 1] - graph.adjacency_offsets[v]),
+            static_cast<double>(freeDegree)};
+
+        for (int i = 0; i < MIS_BRANCHING_VERTEX_INPUT_COUNT; ++i)
+            x.push_back((inputs[i] - encoder.vertex_input_means[i]) / encoder.vertex_input_stds[i]);
+
+        vertexStates.push_back(x);
+    }
+
+    std::vector<Vector> constraintStates;
+
+    for (const auto& [a, b] : constraints)
+    {
+        const double slack = 1.0 - lp[a] - lp[b];
+        const double inputs[] = {
+            slack,
+            slack <= 1e-6 ? 1.0 : 0.0,
+            static_cast<double>((states[a] == MIS_VERTEX_FRACTIONAL) + (states[b] == MIS_VERTEX_FRACTIONAL))};
+        Vector x;
+
+        for (int i = 0; i < MIS_BRANCHING_CONSTRAINT_INPUT_COUNT; ++i)
+            x.push_back((inputs[i] - encoder.constraint_input_means[i]) / encoder.constraint_input_stds[i]);
+
+        constraintStates.push_back(x);
+    }
+
+    for (int l = 0; l < encoder.number_of_vertex_layers; ++l)
+        for (Vector& x : vertexStates)
+            x = dense(encoder.vertex_layers[l], x);
+
+    for (int l = 0; l < encoder.number_of_constraint_layers; ++l)
+        for (Vector& x : constraintStates)
+            x = dense(encoder.constraint_layers[l], x);
+
+    for (int l = 0; l < encoder.number_of_message_layers; ++l)
+    {
+        const MISBranchingMessageLayer& layer = encoder.message_layers[l];
+        std::vector<Vector>& targets = layer.to_vertices ? vertexStates : constraintStates;
+        const std::vector<Vector>& sources = layer.to_vertices ? constraintStates : vertexStates;
+        std::vector<Vector> updated;
+
+        for (std::size_t t = 0; t < targets.size(); ++t)
+        {
+            std::vector<std::size_t> from;
+
+            if (layer.to_vertices)
+            {
+                for (std::size_t e = 0; e < constraints.size(); ++e)
+                    if (constraints[e].first == freeVertices[t] || constraints[e].second == freeVertices[t])
+                        from.push_back(e);
+            }
+            else
+            {
+                from.push_back(static_cast<std::size_t>(rowOf[constraints[t].first]));
+                from.push_back(static_cast<std::size_t>(rowOf[constraints[t].second]));
+            }
+
+            Vector mean(static_cast<std::size_t>(layer.number_of_hidden), 0.0);
+
+            for (const std::size_t s : from)
+            {
+                for (int h = 0; h < layer.number_of_hidden; ++h)
+                {
+                    double message = layer.hidden_biases[h];
+
+                    for (int i = 0; i < layer.number_of_target_inputs; ++i)
+                        message += layer.target_weights[h * layer.number_of_target_inputs + i] * targets[t][i];
+
+                    for (int i = 0; i < layer.number_of_source_inputs; ++i)
+                        message += layer.source_weights[h * layer.number_of_source_inputs + i] * sources[s][i];
+
+                    mean[h] += std::max(message, 0.0) / from.size();
+                }
+            }
+
+            Vector y;
+
+            for (int o = 0; o < layer.number_of_outputs; ++o)
+            {
+                double sum = layer.biases[o];
+
+                for (int h = 0; h < layer.number_of_hidden; ++h)
+                    sum += layer.message_weights[o * layer.number_of_hidden + h] * mean[h];
+
+                for (int i = 0; i < layer.number_of_target_inputs; ++i)
+                    sum += layer.own_weights[o * layer.number_of_target_inputs + i] * targets[t][i];
+
+                y.push_back(layer.relu ? std::max(sum, 0.0) : sum);
+            }
+
+            updated.push_back(y);
+        }
+
+        targets = updated;
+    }
+
+    std::vector<double> scores;
+
+    for (int c = 0; c < candidates; ++c)
+    {
+        Vector x = vertexStates[static_cast<std::size_t>(rowOf[vertices[c]])];
+
+        for (int l = 0; l < model.number_of_layers; ++l)
+            x = dense(model.layers[l], x);
+
+        scores.push_back(x[0]);
+    }
+
+    return scores;
+}
+
+struct BipartiteDecisionRecorder
+{
+    const MISFeatureGraph* graph = nullptr;
+    const MISBranchingModel* model = nullptr;
+    long long decisions = 0;
+    std::vector<std::string> problems;
+};
+
+void checkBipartiteDecision(
+    void* userdata,
+    const MISLearnedBranchingDecision* decision)
+{
+    auto& recorder = *static_cast<BipartiteDecisionRecorder*>(userdata);
+    const int k = decision->number_of_candidates;
+    const std::vector<double> expected = referenceBipartiteScores(
+        *recorder.model, *recorder.graph, decision->vertex_states, k,
+        decision->candidate_vertices, decision->features);
+
+    ++recorder.decisions;
+
+    int best = 0;
+
+    for (int c = 0; c < k; ++c)
+    {
+        if (std::fabs(decision->scores[c] - expected[c])
+                > 1e-9 * std::max(1.0, std::fabs(expected[c]))
+            && recorder.problems.size() < 10)
+        {
+            recorder.problems.push_back(
+                "node " + std::to_string(decision->node_id)
+                + ": bipartite score differs from the reference");
+        }
+
+        if (decision->scores[c] > decision->scores[best])
+            best = c;
+    }
+
+    if (decision->selected_candidate != best && recorder.problems.size() < 10)
+        recorder.problems.push_back("selection is not the first best score");
 }
 
 // The root node as one rule saw it.
@@ -546,6 +847,41 @@ int main()
             && graphRecorder.problems.empty(),
             "Graph model scores match the reference at every node ("
                 + std::to_string(graphRecorder.decisions) + " decisions)"
+        );
+    }
+
+    // A bipartite model: the rule's scores match a reference computation
+    // at every node.
+    {
+        LoadedMISBranchingModel bipartite;
+
+        check(bipartiteModel(bipartite), "Hand-written bipartite model is accepted");
+
+        BipartiteDecisionRecorder bipartiteRecorder;
+        bipartiteRecorder.graph = &graph;
+        bipartiteRecorder.model = &bipartite.view();
+
+        Solver solver;
+
+        const bool solved =
+            solver.create(instance, true)
+            && SCIPincludeBranchruleMISLearned(
+                solver.scip, solver.vars.data(),
+                static_cast<int>(solver.vars.size()),
+                &graph, &bipartite.view(), checkBipartiteDecision,
+                &bipartiteRecorder) == SCIP_OKAY
+            && SCIPsolve(solver.scip) == SCIP_OKAY
+            && SCIPgetStatus(solver.scip) == SCIP_STATUS_OPTIMAL
+            && std::fabs(SCIPgetPrimalbound(solver.scip) - optimum) < 1e-6;
+
+        for (const std::string& problem : bipartiteRecorder.problems)
+            std::cerr << "  " << problem << '\n';
+
+        check(
+            solved && bipartiteRecorder.decisions > 1
+            && bipartiteRecorder.problems.empty(),
+            "Bipartite model scores match the reference at every node ("
+                + std::to_string(bipartiteRecorder.decisions) + " decisions)"
         );
     }
 

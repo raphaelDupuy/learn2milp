@@ -34,6 +34,8 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  --rules       Comma-separated branching rules: SCIP rules such\n"
         << "                as relpscost, pscost, vanillafullstrong, or\n"
         << "                misfullstrong (the data collection expert),\n"
+        << "                misfullstrong_nocutoff (the expert without its\n"
+        << "                strong branching pruning),\n"
         << "                or mislearned (the rule driven by --model)\n"
         << "  --model       Model file of the mislearned rule\n"
         << "  --output      Path of the result table (never overwritten)\n"

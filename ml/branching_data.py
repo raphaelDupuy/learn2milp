@@ -14,6 +14,12 @@ Graph models also need, for every sample, the edges of the graph between
 its candidates. with_candidate_graphs() reads them from the instance
 files, found by name: the feature tables keep the vertex of every
 candidate.
+
+Bipartite models (variables and constraints, as in Gasse et al. 2019)
+also need the state of every vertex at every node, which only the raw
+samples record: with_vertex_states() reads it from the node tables of
+mis-collector, in the directory that matches each feature directory
+(data/raw/strong_branching/X for data/processed/features/X).
 """
 
 from __future__ import annotations
@@ -54,6 +60,9 @@ class BranchingDataset:
     instance  [samples], index of the instance each sample comes from
     source    [samples], index of the directory each sample comes from;
               the samples of one directory are consecutive
+    lp_values [candidates], LP value of each candidate
+    sample_ids
+              [samples], sample_index of each sample in its tables
 
     After with_candidate_graphs() only:
 
@@ -62,6 +71,15 @@ class BranchingDataset:
                   sample, the first one smaller
     edge_offsets  [samples + 1], the edges of sample s are the rows
                   edge_offsets[s] to edge_offsets[s + 1] - 1
+
+    After with_vertex_states() only:
+
+    states        uint8, the state of every vertex at every sample (codes
+                  of VERTEX_STATES), one sample after the other
+    state_offsets [samples + 1], the states of sample s are
+                  states[state_offsets[s] : state_offsets[s + 1]]
+    instance_edges
+                  per instance, its edges [m, 2]
     """
 
     feature_names: list[str]
@@ -74,8 +92,14 @@ class BranchingDataset:
     source: np.ndarray
     instance_names: list[str]
     total_samples: int
+    lp_values: np.ndarray
+    sample_ids: np.ndarray
+    source_directories: list[str]
     edges: np.ndarray | None = None
     edge_offsets: np.ndarray | None = None
+    states: np.ndarray | None = None
+    state_offsets: np.ndarray | None = None
+    instance_edges: list[np.ndarray] | None = None
 
     @property
     def number_of_samples(self) -> int:
@@ -236,17 +260,178 @@ class BranchingDataset:
             edges = edges[int(edge_offsets[first]) : int(edge_offsets[last])]
             edge_offsets = edge_offsets[first : last + 1] - edge_offsets[first]
 
+        states, state_offsets = self.states, self.state_offsets
+
+        if states is not None and state_offsets is not None:
+            states = states[int(state_offsets[first]) : int(state_offsets[last])]
+            state_offsets = state_offsets[first : last + 1] - state_offsets[first]
+
         return dataclasses.replace(
             self,
             features=self.features[rows],
             scores=self.scores[rows],
             vertices=self.vertices[rows],
+            lp_values=self.lp_values[rows],
             offsets=self.offsets[first : last + 1] - self.offsets[first],
             target=self.target[first:last],
             instance=self.instance[first:last],
             source=self.source[first:last],
+            sample_ids=self.sample_ids[first:last],
             edges=edges,
             edge_offsets=edge_offsets,
+            states=states,
+            state_offsets=state_offsets,
+        )
+
+    def with_vertex_states(
+        self, instances_root: str | pathlib.Path
+    ) -> BranchingDataset:
+        """The same samples, with the state of every vertex at each of them.
+
+        The states are read from the node tables of the raw samples, in the
+        directory matching each feature directory (raw_samples_directory()),
+        and the instance graphs from the instance files of the same names,
+        searched for under instances_root.
+        """
+        paths = find_instance_files(instances_root, self.instance_names)
+        instance_edges = []
+        parts = []
+        counts = np.zeros(self.number_of_samples, np.int64)
+
+        for index, name in enumerate(self.instance_names):
+            number_of_vertices, graph_edges = read_instance_graph(paths[name])
+            instance_edges.append(graph_edges)
+            samples = np.flatnonzero(self.instance == index)
+
+            if len(samples) == 0:
+                continue
+
+            directory = raw_samples_directory(
+                self.source_directories[int(self.source[samples[0]])]
+            )
+            nodes = pd.read_csv(
+                directory / f"{name}.sb.nodes.csv",
+                usecols=["sample_index", "number_of_vertices", "vertex_states"],
+                dtype={"vertex_states": str},
+            ).set_index("sample_index")
+
+            for sample in samples:
+                row = nodes.loc[int(self.sample_ids[sample])]
+                text = row["vertex_states"]
+
+                if int(row["number_of_vertices"]) != number_of_vertices or len(text) != number_of_vertices:
+                    raise ValueError(f"Vertex states of {name} do not match its graph")
+
+                codes = STATE_CODES[np.frombuffer(text.encode("ascii"), np.uint8)]
+                candidates = self.vertices[self.offsets[sample] : self.offsets[sample + 1]]
+
+                if (
+                    codes.max() > 5
+                    or (codes[candidates] != FRACTIONAL).any()
+                    or int((codes == FRACTIONAL).sum()) != len(candidates)
+                ):
+                    raise ValueError(
+                        f"Vertex states of {name}, sample {self.sample_ids[sample]}, "
+                        "do not match its candidates"
+                    )
+
+                parts.append(codes)
+                counts[sample] = number_of_vertices
+
+        state_offsets = np.zeros(self.number_of_samples + 1, np.int64)
+        state_offsets[1:] = np.cumsum(counts)
+
+        return dataclasses.replace(
+            self,
+            states=np.concatenate(parts) if parts else np.zeros(0, np.uint8),
+            state_offsets=state_offsets,
+            instance_edges=instance_edges,
+        )
+
+    def bipartite_batch(self, samples: np.ndarray) -> BipartiteBatch:
+        """Free vertices and active constraints of some samples.
+
+        Requires with_vertex_states(). The graph of a node keeps its free
+        vertices and the edge constraints x_u + x_v <= 1 between two free
+        vertices; the others are satisfied whatever the free variables do.
+        Vertices and constraints are laid out one sample after the other;
+        candidate_rows gives the vertex row of every candidate, in the
+        order of the dataset's candidates.
+        """
+        if self.states is None or self.state_offsets is None or self.instance_edges is None:
+            raise ValueError("Vertex states are not loaded")
+
+        samples = np.asarray(samples, np.int64)
+        candidate_features, vertex_inputs, constraint_inputs = [], [], []
+        endpoints, candidate_rows, is_candidate = [], [], []
+        vertex_count = 0
+
+        for sample in samples:
+            states = self.states[self.state_offsets[sample] : self.state_offsets[sample + 1]]
+            graph_edges = self.instance_edges[int(self.instance[sample])]
+            rows = slice(int(self.offsets[sample]), int(self.offsets[sample + 1]))
+            candidates = self.vertices[rows]
+            n = len(states)
+
+            free = (states >= FREE_LP_ZERO) & (states <= FRACTIONAL)
+            fractional = states == FRACTIONAL
+            x = np.where(states == FREE_LP_ONE, 1.0, 0.0)
+            x[candidates] = self.lp_values[rows]
+
+            active = free[graph_edges[:, 0]] & free[graph_edges[:, 1]]
+            ends = graph_edges[active]
+            degree = np.bincount(graph_edges.ravel(), minlength=n)
+            free_degree = np.bincount(ends.ravel(), minlength=n)
+
+            row_of_vertex = np.full(n, -1, np.int64)
+            free_vertices = np.flatnonzero(free)
+            row_of_vertex[free_vertices] = vertex_count + np.arange(len(free_vertices))
+
+            vertex_inputs.append(
+                np.stack(
+                    [
+                        states[free_vertices] == FREE_LP_ZERO,
+                        states[free_vertices] == FREE_LP_ONE,
+                        fractional[free_vertices],
+                        x[free_vertices],
+                        degree[free_vertices],
+                        free_degree[free_vertices],
+                    ],
+                    axis=1,
+                ).astype(np.float32)
+            )
+            features = np.zeros((len(free_vertices), self.features.shape[1]), np.float32)
+            features[row_of_vertex[candidates] - vertex_count] = self.features[rows]
+            candidate_features.append(features)
+            is_candidate.append(fractional[free_vertices])
+
+            slack = 1.0 - x[ends[:, 0]] - x[ends[:, 1]]
+            constraint_inputs.append(
+                np.stack(
+                    [
+                        slack,
+                        slack <= TIGHT_TOLERANCE,
+                        fractional[ends[:, 0]].astype(np.float64) + fractional[ends[:, 1]],
+                    ],
+                    axis=1,
+                ).astype(np.float32)
+            )
+            endpoints.append(row_of_vertex[ends])
+            candidate_rows.append(row_of_vertex[candidates])
+            vertex_count += len(free_vertices)
+
+        lengths = self.lengths[samples]
+
+        return BipartiteBatch(
+            candidate_features=np.concatenate(candidate_features),
+            is_candidate=np.concatenate(is_candidate),
+            vertex_inputs=np.concatenate(vertex_inputs),
+            constraint_inputs=np.concatenate(constraint_inputs),
+            endpoints=np.concatenate(endpoints).reshape(-1, 2),
+            candidate_rows=np.concatenate(candidate_rows),
+            sample_of_candidate=np.repeat(np.arange(len(samples)), lengths),
+            position=np.arange(int(lengths.sum())) - np.repeat(np.cumsum(lengths) - lengths, lengths),
+            number_of_samples=len(samples),
         )
 
 
@@ -268,6 +453,65 @@ class GraphBatch:
     sources: np.ndarray
     targets: np.ndarray
     number_of_samples: int
+
+
+# Vertex states, as mis-collector writes them (MISVertexState): one
+# character per vertex in the node table, a code 0..5 here.
+VERTEX_STATES = "ZOzofu"
+FIXED_ZERO, FIXED_ONE, FREE_LP_ZERO, FREE_LP_ONE, FRACTIONAL, UNKNOWN = range(6)
+STATE_CODES = np.full(256, 255, np.uint8)
+STATE_CODES[np.frombuffer(VERTEX_STATES.encode("ascii"), np.uint8)] = np.arange(6)
+
+# An edge constraint is tight below this slack (as in the C features).
+TIGHT_TOLERANCE = 1e-6
+
+# Inputs of the bipartite models, beyond the candidate features: names as
+# in the model files, in order.
+VERTEX_INPUT_NAMES = ["free_lp_zero", "free_lp_one", "fractional", "lp_value", "degree", "free_degree"]
+CONSTRAINT_INPUT_NAMES = ["slack", "tight", "fractional_endpoints"]
+
+
+@dataclasses.dataclass
+class BipartiteBatch:
+    """Free vertices and active constraints of a group of samples.
+
+    candidate_features  [vertices, features], the features of the
+                        candidates, 0 for the other free vertices
+    is_candidate        [vertices]
+    vertex_inputs       [vertices, len(VERTEX_INPUT_NAMES)]
+    constraint_inputs   [constraints, len(CONSTRAINT_INPUT_NAMES)]
+    endpoints           [constraints, 2], vertex rows of each constraint
+    candidate_rows      [candidates], vertex row of each candidate
+    sample_of_candidate, position
+                        [candidates], sample and position of each candidate
+    """
+
+    candidate_features: np.ndarray
+    is_candidate: np.ndarray
+    vertex_inputs: np.ndarray
+    constraint_inputs: np.ndarray
+    endpoints: np.ndarray
+    candidate_rows: np.ndarray
+    sample_of_candidate: np.ndarray
+    position: np.ndarray
+    number_of_samples: int
+
+
+def raw_samples_directory(features_directory: str | pathlib.Path) -> pathlib.Path:
+    """Directory of the raw samples a feature directory was computed from:
+    data/raw/strong_branching/X for data/processed/features/X."""
+    parts = pathlib.Path(features_directory).resolve().parts
+
+    for i in range(len(parts) - 1):
+        if parts[i : i + 2] == ("processed", "features"):
+            directory = pathlib.Path(*parts[:i], "raw", "strong_branching", *parts[i + 2 :])
+
+            if not directory.is_dir():
+                raise FileNotFoundError(f"Raw samples of {features_directory} not found in {directory}")
+
+            return directory
+
+    raise ValueError(f"{features_directory} is not under processed/features")
 
 
 def find_instance_files(
@@ -410,9 +654,11 @@ def load_feature_tables(
     features = np.zeros((candidates, len(feature_names)), np.float32)
     scores = np.zeros(candidates, np.float32)
     vertices = np.zeros(candidates, np.int32)
+    lp_values = np.zeros(candidates, np.float32)
     offsets = np.zeros(samples + 1, np.int64)
     target = np.full(samples, -1, np.int64)
     instance = np.zeros(samples, np.int64)
+    sample_ids = np.zeros(samples, np.int64)
     instance_names = []
 
     # Second pass: one table at a time, appended to the arrays, so that
@@ -449,6 +695,7 @@ def load_feature_tables(
         features[rows] = table[feature_names].to_numpy(np.float32)
         scores[rows] = table["score"].to_numpy(np.float32)
         vertices[rows] = table["vertex_id"].to_numpy(np.int32)
+        lp_values[rows] = table["lp_value"].to_numpy(np.float32)
         offsets[first_sample + 1 : first_sample + count + 1] = (
             first_row + np.cumsum(lengths)
         )
@@ -460,6 +707,7 @@ def load_feature_tables(
 
         target[first_sample + sample_of_row[selected]] = position[selected]
         instance[first_sample : first_sample + count] = instance_index
+        sample_ids[first_sample : first_sample + count] = sample_index[new_sample]
         instance_names.append(path.name[: -len(FEATURES_SUFFIX)])
         first_sample += count
         first_row += len(table)
@@ -480,4 +728,7 @@ def load_feature_tables(
         source=source,
         instance_names=instance_names,
         total_samples=total_samples,
+        lp_values=lp_values,
+        sample_ids=sample_ids,
+        source_directories=[str(directory) for directory in directories],
     )

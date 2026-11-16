@@ -63,14 +63,14 @@ The current version provides an experimental framework for learning to branch on
 - full strong branching rule for SCIP that records every branching decision, checked node by node against SCIP's own `vanillafullstrong` rule;
 - learning-to-branch datasets, from the expert's search and on-policy (`mis-collector`);
 - benchmark of branching rules on a set of instances (`mis-benchmark`);
-- a learned branching rule: candidate features, training of a small ranking model in Python (a multilayer perceptron, or a graph neural network over the candidates, on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`);
+- a learned branching rule: candidate features, training of a small ranking model in Python (a multilayer perceptron, a graph neural network over the candidates or a bipartite model of variables and constraints after Gasse et al. 2019, trained on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`);
 - an interactive menu to try rules and models and to inspect datasets (`learn2milp`).
 
-Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erdős–Rényi graphs they were trained on, and the model using the search history keeps up with it on Barabási–Albert graphs never seen in training, about twice as fast. A graph neural network over the candidates imitates the expert better than the perceptron but explores 5 to 12% more nodes; see [Results](docs/results.md).
+Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erdős–Rényi graphs they were trained on, and the model using the search history keeps up with it on Barabási–Albert graphs never seen in training, about twice as fast. Graph models imitate the expert as well or better than the perceptron offline but explore 5 to 12% more nodes. A perfect imitation would still explore 30% fewer nodes than the best perceptron on Erdős–Rényi graphs; see [Results](docs/results.md).
 
 ### Planned
 
-- richer learned branching policies (a bipartite graph model over variables and constraints, as in Gasse et al. 2019; other training signals);
+- training signals other than the imitation of strong branching (lookback, tree-level objectives);
 - learning-to-cut;
 - comparison of classical and learned Branch-and-Cut configurations;
 - experiments on generalization across instance distributions;

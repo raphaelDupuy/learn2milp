@@ -21,6 +21,10 @@ namespace
 {
 
 const char* const MIS_FULLSTRONG_RULE = "misfullstrong";
+
+// The expert without its strong branching pruning: the tree a perfect
+// imitation of its choices would explore.
+const char* const MIS_FULLSTRONG_NOCUTOFF_RULE = "misfullstrong_nocutoff";
 const char* const MIS_LEARNED_RULE = "mislearned";
 
 // Highest value accepted by SCIP for a branching rule priority.
@@ -127,6 +131,7 @@ double misShiftedGeometricMean(const std::vector<double>& values, double shift)
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
 {
     if (branchingRule == MIS_FULLSTRONG_RULE
+        || branchingRule == MIS_FULLSTRONG_NOCUTOFF_RULE
         || branchingRule == MIS_LEARNED_RULE)
     {
         return true;
@@ -210,6 +215,8 @@ bool benchmarkMIS(
         }
 
         const bool learned = config.branchingRule == MIS_LEARNED_RULE;
+        const bool expert = config.branchingRule == MIS_FULLSTRONG_RULE
+            || config.branchingRule == MIS_FULLSTRONG_NOCUTOFF_RULE;
 
         requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
@@ -277,8 +284,7 @@ bool benchmarkMIS(
         // Select the branching rule by giving it the highest priority.
         if (!config.branchingRule.empty())
         {
-            if (config.branchingRule == MIS_FULLSTRONG_RULE
-                && !vars.empty())
+            if (expert && !vars.empty())
             {
                 require(
                     SCIPincludeBranchruleMISFullstrong(
@@ -289,6 +295,14 @@ bool benchmarkMIS(
                         nullptr),
                     "include the strong branching rule"
                 );
+
+                if (config.branchingRule == MIS_FULLSTRONG_NOCUTOFF_RULE)
+                {
+                    require(
+                        SCIPsetMISFullstrongPruning(scip, FALSE),
+                        "disable strong branching pruning"
+                    );
+                }
             }
             else if (learned && !vars.empty())
             {
@@ -304,7 +318,7 @@ bool benchmarkMIS(
                     "include the learned branching rule"
                 );
             }
-            else if (config.branchingRule != MIS_FULLSTRONG_RULE
+            else if (!expert
                 && !learned
                 && SCIPfindBranchrule(
                     scip, config.branchingRule.c_str()) == nullptr)
@@ -314,8 +328,9 @@ bool benchmarkMIS(
                 );
             }
 
-            SCIP_BRANCHRULE* const rule =
-                SCIPfindBranchrule(scip, config.branchingRule.c_str());
+            SCIP_BRANCHRULE* const rule = SCIPfindBranchrule(
+                scip,
+                expert ? MIS_FULLSTRONG_RULE : config.branchingRule.c_str());
 
             // Null only for our own rules on a graph without vertices,
             // where there is nothing to branch on.

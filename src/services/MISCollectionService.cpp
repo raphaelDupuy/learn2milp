@@ -131,7 +131,7 @@ struct PolicyState
     std::vector<double> features;
     std::vector<double> featureWork;
     std::vector<double> modelWork;
-    std::vector<int> vertexPositions;
+    std::vector<int> intWork;
     std::vector<double> scores;
 
     std::size_t decisions = 0;
@@ -191,11 +191,12 @@ int selectWithPolicy(
     if (MISevaluateBranchingModelOnNode(
             policy.model,
             &policy.graph,
+            sample->vertex_states,
             count,
             policy.vertices.data(),
             policy.features.data(),
             policy.modelWork.data(),
-            policy.vertexPositions.data(),
+            policy.intWork.data(),
             policy.scores.data()) != 0)
     {
         return invalid;
@@ -479,9 +480,10 @@ bool collectMISStrongBranchingSamples(
                     MISbranchingFeatureWorkSize(instance.n)));
                 policy.modelWork.resize(static_cast<std::size_t>(
                     MISbranchingModelNodeWorkSize(
-                        policy.model, static_cast<int>(n))));
-                policy.vertexPositions.resize(
-                    static_cast<std::size_t>(instance.n));
+                        policy.model, &policy.graph, static_cast<int>(n))));
+                policy.intWork.resize(static_cast<std::size_t>(
+                    MISbranchingModelNodeIntWorkSize(
+                        policy.model, &policy.graph, static_cast<int>(n))));
                 policy.scores.resize(n);
 
                 require(
