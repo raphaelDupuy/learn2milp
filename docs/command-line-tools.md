@@ -97,6 +97,7 @@ The features are described in [learning-to-branch.md](learning-to-branch.md#1-fe
 ```
 
 - `--rules` takes the name of any SCIP branching rule (`relpscost` is SCIP's default), `misfullstrong`, the full strong branching expert recorded by the data collection, `misfullstrong_nocutoff`, the same expert without its pruning of the nodes that strong branching proves prunable (the tree a perfect imitation of its choices would explore), or `mislearned`, the learned rule driven by the model of `--model`;
+- `--strong-branching K` (with `mislearned` only) runs strong branching on the K candidates the model ranks first and branches on the best of them, or prunes the node when strong branching proves it can be pruned; 0, the default, branches on the model's best candidate;
 - `--settings study` (the default) uses the [study settings](#solver-settings), so that rules are compared in the conditions they were learned in; `--settings default` runs SCIP with no parameter changed, as an outside reference;
 - `--time-limit SECONDS` limits each run (default 3600);
 - runs are executed one at a time, with the rules interleaved on each instance: do not run anything else on the machine if solving times matter.

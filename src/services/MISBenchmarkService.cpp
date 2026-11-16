@@ -215,6 +215,14 @@ bool benchmarkMIS(
         }
 
         const bool learned = config.branchingRule == MIS_LEARNED_RULE;
+
+        if (config.learnedStrongBranchingCandidates < 0
+            || (config.learnedStrongBranchingCandidates > 0 && !learned))
+        {
+            throw std::invalid_argument(
+                "Strong branching candidates are only used by the mislearned "
+                "rule, and cannot be negative.");
+        }
         const bool expert = config.branchingRule == MIS_FULLSTRONG_RULE
             || config.branchingRule == MIS_FULLSTRONG_NOCUTOFF_RULE;
 
@@ -317,6 +325,15 @@ bool benchmarkMIS(
                         nullptr),
                     "include the learned branching rule"
                 );
+
+                if (config.learnedStrongBranchingCandidates > 0)
+                {
+                    require(
+                        SCIPsetMISLearnedStrongBranching(
+                            scip, config.learnedStrongBranchingCandidates),
+                        "set the strong branching candidates"
+                    );
+                }
             }
             else if (!expert
                 && !learned

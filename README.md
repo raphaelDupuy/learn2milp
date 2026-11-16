@@ -66,7 +66,7 @@ The current version provides an experimental framework for learning to branch on
 - a learned branching rule: candidate features, training of a small ranking model in Python (a multilayer perceptron, a graph neural network over the candidates or a bipartite model of variables and constraints after Gasse et al. 2019, trained on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`);
 - an interactive menu to try rules and models and to inspect datasets (`learn2milp`).
 
-Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erdős–Rényi graphs they were trained on, and the model using the search history keeps up with it on Barabási–Albert graphs never seen in training, about twice as fast. Graph models imitate the expert as well or better than the perceptron offline but explore 5 to 12% more nodes. A perfect imitation would still explore 30% fewer nodes than the best perceptron on Erdős–Rényi graphs; see [Results](docs/results.md).
+Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erdős–Rényi graphs they were trained on, and the model using the search history keeps up with it on Barabási–Albert graphs never seen in training, about twice as fast. Graph models imitate the expert as well or better than the perceptron offline but explore 5 to 12% more nodes. Running strong branching on the model's first candidates gives trees smaller than SCIP's with its default settings, at a cost in time; on one candidate, it beats SCIP's default rule on both nodes and time on Barabási–Albert graphs; see [Results](docs/results.md).
 
 ### Planned
 

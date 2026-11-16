@@ -8,6 +8,8 @@
 #include <scip/scip_var.h>
 #include <scip/pub_var.h>
 
+#include <limits.h>
+
 typedef struct
 {
     /* Link between graph vertices and SCIP variables. */
@@ -21,7 +23,120 @@ typedef struct
     MISLearnedBranchingDecisionCallback callback;
     void* userdata;
 
+    /* Candidates evaluated by strong branching (0: none). */
+    int sbcandidates;
+
 } MISLearnedBranchruleData;
+
+/*
+ * Strong branching on the candidates of the node with the highest scores,
+ * evaluated as the misfullstrong expert does (vanillafullstrong with
+ * idempotent = TRUE): *chosen receives the best of them by strong
+ * branching score (first best in candidate order) and *cutoff whether
+ * strong branching proves that the node can be pruned. *chosen is left
+ * unchanged if no candidate could be evaluated.
+ */
+static
+SCIP_RETCODE strongBranchTopCandidates(
+    SCIP* scip,
+    SCIP_VAR** cands,
+    int ncands,
+    const double* scores,
+    int count,
+    SCIP_Bool* selected,
+    int* chosen,
+    SCIP_Bool* cutoff
+)
+{
+    const SCIP_Real lpobjval = SCIPgetLPObjval(scip);
+    SCIP_Real bestscore = -SCIPinfinity(scip);
+    SCIP_Real bestdown = lpobjval;
+    SCIP_Real bestup = lpobjval;
+    SCIP_Real provedbound = lpobjval;
+    SCIP_Bool bestdownvalid = FALSE;
+    SCIP_Bool bestupvalid = FALSE;
+    int best = -1;
+    int picked;
+    int c;
+
+    *cutoff = FALSE;
+
+    if( SCIPisStopped(scip) )
+        return SCIP_OKAY;
+
+    /* The count candidates with the highest scores (first ones on ties). */
+    for( c = 0; c < ncands; ++c )
+        selected[c] = FALSE;
+
+    for( picked = 0; picked < count && picked < ncands; ++picked )
+    {
+        int top = -1;
+
+        for( c = 0; c < ncands; ++c )
+        {
+            if( !selected[c] && (top < 0 || scores[c] > scores[top]) )
+                top = c;
+        }
+
+        selected[top] = TRUE;
+    }
+
+    SCIP_CALL( SCIPstartStrongbranch(scip, FALSE) );
+
+    for( c = 0; c < ncands; ++c )
+    {
+        SCIP_Real down;
+        SCIP_Real up;
+        SCIP_Bool downvalid;
+        SCIP_Bool upvalid;
+        SCIP_Bool downinf;
+        SCIP_Bool upinf;
+        SCIP_Bool downconflict;
+        SCIP_Bool upconflict;
+        SCIP_Bool lperror;
+        SCIP_Real gains[2];
+        SCIP_Real score;
+
+        if( !selected[c] )
+            continue;
+
+        SCIP_CALL( SCIPgetVarStrongbranchFrac(scip, cands[c], INT_MAX, TRUE,
+            &down, &up, &downvalid, &upvalid, &downinf, &upinf,
+            &downconflict, &upconflict, &lperror) );
+
+        /* As the expert: stop at the first LP error. */
+        if( lperror )
+            break;
+
+        gains[0] = MAX(down, lpobjval) - lpobjval;
+        gains[1] = MAX(up, lpobjval) - lpobjval;
+        score = SCIPgetBranchScoreMultiple(scip, cands[c], 2, gains);
+
+        if( score > bestscore )
+        {
+            best = c;
+            bestscore = score;
+            bestdown = MAX(down, lpobjval);
+            bestup = MAX(up, lpobjval);
+            bestdownvalid = downvalid;
+            bestupvalid = upvalid;
+        }
+    }
+
+    SCIP_CALL( SCIPendStrongbranch(scip) );
+
+    if( best < 0 )
+        return SCIP_OKAY;
+
+    *chosen = best;
+
+    if( bestdownvalid && bestupvalid )
+        provedbound = MAX(provedbound, MIN(bestdown, bestup));
+
+    *cutoff = SCIPisGE(scip, provedbound, SCIPgetCutoffbound(scip));
+
+    return SCIP_OKAY;
+}
 
 /*
  * Scores the LP branching candidates of the current node and stores the
@@ -120,7 +235,9 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     double* featurework;
     double* modelwork;
     int* positions;
+    SCIP_Bool* selected;
     SCIP_RETCODE retcode;
+    SCIP_Bool cutoff = FALSE;
     int ncands;
     int best;
 
@@ -165,13 +282,26 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
         scip, &positions,
         MISbranchingModelNodeIntWorkSize(data->model, data->graph, ncands)
     ) );
+    SCIP_CALL( SCIPallocBufferArray(scip, &selected, ncands) );
 
     retcode = scoreCandidates(
         scip, data, cands, ncands, states, vertices, lpvalues, histories,
         features, scores, featurework, modelwork, positions, &best
     );
 
-    if( retcode == SCIP_OKAY )
+    if( retcode == SCIP_OKAY && data->sbcandidates > 0 )
+    {
+        retcode = strongBranchTopCandidates(
+            scip, cands, ncands, scores, data->sbcandidates, selected,
+            &best, &cutoff
+        );
+    }
+
+    if( retcode == SCIP_OKAY && cutoff )
+    {
+        *result = SCIP_CUTOFF;
+    }
+    else if( retcode == SCIP_OKAY )
     {
         SCIP_VAR* var = cands[best];
 
@@ -208,6 +338,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     }
 
     /* Buffers are freed in reverse order of allocation. */
+    SCIPfreeBufferArray(scip, &selected);
     SCIPfreeBufferArray(scip, &positions);
     SCIPfreeBufferArray(scip, &modelwork);
     SCIPfreeBufferArray(scip, &featurework);
@@ -327,6 +458,7 @@ SCIP_RETCODE SCIPincludeBranchruleMISLearned(
     data->model = model;
     data->callback = callback;
     data->userdata = userdata;
+    data->sbcandidates = 0;
 
     retcode = MISvertexMappingCreate(
         scip, &data->mapping, vertexvars, nvertices
@@ -369,4 +501,28 @@ TERMINATE:
     SCIPfreeBlockMemory(scip, &data);
 
     return retcode;
+}
+
+SCIP_RETCODE SCIPsetMISLearnedStrongBranching(
+    SCIP* scip,
+    int candidates
+)
+{
+    SCIP_BRANCHRULE* branchrule;
+    MISLearnedBranchruleData* data;
+
+    if( scip == NULL || candidates < 0 )
+        return SCIP_INVALIDDATA;
+
+    branchrule = SCIPfindBranchrule(scip, "mislearned");
+
+    if( branchrule == NULL )
+        return SCIP_INVALIDDATA;
+
+    data = (MISLearnedBranchruleData*)SCIPbranchruleGetData(branchrule);
+    assert(data != NULL);
+
+    data->sbcandidates = candidates;
+
+    return SCIP_OKAY;
 }

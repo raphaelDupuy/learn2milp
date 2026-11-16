@@ -46,6 +46,12 @@ struct MISBenchmarkConfig
     // Must be empty for every other rule.
     std::filesystem::path learnedModelPath;
 
+    // Candidates of the "mislearned" rule evaluated by strong branching at
+    // every node, the ones the model ranks first (0: none, the model's
+    // best is taken; see SCIPsetMISLearnedStrongBranching()). Must be 0
+    // for every other rule.
+    int learnedStrongBranchingCandidates = 0;
+
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
 
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;

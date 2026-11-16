@@ -76,6 +76,24 @@ SCIP_RETCODE SCIPincludeBranchruleMISLearned(
     void* userdata
 );
 
+/*
+ * Strong branching on the candidates the model ranks first.
+ *
+ * With candidates > 0, strong branching evaluates, at every node, the (at
+ * most) that many candidates with the highest model scores, as the
+ * misfullstrong expert does for all of them: the rule then branches on
+ * the best of them by strong branching score, or prunes the node when
+ * strong branching proves that its bound reaches the cutoff. They are
+ * evaluated in the order of the LP candidates and the first best one is
+ * chosen, so that with as many candidates as the node has, the rule makes
+ * the expert's decisions. 0, the default, branches on the model's best
+ * candidate without strong branching. The rule must have been included.
+ */
+SCIP_RETCODE SCIPsetMISLearnedStrongBranching(
+    SCIP* scip,
+    int candidates
+);
+
 #ifdef __cplusplus
 }
 #endif

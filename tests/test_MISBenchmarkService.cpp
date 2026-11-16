@@ -230,6 +230,54 @@ int main(int argc, char* argv[])
                 + std::to_string(learned.exploredNodes) + " nodes) " + error
         );
 
+        // Strong branching on the candidates the model ranks first: on all
+        // of them, the rule makes the expert's decisions.
+        {
+            MISBenchmarkConfig expertConfig;
+            expertConfig.branchingRule = "misfullstrong";
+
+            MISBenchmarkResult expert;
+            MISBenchmarkResult allCandidates;
+            MISBenchmarkResult threeCandidates;
+
+            MISBenchmarkConfig strong = config;
+            strong.learnedStrongBranchingCandidates = 100000;
+
+            const bool ran =
+                benchmarkMIS(instance, expertConfig, expert, error)
+                && benchmarkMIS(instance, strong, allCandidates, error);
+
+            strong.learnedStrongBranchingCandidates = 3;
+
+            const bool ranThree =
+                benchmarkMIS(instance, strong, threeCandidates, error);
+
+            check(
+                ran && allCandidates.solved
+                && allCandidates.exploredNodes == expert.exploredNodes
+                && std::fabs(allCandidates.primalBound - expert.primalBound) < 1e-6,
+                "Strong branching on every candidate repeats the expert ("
+                    + std::to_string(allCandidates.exploredNodes) + " and "
+                    + std::to_string(expert.exploredNodes) + " nodes)"
+            );
+
+            check(
+                ranThree && threeCandidates.solved
+                && std::fabs(threeCandidates.primalBound - reference.primalBound) < 1e-6,
+                "Strong branching on three candidates reaches the optimum ("
+                    + std::to_string(threeCandidates.exploredNodes) + " nodes)"
+            );
+
+            MISBenchmarkConfig wrong;
+            wrong.branchingRule = "relpscost";
+            wrong.learnedStrongBranchingCandidates = 3;
+
+            check(
+                !benchmarkMIS(instance, wrong, threeCandidates, error),
+                "Strong branching candidates given to another rule are rejected"
+            );
+        }
+
         MISBenchmarkResult result;
 
         config.learnedModelPath = workDir / "missing.model";

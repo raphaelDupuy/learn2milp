@@ -25,7 +25,7 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << " --instances DIR --rules R1,R2 --output PATH\n"
         << "      [--seeds S1,S2] [--settings study|default]"
         << " [--time-limit SECONDS]\n"
-        << "      [--model PATH]\n\n"
+        << "      [--model PATH] [--strong-branching K]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -38,6 +38,10 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "                strong branching pruning),\n"
         << "                or mislearned (the rule driven by --model)\n"
         << "  --model       Model file of the mislearned rule\n"
+        << "  --strong-branching\n"
+        << "                Candidates of the mislearned rule evaluated by\n"
+        << "                strong branching, those the model ranks first\n"
+        << "                (default 0: branch on the model's best)\n"
         << "  --output      Path of the result table (never overwritten)\n"
         << "  --seeds       Comma-separated SCIP seed shifts (default 0)\n"
         << "  --settings    study: settings used for data collection"
@@ -65,12 +69,13 @@ int main(int argc, char* argv[])
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
     double timeLimit = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     std::string modelPath;
+    int strongBranching = 0;
 
     try
     {
         const CommandLineOptions options(argc, argv, 1, {
             "--instances", "--rules", "--output", "--seeds",
-            "--settings", "--model", "--time-limit"});
+            "--settings", "--model", "--time-limit", "--strong-branching"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -84,6 +89,9 @@ int main(int argc, char* argv[])
 
         if (options.has("--model"))
             modelPath = options.text("--model");
+
+        strongBranching = options.get(
+            "--strong-branching", parseNonNegativeInt, strongBranching);
     }
     catch (const CommandLineError& error)
     {
@@ -97,6 +105,12 @@ int main(int argc, char* argv[])
     if (!modelPath.empty() && !usesModel)
     {
         std::cerr << "--model is only used by the mislearned rule.\n";
+        return 2;
+    }
+
+    if (strongBranching > 0 && !usesModel)
+    {
+        std::cerr << "--strong-branching is only used by the mislearned rule.\n";
         return 2;
     }
 
@@ -185,6 +199,7 @@ int main(int argc, char* argv[])
                 if (rule == "mislearned")
                 {
                     config.learnedModelPath = modelPath;
+                    config.learnedStrongBranchingCandidates = strongBranching;
                 }
 
                 MISBenchmarkResult result;

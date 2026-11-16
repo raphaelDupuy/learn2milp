@@ -104,3 +104,24 @@ The lookback options (`--smoothing`, `--lookback-weight`, see [learning-to-branc
 | `_ypat` | 2,653 | 855 |
 
 All the differences are within the noise of the training seed, and the validation accuracy does not move (0.18 to 0.19). The Parent-as-Target term does not change the behaviour it targets: at the nodes where the lookback condition holds, the models pick one of the parent's second-best candidates 24 to 25% of the time, with or without it. Its target is the model's own distribution at the parent, which says little when the model finds the parent's best candidate at one node in five; and which candidate strong branching ranked second at the parent is not known to a rule that does not run strong branching.
+
+## Strong branching on the model's first candidates
+
+Strong branching does what no imitation can: it proves that a node can be pruned before creating its children. With `--strong-branching K` (see [learning-to-branch.md](learning-to-branch.md#3-evaluation-inside-scip)), the learned rule runs it on the K candidates its model ranks first. Shifted geometric means over the 60 test runs, times on an idle machine, `mlp32_h2` on Erdős–Rényi graphs and `mlp32_ba1` on Barabási–Albert graphs:
+
+| Rule | Erdős–Rényi nodes | time | Barabási–Albert nodes | time |
+|---|---|---|---|---|
+| SCIP with default settings | 1,537 | 11.2 s | 487 | 9.06 s |
+| `relpscost` | 3,584 | 3.85 s | 846 | 5.94 s |
+| learned rule | 2,598 | 2.63 s | 864 | 2.86 s |
+| learned rule, K = 1 | 1,851 | 3.69 s | 612 | 3.96 s |
+| learned rule, K = 2 | 1,460 | 4.32 s | 519 | 4.74 s |
+| learned rule, K = 3 | 1,350 | 4.91 s | 512 | 5.55 s |
+| learned rule, K = 5 | 1,224 | 6.44 s | 454 | 7.10 s |
+| learned rule, K = 10 | 1,222 | 11.0 s | 471 | 12.3 s |
+
+(All rules but the first use the study settings: presolving on, no restarts, cuts at the root only. Full strong branching explores 1,282 and 514 nodes with SCIP seed 0.)
+
+From K = 5 on, the trees are smaller than those of SCIP with its default settings and its cuts at every node, and smaller than full strong branching's: the model's ranking and the pruning together do better than strong branching on every candidate. Each evaluated candidate costs two LP solves, so the solving time grows with K and the learned rule without strong branching stays the fastest: 32% faster than `relpscost` on Erdős–Rényi graphs and twice as fast on Barabási–Albert graphs. With K = 1, the rule beats `relpscost` on both counts on Barabási–Albert graphs (28% less time, 95% interval [0.66, 0.77] on the ratio, and 28% fewer nodes) and matches its time with half the nodes on Erdős–Rényi graphs ([0.92, 1.02]).
+
+Against SCIP with its default settings, every rule run with the study settings is faster, which comes from the settings rather than from learning (`relpscost` alone is three times faster); with K = 5, the learned rule also explores fewer nodes, on both families.

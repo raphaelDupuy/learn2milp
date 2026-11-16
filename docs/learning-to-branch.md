@@ -96,6 +96,8 @@ The `mislearned` rule loads a model file and evaluates it in C at every node. A 
 
 The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about \(10^{-14}\) for a graph model and \(10^{-7}\) for a bipartite one (whose constraint inputs are rounded to single precision in Python), with the same choice at every node; tests solve an instance with each kind of model while an independent implementation recomputes every score.
 
+With `--strong-branching K`, the rule runs strong branching, as the `misfullstrong` expert does, on the K candidates the model scores highest, then branches on the best of them by strong branching score, or prunes the node when strong branching proves that its bound reaches the cutoff. The candidates are evaluated in the order of the LP candidates and the first best one wins, so that with as many candidates as the node has the rule makes the expert's decisions exactly (a test checks it). Strong branching costs two LP solves per evaluated candidate; it gives back the pruning that a learned rule alone cannot do (see [results.md](results.md#how-far-imitation-can-go)).
+
 A model can also be tried on one instance, or compared with other rules and models, from the [interactive menu](interactive-menu.md).
 
 ## 4. On-policy samples
