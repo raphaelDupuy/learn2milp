@@ -1,18 +1,18 @@
 #include "services/MISCollectionService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
+#include "tools/CommandLine.hpp"
 
-#include <cmath>
 #include <filesystem>
 #include <iostream>
-#include <limits>
+#include <ostream>
 #include <string>
 #include <system_error>
 
 namespace
 {
-void printUsage(const char* program)
+void printUsage(const char* program, std::ostream& out = std::cerr)
 {
-    std::cerr
+    out
         << "Usage:\n"
         << "  " << program
         << " --instance PATH --output-dir DIR"
@@ -25,178 +25,51 @@ void printUsage(const char* program)
         << " (its .meta file must sit next to it)\n"
         << "  --output-dir  Directory receiving NAME.sb.nodes.csv,\n"
         << "                NAME.sb.candidates.csv and NAME.sb.meta\n"
-        << "  --time-limit  Solving time limit in seconds (default 3600)\n"
+        << "  --time-limit  Solving time limit in seconds (default "
+        << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
         << "  --node-limit  Maximum number of explored nodes"
         << " (default: none)\n"
         << "  --scip-seed   SCIP random seed shift (default 0)\n"
         << "  --policy-model  Branching model file: the search follows\n"
         << "                this model instead of the expert, and strong\n"
-        << "                branching still labels every visited node\n";
-}
-
-bool parsePositiveDouble(const std::string& text, double& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        value = std::stod(text, &position);
-
-        return position == text.size()
-            && std::isfinite(value)
-            && value > 0.0;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parsePositiveInteger(const std::string& text, long long& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        value = std::stoll(text, &position);
-
-        return position == text.size() && value > 0;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parseSeed(const std::string& text, unsigned int& value)
-{
-    try
-    {
-        std::size_t position = 0;
-
-        if (text.empty() || text.front() == '-')
-        {
-            return false;
-        }
-
-        const unsigned long long parsed = std::stoull(text, &position);
-
-        if (position != text.size()
-            || parsed > static_cast<unsigned long long>(
-                std::numeric_limits<int>::max()))
-        {
-            return false;
-        }
-
-        value = static_cast<unsigned int>(parsed);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
+        << "                branching still labels every visited node\n"
+        << "  -h, --help    Show this help and exit\n";
 }
 }
 
 int main(int argc, char* argv[])
 {
+    if (isHelpRequested(argc, argv))
+    {
+        printUsage(argv[0], std::cout);
+        return 0;
+    }
+
     std::string instancePath;
     std::string outputDirectory;
     MISCollectionConfig config;
 
-    bool hasInstance = false;
-    bool hasOutputDirectory = false;
-    bool hasTimeLimit = false;
-    bool hasNodeLimit = false;
-    bool hasSeed = false;
-    bool hasPolicyModel = false;
-
-    for (int i = 1; i < argc; ++i)
+    try
     {
-        const std::string option = argv[i];
+        const CommandLineOptions options(argc, argv, 1, {
+            "--instance", "--output-dir", "--time-limit", "--node-limit",
+            "--scip-seed", "--policy-model"});
 
-        if (i + 1 >= argc)
-        {
-            std::cerr << "Missing value for option: " << option << '\n';
-            return 2;
-        }
+        instancePath = options.text("--instance");
+        outputDirectory = options.text("--output-dir");
+        config.timeLimitSeconds = options.get(
+            "--time-limit", parsePositiveDouble, config.timeLimitSeconds);
+        config.nodeLimit = options.get(
+            "--node-limit", parsePositiveInteger, config.nodeLimit);
+        config.scipSeed = options.get(
+            "--scip-seed", parseSCIPSeed, config.scipSeed);
 
-        const std::string value = argv[++i];
-
-        if (option == "--instance")
-        {
-            if (hasInstance || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --instance value.\n";
-                return 2;
-            }
-
-            instancePath = value;
-            hasInstance = true;
-        }
-        else if (option == "--output-dir")
-        {
-            if (hasOutputDirectory || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --output-dir value.\n";
-                return 2;
-            }
-
-            outputDirectory = value;
-            hasOutputDirectory = true;
-        }
-        else if (option == "--time-limit")
-        {
-            if (hasTimeLimit
-                || !parsePositiveDouble(value, config.timeLimitSeconds))
-            {
-                std::cerr << "Invalid or duplicate --time-limit value.\n";
-                return 2;
-            }
-
-            hasTimeLimit = true;
-        }
-        else if (option == "--node-limit")
-        {
-            if (hasNodeLimit
-                || !parsePositiveInteger(value, config.nodeLimit))
-            {
-                std::cerr << "Invalid or duplicate --node-limit value.\n";
-                return 2;
-            }
-
-            hasNodeLimit = true;
-        }
-        else if (option == "--scip-seed")
-        {
-            if (hasSeed || !parseSeed(value, config.scipSeed))
-            {
-                std::cerr << "Invalid or duplicate --scip-seed value.\n";
-                return 2;
-            }
-
-            hasSeed = true;
-        }
-        else if (option == "--policy-model")
-        {
-            if (hasPolicyModel || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --policy-model value.\n";
-                return 2;
-            }
-
-            config.policyModelPath = value;
-            hasPolicyModel = true;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << option << '\n';
-            return 2;
-        }
+        if (options.has("--policy-model"))
+            config.policyModelPath = options.text("--policy-model");
     }
-
-    if (!hasInstance || !hasOutputDirectory)
+    catch (const CommandLineError& error)
     {
-        printUsage(argv[0]);
-        return 2;
+        return reportCommandLineError(argv[0], error);
     }
 
     std::string errorMessage;
@@ -247,7 +120,7 @@ int main(int argc, char* argv[])
         << "  samples: " << result.numberOfSamples << '\n'
         << "  candidates: " << result.numberOfCandidates << '\n';
 
-    if (hasPolicyModel)
+    if (!config.policyModelPath.empty())
     {
         std::cout
             << "  policy decisions: " << result.policyDecisions << '\n'

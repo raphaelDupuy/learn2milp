@@ -58,6 +58,24 @@ void ignoreSample(
 {
 }
 
+// The mislearned rule, and only it, takes a model file.
+void requireModelOfRule(
+    const std::string& branchingRule,
+    const std::filesystem::path& learnedModelPath
+)
+{
+    const bool learned = branchingRule == MIS_LEARNED_RULE;
+
+    if (learned == learnedModelPath.empty())
+    {
+        throw std::invalid_argument(
+            learned
+            ? "The mislearned rule needs a model file."
+            : "A model file is only used by the mislearned rule."
+        );
+    }
+}
+
 } // namespace
 
 const char* misBenchmarkSettingsName(MISBenchmarkSettings settings)
@@ -93,6 +111,19 @@ bool parseMISBenchmarkSettings(
     return false;
 }
 
+double misShiftedGeometricMean(const std::vector<double>& values, double shift)
+{
+    if (values.empty())
+        return 0.0;
+
+    double logSum = 0.0;
+
+    for (const double value : values)
+        logSum += std::log(value + shift);
+
+    return std::exp(logSum / static_cast<double>(values.size())) - shift;
+}
+
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
 {
     if (branchingRule == MIS_FULLSTRONG_RULE
@@ -107,6 +138,42 @@ bool isMISBenchmarkRuleAvailable(const std::string& branchingRule)
         && SCIPincludeDefaultPlugins(handle.scip) == SCIP_OKAY
         && SCIPfindBranchrule(handle.scip, branchingRule.c_str())
             != nullptr;
+}
+
+bool validateMISBenchmarkRule(
+    const std::string& branchingRule,
+    const std::filesystem::path& learnedModelPath,
+    std::string& errorMessage
+)
+{
+    try
+    {
+        requireModelOfRule(branchingRule, learnedModelPath);
+
+        if (!isMISBenchmarkRuleAvailable(branchingRule))
+        {
+            throw std::invalid_argument(
+                "Unknown branching rule: " + branchingRule
+            );
+        }
+
+        if (!learnedModelPath.empty())
+        {
+            LoadedMISBranchingModel model;
+            std::string modelError;
+
+            if (!loadMISBranchingModel(learnedModelPath, model, modelError))
+                throw std::invalid_argument(modelError);
+        }
+
+        errorMessage.clear();
+        return true;
+    }
+    catch (const std::exception& exception)
+    {
+        errorMessage = exception.what();
+        return false;
+    }
 }
 
 bool benchmarkMIS(
@@ -144,14 +211,7 @@ bool benchmarkMIS(
 
         const bool learned = config.branchingRule == MIS_LEARNED_RULE;
 
-        if (learned == config.learnedModelPath.empty())
-        {
-            throw std::invalid_argument(
-                learned
-                ? "The mislearned rule needs a model file."
-                : "A model file is only used by the mislearned rule."
-            );
-        }
+        requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
         // Declared before the solver: the learned rule points to them,
         // so they must be destroyed after it.
@@ -283,10 +343,21 @@ bool benchmarkMIS(
             static_cast<long long>(SCIPgetNLPIterations(scip));
         measured.solvingTimeSeconds = SCIPgetSolvingTime(scip);
 
-        measured.hasSolution = SCIPgetBestSol(scip) != nullptr;
+        SCIP_SOL* const solution = SCIPgetBestSol(scip);
+
+        measured.hasSolution = solution != nullptr;
         measured.primalBound =
             measured.hasSolution ? SCIPgetPrimalbound(scip) : 0.0;
         measured.dualBound = SCIPgetDualbound(scip);
+
+        if (measured.hasSolution)
+        {
+            for (std::size_t v = 0; v < vars.size(); ++v)
+            {
+                if (SCIPgetSolVal(scip, solution, vars[v]) > 0.5)
+                    measured.selectedVertices.push_back(static_cast<int>(v));
+            }
+        }
 
         result = measured;
         errorMessage.clear();
@@ -297,4 +368,22 @@ bool benchmarkMIS(
         errorMessage = exception.what();
         return false;
     }
+}
+
+void MISRuleSummary::add(const MISBenchmarkResult& result)
+{
+    ++runs;
+    solved += result.solved ? 1 : 0;
+    nodes.push_back(static_cast<double>(result.exploredNodes));
+    times.push_back(result.solvingTimeSeconds);
+}
+
+double MISRuleSummary::meanNodes() const
+{
+    return misShiftedGeometricMean(nodes, MIS_NODES_SHIFT);
+}
+
+double MISRuleSummary::meanTimeSeconds() const
+{
+    return misShiftedGeometricMean(times, MIS_TIME_SHIFT_SECONDS);
 }

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 #include "branching/MISStrongBranchingCollector.h"
 
@@ -68,6 +70,16 @@ extern const char* const MIS_SB_NODES_SUFFIX;
 extern const char* const MIS_SB_CANDIDATES_SUFFIX;
 extern const char* const MIS_SB_METADATA_SUFFIX;
 extern const char* const MIS_SB_FEATURES_SUFFIX;
+
+// True for a collection metadata file, NAME.sb.meta.
+bool isMISCollectionMetadataFile(const std::filesystem::path& path);
+
+// The collection metadata files of a directory (not of its
+// subdirectories), in name order. Throws
+// std::filesystem::filesystem_error if it cannot be read.
+std::vector<std::filesystem::path> listMISCollections(
+    const std::filesystem::path& directory
+);
 
 // Header rows, without the trailing line break.
 extern const char* const MIS_SB_NODE_CSV_HEADER;

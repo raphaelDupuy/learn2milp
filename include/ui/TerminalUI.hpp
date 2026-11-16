@@ -15,4 +15,8 @@ private:
     void handleSolveExisting();
 
     void handleGenerateAndSolve();
+
+    void handleCompareRules();
+
+    void handleInspectDirectory();
 };

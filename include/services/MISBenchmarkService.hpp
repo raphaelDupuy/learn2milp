@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "problems/MIS.hpp"
+#include "services/MISSolverLimits.hpp"
 
 /*
  * Measures how SCIP solves one MIS instance with a given branching rule.
@@ -42,7 +45,7 @@ struct MISBenchmarkConfig
 
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
 
-    double timeLimitSeconds = 3600.0;
+    double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.
     unsigned int scipSeed = 0;
@@ -63,6 +66,10 @@ struct MISBenchmarkResult
     bool hasSolution = false;
     double primalBound = 0.0;
     double dualBound = 0.0;
+
+    // Vertices of the best solution found, in increasing order; empty
+    // when there is no solution.
+    std::vector<int> selectedVertices;
 };
 
 // Text names of the settings, as used on the command line and in result
@@ -79,6 +86,18 @@ bool parseMISBenchmarkSettings(
 bool isMISBenchmarkRuleAvailable(const std::string& branchingRule);
 
 /*
+ * Checks a branching rule and its model before any run, as benchmarkMIS()
+ * does: the rule must be available, the mislearned rule needs a model
+ * file that can be loaded, and the other rules take none. Lets a caller
+ * refuse a request before solving anything.
+ */
+bool validateMISBenchmarkRule(
+    const std::string& branchingRule,
+    const std::filesystem::path& learnedModelPath,
+    std::string& errorMessage
+);
+
+/*
  * Solves the instance once. Fails, with an explanation in errorMessage,
  * if the instance is invalid, the branching rule is unknown, the model
  * cannot be loaded or SCIP reports an error. Reaching the time limit is not a failure.
@@ -89,3 +108,29 @@ bool benchmarkMIS(
     MISBenchmarkResult& result,
     std::string& errorMessage
 );
+
+/*
+ * Shifted geometric mean, exp(mean(log(x + shift))) - shift (0 for no
+ * value): it limits the weight of both the very easy and the very hard
+ * instances. Node counts are summarized with a shift of 100, solving
+ * times with a shift of 1 second.
+ */
+double misShiftedGeometricMean(const std::vector<double>& values, double shift);
+
+constexpr double MIS_NODES_SHIFT = 100.0;
+constexpr double MIS_TIME_SHIFT_SECONDS = 1.0;
+
+// Runs of one rule, summarized as at the end of a benchmark.
+struct MISRuleSummary
+{
+    std::size_t runs = 0;
+    std::size_t solved = 0;
+    std::vector<double> nodes;
+    std::vector<double> times;
+
+    void add(const MISBenchmarkResult& result);
+
+    // Shifted geometric means of the node counts and solving times.
+    double meanNodes() const;
+    double meanTimeSeconds() const;
+};

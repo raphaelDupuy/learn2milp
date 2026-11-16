@@ -1,14 +1,14 @@
-#include "io/MISBranchingModelIO.hpp"
+#include "io/MISInstanceIO.hpp"
 #include "services/MISBenchmarkService.hpp"
 #include "services/MISInstanceLoadingService.hpp"
+#include "tools/CommandLine.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
+#include <ostream>
 #include <map>
 #include <set>
 #include <sstream>
@@ -17,9 +17,9 @@
 
 namespace
 {
-void printUsage(const char* program)
+void printUsage(const char* program, std::ostream& out = std::cerr)
 {
-    std::cerr
+    out
         << "Usage:\n"
         << "  " << program
         << " --instances DIR --rules R1,R2 --output PATH\n"
@@ -41,283 +41,83 @@ void printUsage(const char* program)
         << "  --settings    study: settings used for data collection"
         << " (default)\n"
         << "                default: SCIP with no parameter changed\n"
-        << "  --time-limit  Time limit per run in seconds (default 3600)\n";
+        << "  --time-limit  Time limit per run in seconds (default "
+        << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
+        << "  -h, --help    Show this help and exit\n";
 }
 
-bool splitList(const std::string& text, std::vector<std::string>& items)
-{
-    items.clear();
-
-    std::string item;
-    std::istringstream stream(text);
-
-    while (std::getline(stream, item, ','))
-    {
-        if (item.empty())
-        {
-            return false;
-        }
-
-        items.push_back(item);
-    }
-
-    // Reject an empty list, a trailing comma and duplicates.
-    return !items.empty()
-        && text.back() != ','
-        && std::set<std::string>(items.begin(), items.end()).size()
-            == items.size();
-}
-
-bool parseSeed(const std::string& text, unsigned int& value)
-{
-    try
-    {
-        std::size_t position = 0;
-
-        if (text.empty() || text.front() == '-')
-        {
-            return false;
-        }
-
-        const unsigned long long parsed = std::stoull(text, &position);
-
-        if (position != text.size()
-            || parsed > static_cast<unsigned long long>(
-                std::numeric_limits<int>::max()))
-        {
-            return false;
-        }
-
-        value = static_cast<unsigned int>(parsed);
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-bool parsePositiveDouble(const std::string& text, double& value)
-{
-    try
-    {
-        std::size_t position = 0;
-        value = std::stod(text, &position);
-
-        return position == text.size()
-            && std::isfinite(value)
-            && value > 0.0;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-// Shifted geometric mean: exp(mean(log(x + shift))) - shift. It limits
-// the weight of both the very easy and the very hard instances.
-double shiftedGeometricMean(
-    const std::vector<double>& values,
-    double shift
-)
-{
-    if (values.empty())
-    {
-        return 0.0;
-    }
-
-    double logSum = 0.0;
-
-    for (const double value : values)
-    {
-        logSum += std::log(value + shift);
-    }
-
-    return std::exp(logSum / static_cast<double>(values.size())) - shift;
-}
-
-struct RuleSummary
-{
-    std::size_t runs = 0;
-    std::size_t solved = 0;
-    std::vector<double> nodes;
-    std::vector<double> times;
-};
-}
+} // namespace
 
 int main(int argc, char* argv[])
 {
+    if (isHelpRequested(argc, argv))
+    {
+        printUsage(argv[0], std::cout);
+        return 0;
+    }
+
     std::string instanceDirectory;
     std::string outputPath;
     std::vector<std::string> rules;
     std::vector<unsigned int> seeds{0};
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
-    double timeLimit = 3600.0;
-
-    bool hasInstances = false;
-    bool hasRules = false;
-    bool hasOutput = false;
-    bool hasSeeds = false;
-    bool hasSettings = false;
-    bool hasTimeLimit = false;
+    double timeLimit = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     std::string modelPath;
 
-    for (int i = 1; i < argc; ++i)
+    try
     {
-        const std::string option = argv[i];
+        const CommandLineOptions options(argc, argv, 1, {
+            "--instances", "--rules", "--output", "--seeds",
+            "--settings", "--model", "--time-limit"});
 
-        if (i + 1 >= argc)
-        {
-            std::cerr << "Missing value for option: " << option << '\n';
-            return 2;
-        }
+        instanceDirectory = options.text("--instances");
+        rules = options.list<std::string>("--rules", parseText);
+        outputPath = options.text("--output");
+        settings = options.get(
+            "--settings", parseMISBenchmarkSettings, settings);
+        timeLimit = options.get("--time-limit", parsePositiveDouble, timeLimit);
 
-        const std::string value = argv[++i];
+        if (options.has("--seeds"))
+            seeds = options.list<unsigned int>("--seeds", parseSCIPSeed);
 
-        if (option == "--instances")
-        {
-            if (hasInstances || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --instances value.\n";
-                return 2;
-            }
-
-            instanceDirectory = value;
-            hasInstances = true;
-        }
-        else if (option == "--rules")
-        {
-            if (hasRules || !splitList(value, rules))
-            {
-                std::cerr << "Invalid or duplicate --rules value.\n";
-                return 2;
-            }
-
-            hasRules = true;
-        }
-        else if (option == "--output")
-        {
-            if (hasOutput || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --output value.\n";
-                return 2;
-            }
-
-            outputPath = value;
-            hasOutput = true;
-        }
-        else if (option == "--seeds")
-        {
-            std::vector<std::string> items;
-            bool valid = !hasSeeds && splitList(value, items);
-
-            seeds.clear();
-
-            for (std::size_t s = 0; valid && s < items.size(); ++s)
-            {
-                unsigned int seed = 0;
-                valid = parseSeed(items[s], seed);
-                seeds.push_back(seed);
-            }
-
-            if (!valid)
-            {
-                std::cerr << "Invalid or duplicate --seeds value.\n";
-                return 2;
-            }
-
-            hasSeeds = true;
-        }
-        else if (option == "--settings")
-        {
-            if (hasSettings || !parseMISBenchmarkSettings(value, settings))
-            {
-                std::cerr << "Invalid or duplicate --settings value.\n";
-                return 2;
-            }
-
-            hasSettings = true;
-        }
-        else if (option == "--model")
-        {
-            if (!modelPath.empty() || value.empty())
-            {
-                std::cerr << "Invalid or duplicate --model value.\n";
-                return 2;
-            }
-
-            modelPath = value;
-        }
-        else if (option == "--time-limit")
-        {
-            if (hasTimeLimit || !parsePositiveDouble(value, timeLimit))
-            {
-                std::cerr << "Invalid or duplicate --time-limit value.\n";
-                return 2;
-            }
-
-            hasTimeLimit = true;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << option << '\n';
-            return 2;
-        }
+        if (options.has("--model"))
+            modelPath = options.text("--model");
+    }
+    catch (const CommandLineError& error)
+    {
+        return reportCommandLineError(argv[0], error);
     }
 
-    if (!hasInstances || !hasRules || !hasOutput)
+    // Every rule is checked, and the model loaded, before any run.
+    const bool usesModel =
+        std::find(rules.begin(), rules.end(), "mislearned") != rules.end();
+
+    if (!modelPath.empty() && !usesModel)
     {
-        printUsage(argv[0]);
+        std::cerr << "--model is only used by the mislearned rule.\n";
         return 2;
     }
 
     for (const std::string& rule : rules)
     {
-        if (!isMISBenchmarkRuleAvailable(rule))
+        std::string ruleError;
+
+        if (!validateMISBenchmarkRule(
+                rule, rule == "mislearned" ? modelPath : "", ruleError))
         {
-            std::cerr << "Unknown branching rule: " << rule << '\n';
+            std::cerr << ruleError << '\n';
             return 2;
-        }
-    }
-
-    const bool usesModel =
-        std::find(rules.begin(), rules.end(), "mislearned") != rules.end();
-
-    if (usesModel != !modelPath.empty())
-    {
-        std::cerr
-            << (usesModel
-                ? "The mislearned rule needs --model.\n"
-                : "--model is only used by the mislearned rule.\n");
-        return 2;
-    }
-
-    if (usesModel)
-    {
-        LoadedMISBranchingModel model;
-        std::string modelError;
-
-        if (!loadMISBranchingModel(modelPath, model, modelError))
-        {
-            std::cerr << modelError << '\n';
-            return 1;
         }
     }
 
     // Instances, in a fixed order.
     std::vector<std::filesystem::path> instancePaths;
-    std::error_code directoryError;
 
-    for (const auto& entry : std::filesystem::directory_iterator(
-            instanceDirectory, directoryError))
+    try
     {
-        if (entry.path().extension() == ".mis")
-        {
-            instancePaths.push_back(entry.path());
-        }
+        instancePaths = listMISInstances(instanceDirectory);
     }
-
-    if (directoryError)
+    catch (const std::filesystem::filesystem_error&)
     {
         std::cerr << "Cannot read instance directory: "
                   << instanceDirectory << '\n';
@@ -330,8 +130,6 @@ int main(int argc, char* argv[])
                   << instanceDirectory << '\n';
         return 1;
     }
-
-    std::sort(instancePaths.begin(), instancePaths.end());
 
     if (std::filesystem::exists(outputPath))
     {
@@ -354,7 +152,7 @@ int main(int argc, char* argv[])
     const std::size_t totalRuns =
         instancePaths.size() * seeds.size() * rules.size();
 
-    std::map<std::string, RuleSummary> summaries;
+    std::map<std::string, MISRuleSummary> summaries;
     std::size_t run = 0;
 
     // Rules are interleaved on each instance, so that a drift of the
@@ -427,12 +225,7 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                RuleSummary& summary = summaries[rule];
-                ++summary.runs;
-                summary.solved += result.solved ? 1 : 0;
-                summary.nodes.push_back(
-                    static_cast<double>(result.exploredNodes));
-                summary.times.push_back(result.solvingTimeSeconds);
+                summaries[rule].add(result);
 
                 ++run;
 
@@ -460,7 +253,7 @@ int main(int argc, char* argv[])
 
     for (const std::string& rule : rules)
     {
-        const RuleSummary& summary = summaries[rule];
+        const MISRuleSummary& summary = summaries[rule];
 
         std::ostringstream solved;
         solved << summary.solved << '/' << summary.runs;
@@ -469,9 +262,9 @@ int main(int argc, char* argv[])
             << std::left << std::setw(22) << rule
             << std::right << std::setw(10) << solved.str()
             << std::setw(12) << std::fixed << std::setprecision(1)
-            << shiftedGeometricMean(summary.nodes, 100.0)
+            << summary.meanNodes()
             << std::setw(12) << std::setprecision(2)
-            << shiftedGeometricMean(summary.times, 1.0) << '\n';
+            << summary.meanTimeSeconds() << '\n';
     }
 
     std::cout << "\nResults: " << outputPath << '\n';

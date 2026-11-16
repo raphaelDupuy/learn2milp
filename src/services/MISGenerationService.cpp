@@ -45,11 +45,6 @@ private:
     bool committed_ = false;
 };
 
-std::filesystem::path metadataPathOf(const std::filesystem::path& graphPath)
-{
-    return std::filesystem::path(graphPath.string() + ".meta");
-}
-
 void closeOutput(std::ofstream& file, const std::filesystem::path& path)
 {
     file.close();
@@ -70,7 +65,7 @@ void writeInstanceFiles(
     FileCleanup& cleanup
 )
 {
-    const auto metadataPath = metadataPathOf(graphPath);
+    const auto metadataPath = misInstanceMetadataPath(graphPath);
     std::string ioError;
 
     cleanup.track(graphPath);
@@ -233,7 +228,7 @@ bool generateSingleMIS(
         }
 
         requireAbsent(outputPath);
-        requireAbsent(metadataPathOf(outputPath));
+        requireAbsent(misInstanceMetadataPath(outputPath));
 
         const GeneratedMISInstance generated = generateMISInstance(config);
 
@@ -244,7 +239,7 @@ bool generateSingleMIS(
 
         MISSingleGenerationResult written;
         written.graphPath = outputPath;
-        written.metadataPath = metadataPathOf(outputPath);
+        written.metadataPath = misInstanceMetadataPath(outputPath);
         written.numberOfVertices = generated.graph.n;
         written.numberOfEdges = generated.graph.edges.size();
         written.seed = misGeneratorSeed(config);
@@ -302,9 +297,10 @@ bool generateBatchMIS(
         {
             ids.push_back(misInstanceId(instance));
 
-            const auto graphPath = outputDir / (ids.back() + ".mis");
+            const auto graphPath =
+                outputDir / (ids.back() + MIS_INSTANCE_EXTENSION);
             requireAbsent(graphPath);
-            requireAbsent(metadataPathOf(graphPath));
+            requireAbsent(misInstanceMetadataPath(graphPath));
         }
 
         // From here on, every created file is removed on failure.
@@ -323,7 +319,7 @@ bool generateBatchMIS(
             const GeneratedMISInstance generated =
                 generateMISInstance(instances[i]);
 
-            const std::string fileName = ids[i] + ".mis";
+            const std::string fileName = ids[i] + MIS_INSTANCE_EXTENSION;
             writeInstanceFiles(generated, outputDir / fileName, cleanup);
 
             manifest

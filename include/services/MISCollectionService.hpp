@@ -6,6 +6,7 @@
 
 #include "io/MISStrongBranchingSampleIO.hpp"
 #include "problems/MIS.hpp"
+#include "services/MISSolverLimits.hpp"
 
 /*
  * Strong branching data collection on one MIS instance.
@@ -44,7 +45,7 @@ struct MISCollectionConfig
 
     // Limits on the solving process. A run stopped by a limit still
     // produces a valid, but truncated, dataset.
-    double timeLimitSeconds = 3600.0;
+    double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     long long nodeLimit = -1; // -1: no limit
 
     // SCIP randomization/randomseedshift.

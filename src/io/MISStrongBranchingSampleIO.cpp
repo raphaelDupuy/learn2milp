@@ -1,5 +1,6 @@
 #include "io/MISStrongBranchingSampleIO.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <ostream>
@@ -10,6 +11,32 @@ const char* const MIS_SB_NODES_SUFFIX = ".sb.nodes.csv";
 const char* const MIS_SB_CANDIDATES_SUFFIX = ".sb.candidates.csv";
 const char* const MIS_SB_METADATA_SUFFIX = ".sb.meta";
 const char* const MIS_SB_FEATURES_SUFFIX = ".sb.features.csv";
+
+bool isMISCollectionMetadataFile(const std::filesystem::path& path)
+{
+    const std::string name = path.filename().string();
+    const std::string suffix = MIS_SB_METADATA_SUFFIX;
+
+    return name.size() > suffix.size()
+        && name.compare(name.size() - suffix.size(), suffix.size(), suffix)
+            == 0;
+}
+
+std::vector<std::filesystem::path> listMISCollections(
+    const std::filesystem::path& directory
+)
+{
+    std::vector<std::filesystem::path> collections;
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory))
+    {
+        if (entry.is_regular_file() && isMISCollectionMetadataFile(entry.path()))
+            collections.push_back(entry.path());
+    }
+
+    std::sort(collections.begin(), collections.end());
+    return collections;
+}
 
 const char* const MIS_SB_NODE_CSV_HEADER =
     "sample_index,node_id,parent_node_id,parent_node_valid,node_depth,"
