@@ -70,7 +70,7 @@ Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erd≈
 
 ### Planned
 
-- training signals other than the imitation of strong branching (lookback, tree-level objectives);
+- training signals other than node-by-node imitation of strong branching (tree-level objectives), and strong branching restricted to the candidates a learned model ranks first;
 - learning-to-cut;
 - comparison of classical and learned Branch-and-Cut configurations;
 - experiments on generalization across instance distributions;

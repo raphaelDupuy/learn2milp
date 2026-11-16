@@ -80,6 +80,15 @@ class BranchingDataset:
                   states[state_offsets[s] : state_offsets[s + 1]]
     instance_edges
                   per instance, its edges [m, 2]
+
+    After with_parents() only:
+
+    parent        [samples], dataset index of the sample of the parent node
+                  (the node whose branching created this one), -1 if the
+                  parent is not a usable sample of the dataset
+    parent_positions
+                  [candidates], position of each candidate among the
+                  candidates of the parent sample, -1 if it was not one
     """
 
     feature_names: list[str]
@@ -100,6 +109,8 @@ class BranchingDataset:
     states: np.ndarray | None = None
     state_offsets: np.ndarray | None = None
     instance_edges: list[np.ndarray] | None = None
+    parent: np.ndarray | None = None
+    parent_positions: np.ndarray | None = None
 
     @property
     def number_of_samples(self) -> int:
@@ -281,6 +292,10 @@ class BranchingDataset:
             edge_offsets=edge_offsets,
             states=states,
             state_offsets=state_offsets,
+            parent=None if self.parent is None else np.where(
+                self.parent[first:last] >= 0, self.parent[first:last] - first, -1
+            ),
+            parent_positions=None if self.parent_positions is None else self.parent_positions[rows],
         )
 
     def with_vertex_states(
@@ -347,6 +362,50 @@ class BranchingDataset:
             state_offsets=state_offsets,
             instance_edges=instance_edges,
         )
+
+    def with_parents(self) -> BranchingDataset:
+        """The same samples, linked to the sample of their parent node.
+
+        The node and parent identifiers are read from the node tables of
+        the raw samples (see with_vertex_states()). A parent is looked up
+        among the samples of the same table: the same search.
+        """
+        parent = np.full(self.number_of_samples, -1, np.int64)
+        parent_positions = np.full(self.number_of_candidates, -1, np.int32)
+
+        for index, name in enumerate(self.instance_names):
+            samples = np.flatnonzero(self.instance == index)
+
+            if len(samples) == 0:
+                continue
+
+            directory = raw_samples_directory(
+                self.source_directories[int(self.source[samples[0]])]
+            )
+            nodes = pd.read_csv(
+                directory / f"{name}.sb.nodes.csv",
+                usecols=["sample_index", "node_id", "parent_node_id", "parent_node_valid"],
+            ).set_index("sample_index")
+            rows = nodes.loc[self.sample_ids[samples]]
+            sample_of_node = dict(zip(rows["node_id"].to_numpy(), samples))
+
+            for sample, parent_id, valid in zip(
+                samples, rows["parent_node_id"].to_numpy(), rows["parent_node_valid"].to_numpy()
+            ):
+                found = sample_of_node.get(parent_id, -1) if valid else -1
+
+                if found < 0:
+                    continue
+
+                parent[sample] = found
+                parent_vertices = self.vertices[self.offsets[found] : self.offsets[found + 1]]
+                position_of_vertex = {int(v): p for p, v in enumerate(parent_vertices)}
+                child = slice(int(self.offsets[sample]), int(self.offsets[sample + 1]))
+                parent_positions[child] = [
+                    position_of_vertex.get(int(v), -1) for v in self.vertices[child]
+                ]
+
+        return dataclasses.replace(self, parent=parent, parent_positions=parent_positions)
 
     def bipartite_batch(self, samples: np.ndarray) -> BipartiteBatch:
         """Free vertices and active constraints of some samples.

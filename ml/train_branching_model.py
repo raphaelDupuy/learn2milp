@@ -539,6 +539,102 @@ def batch_scores(
     )
 
 
+def second_best_mask(dataset: BranchingDataset) -> np.ndarray:
+    """Per candidate: whether it is one of the second-best candidates of
+    its sample, by strong branching score: the best of the candidates other
+    than the expert's choice, ties included."""
+    starts, lengths = dataset.starts, dataset.lengths
+    scores = dataset.scores.astype(np.float64)
+    chosen = starts + dataset.target
+    others = scores.copy()
+    others[chosen] = -np.inf
+    best_other = np.maximum.reduceat(others, starts)
+    threshold = best_other - 1e-9 * np.maximum(1.0, np.abs(best_other))
+    mask = (others >= np.repeat(threshold, lengths)) & np.repeat(lengths > 1, lengths)
+    mask[chosen] = False
+    return mask
+
+
+def lookback_samples(dataset: BranchingDataset, second_best: np.ndarray) -> np.ndarray:
+    """Per sample: whether the lookback condition holds (Gupta et al. 2022):
+    the expert's choice is one of the second-best candidates of the parent
+    node. Requires with_parents()."""
+    assert dataset.parent is not None and dataset.parent_positions is not None
+    lookback = np.zeros(dataset.number_of_samples, bool)
+    has_parent = np.flatnonzero(dataset.parent >= 0)
+    at_parent = dataset.parent_positions[dataset.starts[has_parent] + dataset.target[has_parent]]
+    found = at_parent >= 0
+    rows = dataset.starts[dataset.parent[has_parent[found]]] + at_parent[found]
+    lookback[has_parent[found]] = second_best[rows]
+    return lookback
+
+
+def padded_positions(dataset: BranchingDataset, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Row (sample within samples), column (candidate position) and
+    dataset row of every candidate of some samples."""
+    lengths = dataset.lengths[samples]
+    rows = np.repeat(np.arange(len(samples)), lengths)
+    columns = np.arange(int(lengths.sum())) - np.repeat(np.cumsum(lengths) - lengths, lengths)
+    return rows, columns, dataset.starts[samples][rows] + columns
+
+
+def lookback_loss(
+    model: torch.nn.Module,
+    dataset: BranchingDataset,
+    batch: np.ndarray,
+    scores: torch.Tensor,
+    second_best: np.ndarray,
+    lookback: np.ndarray | None,
+    smoothing: float,
+    lookback_weight: float,
+) -> torch.Tensor:
+    """Cross-entropy towards the smoothed target, 1 - smoothing on the
+    expert's choice and smoothing shared by the second-best candidates of
+    the node, plus lookback_weight times the cross-entropy towards the
+    model's own distribution at the parent node, restricted to the
+    candidates of the child, on the samples where the lookback condition
+    holds (the Parent-as-Target term of Gupta et al. 2022; the parent's
+    scores are a fixed target, without gradient)."""
+    device = scores.device
+    log_probabilities = torch.log_softmax(scores, dim=1)
+
+    rows, columns, flat = padded_positions(dataset, batch)
+    in_second_best = second_best[flat]
+    count = np.bincount(rows[in_second_best], minlength=len(batch))
+    weights = np.zeros(scores.shape, np.float32)
+    weights[np.arange(len(batch)), dataset.target[batch]] = np.where(count > 0, 1.0 - smoothing, 1.0)
+    weights[rows[in_second_best], columns[in_second_best]] = smoothing / count[rows[in_second_best]]
+    loss = -(torch.from_numpy(weights).to(device) * log_probabilities).sum(1).mean()
+
+    if lookback is None or lookback_weight <= 0:
+        return loss
+
+    children = np.flatnonzero(lookback[batch])
+
+    if len(children) == 0:
+        return loss
+
+    with torch.no_grad():
+        parent_scores = batch_scores(model, dataset, dataset.parent[batch[children]])
+
+    rows, columns, flat = padded_positions(dataset, batch[children])
+    at_parent = dataset.parent_positions[flat]
+    known = at_parent >= 0
+    parent_logits = torch.full((len(children), scores.shape[1]), float("-inf"), device=device)
+    parent_logits[
+        torch.from_numpy(rows[known]).to(device), torch.from_numpy(columns[known]).to(device)
+    ] = parent_scores[
+        torch.from_numpy(rows[known]).to(device), torch.from_numpy(at_parent[known]).to(device)
+    ]
+    parent_distribution = torch.softmax(parent_logits, dim=1)
+    child_log_probabilities = log_probabilities[torch.from_numpy(children).to(device)]
+    parent_as_target = -(
+        torch.nan_to_num(parent_distribution) * child_log_probabilities
+    ).sum(1).mean()
+
+    return loss + lookback_weight * parent_as_target
+
+
 def train(
     train_set: BranchingDataset,
     valid_set: BranchingDataset,
@@ -550,6 +646,8 @@ def train(
     batch_size: int,
     seed: int,
     device: torch.device,
+    smoothing: float = 0.0,
+    lookback_weight: float = 0.0,
 ) -> tuple[torch.nn.Module, list[dict[str, float]]]:
     torch.manual_seed(seed)
 
@@ -590,6 +688,14 @@ def train(
 
     target = torch.from_numpy(train_set.target).to(device)
 
+    # Lookback (Gupta et al. 2022): smoothed targets and the Parent-as-Target
+    # term. With both off, the loss is the plain cross-entropy below.
+    second_best = second_best_mask(train_set) if smoothing > 0 or lookback_weight > 0 else None
+    lookback = lookback_samples(train_set, second_best) if lookback_weight > 0 else None
+
+    if lookback is not None:
+        print(f"lookback condition on {int(lookback.sum())} of {train_set.number_of_samples} training samples")
+
     history = []
     best_ratio = -1.0
     best_state = None
@@ -604,8 +710,14 @@ def train(
             batch = order[start : start + batch_size]
             scores = batch_scores(model, train_set, batch.numpy())
 
-            # The expert's choice should get the highest score of its node.
-            loss = torch.nn.functional.cross_entropy(scores, target[batch.to(device)])
+            if second_best is None:
+                # The expert's choice should get the highest score of its node.
+                loss = torch.nn.functional.cross_entropy(scores, target[batch.to(device)])
+            else:
+                loss = lookback_loss(
+                    model, train_set, batch.numpy(), scores, second_best, lookback,
+                    smoothing, lookback_weight,
+                )
 
             optimizer.zero_grad()
             loss.backward()
@@ -652,6 +764,8 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--smoothing", type=float, default=0.0, help="lookback target smoothing: share of the target given to the second-best candidates of the node (Gupta et al. 2022)")
+    parser.add_argument("--lookback-weight", type=float, default=0.0, help="weight of the Parent-as-Target lookback term (Gupta et al. 2022); needs the raw samples")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu", help="where the network is trained (cuda: the GPU, needs a CUDA build of PyTorch; results are then not bit-for-bit reproducible)")
     arguments = parser.parse_args()
 
@@ -699,6 +813,12 @@ def main() -> None:
         train_set = train_set.with_vertex_states(arguments.instances)
         valid_set = valid_set.with_vertex_states(arguments.instances)
 
+    if not 0.0 <= arguments.smoothing < 1.0 or arguments.lookback_weight < 0.0:
+        raise SystemExit("--smoothing must be in [0, 1) and --lookback-weight at least 0")
+
+    if arguments.lookback_weight > 0:
+        train_set = train_set.with_parents()
+
     for name, dataset in [("train", train_set), ("valid", valid_set)]:
         edges = (
             f", {len(dataset.edges)} edges between candidates"
@@ -734,6 +854,8 @@ def main() -> None:
         arguments.batch_size,
         arguments.seed,
         torch.device(arguments.device),
+        arguments.smoothing,
+        arguments.lookback_weight,
     )
 
     exported = model.export(train_set.feature_names)

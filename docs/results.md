@@ -91,3 +91,16 @@ The expert prunes a node as soon as strong branching proves that its bound reach
 | `relpscost` | 3,596 | 863 |
 
 The pruning accounts for about 30% of the expert's tree (47% more nodes without it on Erdős–Rényi, 41% on Barabási–Albert): the target of imitation is 1,882 nodes, not 1,282. The best perceptron is still 42% above it on Erdős–Rényi and 12% on Barabási–Albert, so a better imitation would pay; but the models agree with the expert at about one node in five, and the graph models, closer to the expert offline, are not closer to it in the solver.
+
+## Lookback
+
+The lookback options (`--smoothing`, `--lookback-weight`, see [learning-to-branch.md](learning-to-branch.md#lookback)) were tried on the perceptron, with the recipes of `mlp32_h2` and `mlp32_ba1`: smoothing \(\varepsilon = 0.1\) alone (`_z`), smoothing and the Parent-as-Target term with \(\lambda = 0.2\), the choice of Gupta et al. (2022) for independent sets (`_zpat`), and the term alone (`_ypat`). Test nodes, training seed 0 (reference: two seeds):
+
+| Variant | Erdős–Rényi test | Barabási–Albert test |
+|---|---|---|
+| reference | 2,598 / 2,660 | 864 / 854 |
+| `_z` | 2,612 | 911 |
+| `_zpat` | 2,558 | 839 |
+| `_ypat` | 2,653 | 855 |
+
+All the differences are within the noise of the training seed, and the validation accuracy does not move (0.18 to 0.19). The Parent-as-Target term does not change the behaviour it targets: at the nodes where the lookback condition holds, the models pick one of the parent's second-best candidates 24 to 25% of the time, with or without it. Its target is the model's own distribution at the parent, which says little when the model finds the parent's best candidate at one node in five; and which candidate strong branching ranked second at the parent is not known to a rule that does not run strong branching.

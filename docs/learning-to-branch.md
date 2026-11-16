@@ -70,6 +70,15 @@ t' = \mathrm{ReLU}\Big(P\, \operatorname{mean}_{s}\, \mathrm{ReLU}(L t + R s + b
 
 and a linear layer scores each candidate from its vertex state. The vertex states are read from the raw samples (`data/raw/strong_branching/X` for the features of `data/processed/features/X`), so no new collection is needed. Such a model is written in version 3 of the model format. The constraint duals, which Gasse et al. also use, are not recorded in the samples.
 
+### Lookback
+
+With strong branching, the best candidate of a node is often one of the second-best candidates of its parent (the lookback property, Gupta et al. 2022). In the validation samples, this holds for 15 to 20% of the parent–child pairs, and the perceptrons pick one of the parent's second-best candidates at only a quarter of those nodes. Two options of the training script, from that paper, take it into account:
+
+- `--smoothing ε` replaces the one-hot target by \(1 - \varepsilon\) on the expert's choice and \(\varepsilon\) shared by the second-best candidates of the node (ties with the best included);
+- `--lookback-weight λ` adds, on the samples whose expert choice is one of the parent's second-best candidates, \(\lambda\) times the cross-entropy between the child's distribution and the model's own distribution at the parent, restricted to the child's candidates (the Parent-as-Target term; the parent's scores are a fixed target, without gradient, and the term is averaged over the samples where it applies).
+
+The parent of a sample is found through the node identifiers of the raw samples (`data/raw/strong_branching/X`). With both options at 0, the default, the loss is the plain cross-entropy.
+
 Training on the CPU, the default, is reproducible bit for bit. `--device cuda` trains on the GPU, about four times faster per epoch for a graph model; it needs a CUDA build of PyTorch, which the project's environment does not install, and its results are not reproducible bit for bit (the GPU sums in parallel, in no fixed order). SCIP, the collection and the evaluation inside SCIP always run on the CPU.
 
 ## 3. Evaluation inside SCIP
