@@ -13,6 +13,7 @@
 
 #include "branching/MISLearnedBranchrule.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -72,6 +73,200 @@ bool singleFeatureModel(int feature, LoadedMISBranchingModel& model)
     std::string error;
 
     return readMISBranchingModel(input, model, error);
+}
+
+// Graph model: two hidden units from the fractionality, the LP value and
+// the degree, a graph layer, then a linear output.
+bool graphModel(LoadedMISBranchingModel& model)
+{
+    std::ostringstream text;
+
+    text << "MIS_BRANCHING_MODEL 2\nfeatures " << K << '\n';
+
+    for (int f = 0; f < K; ++f)
+        text << "feature " << MISbranchingFeatureName(f) << " 0 1\n";
+
+    const auto row = [](std::ostringstream& out,
+                        std::vector<std::pair<int, double>> entries)
+    {
+        for (int f = 0; f < K; ++f)
+        {
+            double value = 0.0;
+
+            for (const auto& [index, weight] : entries)
+                if (index == f)
+                    value = weight;
+
+            out << (f > 0 ? " " : "") << value;
+        }
+
+        out << '\n';
+    };
+
+    text << "layers 3\nlayer " << K << " 2 relu\n";
+    row(text, {{FRACTIONALITY, 4.0}, {2, 0.05}});
+    row(text, {{0, -2.0}, {2, 0.1}});
+    text << "0.1 1\n"
+         << "graph_layer 2 2 relu\n"
+         << "1 0.5\n-0.5 1\n"      // W
+         << "2 -1\n0.25 0.5\n"     // W_neighbours
+         << "-1 0.5\n0.5 -0.25\n"  // W_node
+         << "0 0.2\n"
+         << "layer 2 1 linear\n1 -0.75\n0\n";
+
+    std::istringstream input(text.str());
+    std::string error;
+
+    return readMISBranchingModel(input, model, error);
+}
+
+// Scores of a model, computed here without the library's evaluation:
+// the reference the rule must agree with.
+std::vector<double> referenceScores(
+    const MISBranchingModel& model,
+    const MISFeatureGraph& graph,
+    int candidates,
+    const int* vertices,
+    const double* features)
+{
+    std::vector<std::vector<double>> states(static_cast<std::size_t>(candidates));
+
+    for (int c = 0; c < candidates; ++c)
+    {
+        for (int i = 0; i < model.number_of_features; ++i)
+        {
+            const double value = features[c * K + model.feature_indices[i]];
+            states[c].push_back(
+                (value - model.feature_means[i]) / model.feature_stds[i]);
+        }
+    }
+
+    std::vector<std::vector<int>> neighbours(static_cast<std::size_t>(candidates));
+
+    for (int c = 0; c < candidates; ++c)
+    {
+        for (int d = 0; d < candidates; ++d)
+        {
+            const int* first = graph.adjacency + graph.adjacency_offsets[vertices[c]];
+            const int* last = graph.adjacency + graph.adjacency_offsets[vertices[c] + 1];
+
+            if (std::find(first, last, vertices[d]) != last)
+                neighbours[c].push_back(d);
+        }
+    }
+
+    for (int l = 0; l < model.number_of_layers; ++l)
+    {
+        const MISBranchingModelLayer& layer = model.layers[l];
+        const int in = layer.number_of_inputs;
+        std::vector<double> node(static_cast<std::size_t>(in), 0.0);
+
+        for (int c = 0; c < candidates; ++c)
+            for (int i = 0; i < in; ++i)
+                node[i] += states[c][i] / candidates;
+
+        std::vector<std::vector<double>> next(static_cast<std::size_t>(candidates));
+
+        for (int c = 0; c < candidates; ++c)
+        {
+            std::vector<double> mean(static_cast<std::size_t>(in), 0.0);
+
+            for (const int d : neighbours[c])
+                for (int i = 0; i < in; ++i)
+                    mean[i] += states[d][i] / neighbours[c].size();
+
+            for (int o = 0; o < layer.number_of_outputs; ++o)
+            {
+                double sum = layer.biases[o];
+
+                for (int i = 0; i < in; ++i)
+                {
+                    sum += layer.weights[o * in + i] * states[c][i];
+
+                    if (layer.graph)
+                    {
+                        sum += layer.neighbour_weights[o * in + i] * mean[i]
+                            + layer.node_weights[o * in + i] * node[i];
+                    }
+                }
+
+                next[c].push_back(layer.relu ? std::max(sum, 0.0) : sum);
+            }
+        }
+
+        states = std::move(next);
+    }
+
+    std::vector<double> scores;
+
+    for (int c = 0; c < candidates; ++c)
+        scores.push_back(states[c][0]);
+
+    return scores;
+}
+
+struct GraphDecisionRecorder
+{
+    const MISFeatureGraph* graph = nullptr;
+    const MISBranchingModel* model = nullptr;
+    long long decisions = 0;
+    long long withNeighbours = 0;
+    std::vector<std::string> problems;
+};
+
+void checkGraphDecision(
+    void* userdata,
+    const MISLearnedBranchingDecision* decision)
+{
+    auto& recorder = *static_cast<GraphDecisionRecorder*>(userdata);
+    const int k = decision->number_of_candidates;
+    const std::vector<double> expected = referenceScores(
+        *recorder.model, *recorder.graph, k, decision->candidate_vertices,
+        decision->features);
+
+    ++recorder.decisions;
+
+    int best = 0;
+
+    for (int c = 0; c < k; ++c)
+    {
+        if (std::fabs(decision->scores[c] - expected[c])
+                > 1e-9 * std::max(1.0, std::fabs(expected[c]))
+            && recorder.problems.size() < 10)
+        {
+            recorder.problems.push_back(
+                "node " + std::to_string(decision->node_id)
+                + ": score differs from the reference");
+        }
+
+        if (decision->scores[c] > decision->scores[best])
+            best = c;
+    }
+
+    if (decision->selected_candidate != best && recorder.problems.size() < 10)
+        recorder.problems.push_back("selection is not the first best score");
+
+    // Count the nodes where the graph layer has something to mix.
+    for (int c = 0; c < k; ++c)
+    {
+        const int v = decision->candidate_vertices[c];
+        bool linked = false;
+
+        for (int d = 0; d < k && !linked; ++d)
+        {
+            const int* first = recorder.graph->adjacency
+                + recorder.graph->adjacency_offsets[v];
+            const int* last = recorder.graph->adjacency
+                + recorder.graph->adjacency_offsets[v + 1];
+            linked = std::find(first, last, decision->candidate_vertices[d]) != last;
+        }
+
+        if (linked)
+        {
+            ++recorder.withNeighbours;
+            break;
+        }
+    }
 }
 
 // The root node as one rule saw it.
@@ -317,6 +512,42 @@ int main()
         recorder.problems.empty(),
         "Features, scores and selections are consistent at every node"
     );
+
+    // A graph model: the rule's scores match a reference computation at
+    // every node.
+    {
+        LoadedMISBranchingModel graphNetwork;
+
+        check(graphModel(graphNetwork), "Hand-written graph model is accepted");
+
+        GraphDecisionRecorder graphRecorder;
+        graphRecorder.graph = &graph;
+        graphRecorder.model = &graphNetwork.view();
+
+        Solver solver;
+
+        const bool solved =
+            solver.create(instance, true)
+            && SCIPincludeBranchruleMISLearned(
+                solver.scip, solver.vars.data(),
+                static_cast<int>(solver.vars.size()),
+                &graph, &graphNetwork.view(), checkGraphDecision,
+                &graphRecorder) == SCIP_OKAY
+            && SCIPsolve(solver.scip) == SCIP_OKAY
+            && SCIPgetStatus(solver.scip) == SCIP_STATUS_OPTIMAL
+            && std::fabs(SCIPgetPrimalbound(solver.scip) - optimum) < 1e-6;
+
+        for (const std::string& problem : graphRecorder.problems)
+            std::cerr << "  " << problem << '\n';
+
+        check(
+            solved && graphRecorder.decisions > 1
+            && graphRecorder.withNeighbours > 0
+            && graphRecorder.problems.empty(),
+            "Graph model scores match the reference at every node ("
+                + std::to_string(graphRecorder.decisions) + " decisions)"
+        );
+    }
 
     // Root node seen by the data collection expert.
     RootView expertRoot;

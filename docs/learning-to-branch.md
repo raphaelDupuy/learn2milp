@@ -40,6 +40,30 @@ The script reports, on the validation set, how the decisions of the model compar
 
 `--train` and `--valid` accept several directories, aggregated into one dataset; the metrics are also reported per validation directory. The candidates of all samples are stored one after the other, without padding, so that a family with many candidates per node does not inflate the others: training on Erdős–Rényi and Barabási–Albert samples together (200,000 samples, see [results.md](results.md#training-on-barabásialbert-graphs)) peaks at 5.3 GB.
 
+### Graph models
+
+By default every candidate is scored on its own (a multilayer perceptron). With `--graph-layers K`, the network is a graph neural network over the candidates of the node, linked by the edges of the graph between them: the `--hidden` layers transform each candidate, then each of the K graph layers computes
+
+\[
+h'_v = \mathrm{ReLU}\big(W h_v + W_N\, \overline{h}_{N(v)} + W_G\, \overline{h} + b\big),
+\]
+
+where \(\overline{h}_{N(v)}\) is the mean state of the candidate neighbours of \(v\) (0 if it has none) and \(\overline{h}\) the mean state of all the candidates of the node; a linear layer gives the score. Means rather than sums keep the scale independent of the degree, which varies widely on Barabási–Albert graphs.
+
+```bash
+uv run python ml/train_branching_model.py \
+    --train data/processed/features/ba200_k8/train \
+            data/processed/features/ba200_k8_mix1/train \
+    --valid data/processed/features/ba200_k8/valid \
+            data/processed/features/ba200_k8_mix1/valid \
+    --hidden 32 --graph-layers 2 \
+    --output experiments/ba200_k8/models/gnn32x2_ba1.model
+```
+
+The samples need no new collection: the feature tables keep the vertex of every candidate, and the edges between candidates are read from the instance files, found by name under `--instances` (`data/instances` by default). A graph model is written in version 2 of the model format (`graph_layer` entries, see `ml/branching_model_file.py`); a model without graph layer is still written in version 1, byte for byte as before.
+
+Training on the CPU, the default, is reproducible bit for bit. `--device cuda` trains on the GPU, about four times faster per epoch for a graph model; it needs a CUDA build of PyTorch, which the project's environment does not install, and its results are not reproducible bit for bit (the GPU sums in parallel, in no fixed order). SCIP, the collection and the evaluation inside SCIP always run on the CPU.
+
 ## 3. Evaluation inside SCIP
 
 The `mislearned` rule loads a model file and evaluates it in C at every node. A model names the features it reads, which may be any subset of the computed ones: models trained before a feature was added keep working, and a model that names an unknown feature is refused. `--features` of the training script selects the features of a model.
@@ -52,6 +76,8 @@ The `mislearned` rule loads a model file and evaluates it in C at every node. A 
     --seeds 0,1,2 \
     --output experiments/er125_p01/results/test_learned_mlp32.csv
 ```
+
+The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about \(10^{-14}\), and a test solves an instance with a graph model while an independent implementation recomputes every score.
 
 A model can also be tried on one instance, or compared with other rules and models, from the [interactive menu](interactive-menu.md).
 
@@ -66,7 +92,7 @@ The first dataset only contains nodes visited by the expert's own search. Inside
     --policy-model experiments/er125_p01/models/mlp32.model
 ```
 
-The tables have the same format, and the metadata records the model and its agreement with the expert (see [data-format.md](data-format.md#strong-branching-samples)). Nodes that strong branching proves prunable are still pruned, so the tree is smaller than the one the model explores on its own.
+The policy may be a multilayer perceptron or a graph model. The tables have the same format, and the metadata records the model and its agreement with the expert (see [data-format.md](data-format.md#strong-branching-samples)). Nodes that strong branching proves prunable are still pruned, so the tree is smaller than the one the model explores on its own.
 
 `scripts/collect_on_policy.sh DATASET MODEL NAME [BUILD_DIR] [JOBS]` collects and featurizes such samples for the training and validation instances of a dataset, into `data/raw/strong_branching/DATASET_NAME` and `data/processed/features/DATASET_NAME`; `experiments/er125_p01/collect_on_policy.sh` is the same for `er125_p01`. A new model is then trained on the expert's samples and the on-policy ones together:
 

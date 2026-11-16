@@ -46,3 +46,22 @@ Training on this family does not do better. `experiments/ba200_k8/build_dataset.
 | `mlp32_mix1` | both | 936 / 1,000 | 2,712 / 2,684 | 742 |
 
 The training seed moves the node counts by about 2%. The model trained on Erdős–Rényi graphs alone is as good on Barabási–Albert graphs as the one trained on them, and the model trained on both families is the worst on Barabási–Albert graphs (8% and 15% more nodes than `mlp32_h2`), although each family alone does well; why mixing hurts has not been established. More data of the family would not help either: `mlp32_ba1` trained on half of its instances (seeds 1 to 30) explores 848 and 862 nodes. No learned rule explores fewer nodes than relpscost on this family, while all of them solve about twice as fast.
+
+## Graph neural network
+
+A graph neural network over the candidates of the node (`--hidden 32 --graph-layers 2`, see [learning-to-branch.md](learning-to-branch.md#graph-models)) imitates the expert better than the multilayer perceptron trained on the same samples, on every validation set and at every epoch, and yet explores more nodes in SCIP. Validation metrics of the exported model; node counts on the test sets as above, two values for two training seeds:
+
+| Model | Training samples | Validation accuracy | Validation score ratio | Barabási–Albert test | Erdős–Rényi test | Transfer |
+|---|---|---|---|---|---|---|
+| `mlp32_ba1` | Barabási–Albert: expert + mix1 | 0.194 | 0.645 | 864 / 854 | 2,788 / 2,750 | 746 |
+| `gnn32x2_ba1` | Barabási–Albert: expert + mix1 | 0.211 | 0.662 | 946 / 981 | 2,920 | |
+| `mlp32_gnn1` | Barabási–Albert: expert + mix1 + gnn1 | 0.204 | 0.659 | 874 | | |
+| `gnn32x2_gnn1` | Barabási–Albert: expert + mix1 + gnn1 | 0.222 | 0.680 | 959 | | |
+| `mlp32_h2` | Erdős–Rényi: expert + h1 + h2 | 0.185 | 0.671 | 861 / 877 | 2,598 / 2,660 | 718 |
+| `gnn32x2_h2` | Erdős–Rényi: expert + h1 + h2 | 0.214 | 0.687 | 915 | 2,795 | 763 |
+
+(The two `gnn1` models are validated on a set that also contains the `gnn1` samples.) On Barabási–Albert graphs, `gnn32x2_ba1` explores 8.5% more nodes than `mlp32_ba1` (95% interval [1.04, 1.13] on the ratio), on 15 of the 20 instances; on Erdős–Rényi graphs, `gnn32x2_h2` explores 7% more than `mlp32_h2` ([1.01, 1.15]).
+
+A graph model leads the search to other nodes than the samples it was trained on, which a perceptron's on-policy round does not cover. An on-policy round driven by the graph model itself (`ba200_k8_gnn1`, collected with `scripts/collect_on_policy.sh` and `gnn32x2_ba1`: 41,150 samples, the model agreeing with the expert at 29% of the nodes) does not close the gap: trained on the same samples, the graph model explores 959 nodes and the perceptron 874 (ratio 1.087, [1.02, 1.17]). The cost of the graph model inside SCIP is small: on an idle machine, `gnn32x2_ba1` solves in 2.97 s per instance against 2.86 s for `mlp32_ba1`, and `gnn32x2_h2` in 2.83 s against 2.63 s; the solving times follow the node counts. (The other graph-model runs were timed while other computations ran: only their node counts are reported.)
+
+This network sees only the candidates and the edges between them. The reference graph model for imitating strong branching (Gasse et al., 2019) works on the bipartite graph of all the variables and the constraints, with features on both sides; it is the next one to try.

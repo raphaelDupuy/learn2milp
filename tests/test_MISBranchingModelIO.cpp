@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "learning/MISAdjacency.hpp"
 #include "learning/MISBranchingFeatures.h"
 
 namespace
@@ -107,6 +108,59 @@ double evaluate(
 
     return MISevaluateBranchingModel(
         &model.view(), features.data(), work.data());
+}
+
+// A small node for the graph layers: edges 0-1, 1-2, 0-3 and 4-5, with
+// candidates 2, 0, 1 and 4 (in that order, LP values 0.2, 0.1, 0.5 and
+// 0.4). Vertices 3 and 5 are not candidates: 0 has the candidate
+// neighbour 1 only, and 4 has none.
+const std::vector<int> NODE_VERTICES = {2, 0, 1, 4};
+const std::vector<double> NODE_LP_VALUES = {0.2, 0.1, 0.5, 0.4};
+
+MISAdjacency nodeGraph()
+{
+    return buildMISAdjacency(MISInstance{6, {{0, 1}, {1, 2}, {0, 3}, {4, 5}}});
+}
+
+// Scores of the small node, reading feature 0 as the LP value; false if
+// the evaluation fails.
+bool evaluateNode(
+    const LoadedMISBranchingModel& model,
+    const std::vector<int>& vertices,
+    std::vector<double>& scores
+)
+{
+    const MISAdjacency adjacency = nodeGraph();
+    const MISFeatureGraph graph = adjacency.view();
+    const int n = static_cast<int>(vertices.size());
+
+    std::vector<double> features(static_cast<std::size_t>(n) * K, 0.0);
+
+    for (int c = 0; c < n; ++c)
+        features[static_cast<std::size_t>(c) * K] = NODE_LP_VALUES[c];
+
+    std::vector<double> work(static_cast<std::size_t>(
+        MISbranchingModelNodeWorkSize(&model.view(), n)));
+    std::vector<int> positions(static_cast<std::size_t>(graph.number_of_vertices));
+    scores.assign(static_cast<std::size_t>(n), 0.0);
+
+    return MISevaluateBranchingModelOnNode(
+        &model.view(), &graph, n, vertices.data(), features.data(),
+        work.data(), positions.data(), scores.data()) == 0;
+}
+
+bool near(const std::vector<double>& values, const std::vector<double>& expected)
+{
+    if (values.size() != expected.size())
+        return false;
+
+    for (std::size_t i = 0; i < values.size(); ++i)
+    {
+        if (std::fabs(values[i] - expected[i]) > 1e-12)
+            return false;
+    }
+
+    return true;
 }
 
 void expectRejection(const std::string& testName, const std::string& text)
@@ -218,7 +272,103 @@ int main()
 
     expectRejection(
         "Unsupported format version is rejected",
-        replaced(linear, "MIS_BRANCHING_MODEL 1", "MIS_BRANCHING_MODEL 2"));
+        replaced(linear, "MIS_BRANCHING_MODEL 1", "MIS_BRANCHING_MODEL 3"));
+
+    // Graph layers.
+    const std::string graphLinear =
+        "MIS_BRANCHING_MODEL 2\nfeatures 1\nfeature " + name0 + " 0 1\n"
+        "layers 1\ngraph_layer 1 1 linear\n1\n10\n100\n0.5\n";
+
+    {
+        LoadedMISBranchingModel model;
+        std::vector<double> scores;
+
+        // score = x + 10 mean(x of the candidate neighbours)
+        //           + 100 mean(x of the candidates) + 0.5, mean x = 0.3
+        check(
+            parse(graphLinear, model)
+            && MISbranchingModelIsValid(&model.view())
+            && MISbranchingModelHasGraphLayers(&model.view())
+            && model.numberOfParameters() == 4
+            && evaluateNode(model, NODE_VERTICES, scores)
+            && near(scores, {0.2 + 5.0 + 30.5, 0.1 + 5.0 + 30.5,
+                             0.5 + 1.5 + 30.5, 0.4 + 0.0 + 30.5}),
+            "Graph layer adds the means over the candidate neighbours and "
+            "over the node"
+        );
+    }
+
+    {
+        // h = relu(0.3 - x) = 0.1, 0.2, 0, 0, then h + 10 mean(h of the
+        // candidate neighbours).
+        LoadedMISBranchingModel model;
+        std::vector<double> scores;
+
+        check(
+            parse("MIS_BRANCHING_MODEL 2\nfeatures 1\nfeature " + name0
+                    + " 0 1\nlayers 2\nlayer 1 1 relu\n-1\n0.3\n"
+                    "graph_layer 1 1 linear\n1\n10\n0\n0\n",
+                model)
+            && model.numberOfLayers() == 2
+            && evaluateNode(model, NODE_VERTICES, scores)
+            && near(scores, {0.1, 0.2, 1.5, 0.0}),
+            "Graph layer reads the states left by the previous layer"
+        );
+
+        // Alone, vertex 4 takes the first LP value, 0.2: h = 0.1.
+        std::vector<double> alone;
+
+        check(
+            evaluateNode(model, {4}, alone) && near(alone, {0.1})
+            && !evaluateNode(model, {2, 0, 2}, scores)
+            && !evaluateNode(model, {2, 6}, scores),
+            "Node evaluation refuses repeated or out-of-range vertices"
+        );
+    }
+
+    {
+        // Without graph layer, the node evaluation is the candidate one.
+        LoadedMISBranchingModel model;
+        parse(networkModel(), model);
+
+        std::vector<double> scores;
+        bool same = evaluateNode(model, NODE_VERTICES, scores);
+
+        for (std::size_t c = 0; same && c < NODE_VERTICES.size(); ++c)
+            same = scores[c] == evaluate(model, {{0, NODE_LP_VALUES[c]}});
+
+        check(
+            same && !MISbranchingModelHasGraphLayers(&model.view())
+            && MISbranchingModelNodeWorkSize(&model.view(), 4)
+                == MISbranchingModelWorkSize(&model.view()),
+            "Node evaluation of a model without graph layer is the candidate "
+            "evaluation, bit for bit"
+        );
+    }
+
+    expectRejection(
+        "Graph layer in a version 1 file is rejected",
+        replaced(graphLinear, "MIS_BRANCHING_MODEL 2", "MIS_BRANCHING_MODEL 1"));
+
+    expectRejection(
+        "Graph layer without its three matrices is rejected",
+        replaced(graphLinear, "1\n10\n100\n0.5\n", "1\n10\n0.5\n"));
+
+    {
+        LoadedMISBranchingModel model;
+        parse(graphLinear, model);
+
+        MISBranchingModelLayer incomplete = model.view().layers[0];
+        incomplete.node_weights = nullptr;
+
+        MISBranchingModel broken = model.view();
+        broken.layers = &incomplete;
+
+        check(
+            !MISbranchingModelIsValid(&broken),
+            "Graph layer without its neighbour and node matrices is not valid"
+        );
+    }
 
     expectRejection(
         "Wrong feature count is rejected",

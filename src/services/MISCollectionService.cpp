@@ -131,6 +131,8 @@ struct PolicyState
     std::vector<double> features;
     std::vector<double> featureWork;
     std::vector<double> modelWork;
+    std::vector<int> vertexPositions;
+    std::vector<double> scores;
 
     std::size_t decisions = 0;
     std::size_t agreements = 0;
@@ -186,23 +188,25 @@ int selectWithPolicy(
         return invalid;
     }
 
-    int best = 0;
-    double bestScore = 0.0;
-
-    for (int c = 0; c < count; ++c)
-    {
-        const double score = MISevaluateBranchingModel(
+    if (MISevaluateBranchingModelOnNode(
             policy.model,
-            policy.features.data()
-                + static_cast<std::size_t>(c) * MIS_BRANCHING_FEATURE_COUNT,
-            policy.modelWork.data()
-        );
+            &policy.graph,
+            count,
+            policy.vertices.data(),
+            policy.features.data(),
+            policy.modelWork.data(),
+            policy.vertexPositions.data(),
+            policy.scores.data()) != 0)
+    {
+        return invalid;
+    }
 
-        if (c == 0 || score > bestScore)
-        {
+    int best = 0;
+
+    for (int c = 1; c < count; ++c)
+    {
+        if (policy.scores[c] > policy.scores[best])
             best = c;
-            bestScore = score;
-        }
     }
 
     ++policy.decisions;
@@ -474,7 +478,11 @@ bool collectMISStrongBranchingSamples(
                 policy.featureWork.resize(static_cast<std::size_t>(
                     MISbranchingFeatureWorkSize(instance.n)));
                 policy.modelWork.resize(static_cast<std::size_t>(
-                    MISbranchingModelWorkSize(policy.model)));
+                    MISbranchingModelNodeWorkSize(
+                        policy.model, static_cast<int>(n))));
+                policy.vertexPositions.resize(
+                    static_cast<std::size_t>(instance.n));
+                policy.scores.resize(n);
 
                 require(
                     SCIPsetMISFullstrongSelector(

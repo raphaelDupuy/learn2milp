@@ -41,6 +41,7 @@ SCIP_RETCODE scoreCandidates(
     double* scores,
     double* featurework,
     double* modelwork,
+    int* positions,
     int* best
 )
 {
@@ -88,17 +89,16 @@ SCIP_RETCODE scoreCandidates(
             data->graph, &node, featurework, features) != 0 )
         return SCIP_INVALIDDATA;
 
+    if( MISevaluateBranchingModelOnNode(
+            data->model, data->graph, ncands, vertices, features, modelwork,
+            positions, scores) != 0 )
+        return SCIP_INVALIDDATA;
+
     /* First candidate with the highest score. */
     *best = 0;
 
     for( c = 0; c < ncands; ++c )
     {
-        scores[c] = MISevaluateBranchingModel(
-            data->model,
-            features + (size_t)c * MIS_BRANCHING_FEATURE_COUNT,
-            modelwork
-        );
-
         if( scores[c] > scores[*best] )
             *best = c;
     }
@@ -119,6 +119,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     double* scores;
     double* featurework;
     double* modelwork;
+    int* positions;
     SCIP_RETCODE retcode;
     int ncands;
     int best;
@@ -157,12 +158,15 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
         MISbranchingFeatureWorkSize(data->mapping.nvertices)
     ) );
     SCIP_CALL( SCIPallocBufferArray(
-        scip, &modelwork, MISbranchingModelWorkSize(data->model)
+        scip, &modelwork, MISbranchingModelNodeWorkSize(data->model, ncands)
+    ) );
+    SCIP_CALL( SCIPallocBufferArray(
+        scip, &positions, data->mapping.nvertices
     ) );
 
     retcode = scoreCandidates(
         scip, data, cands, ncands, states, vertices, lpvalues, histories,
-        features, scores, featurework, modelwork, &best
+        features, scores, featurework, modelwork, positions, &best
     );
 
     if( retcode == SCIP_OKAY )
@@ -202,6 +206,7 @@ SCIP_DECL_BRANCHEXECLP(branchExecLpMISLearned)
     }
 
     /* Buffers are freed in reverse order of allocation. */
+    SCIPfreeBufferArray(scip, &positions);
     SCIPfreeBufferArray(scip, &modelwork);
     SCIPfreeBufferArray(scip, &featurework);
     SCIPfreeBufferArray(scip, &scores);

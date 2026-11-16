@@ -2,9 +2,8 @@
 
 The model imitates the full strong branching expert: for each recorded
 branching decision, it should give its highest score to the candidate
-the expert chose. It is a small network applied to each candidate
-independently, so that it can be evaluated in C inside SCIP in well under
-a millisecond per node.
+the expert chose. It is a small network that can be evaluated in C
+inside SCIP in well under a millisecond per node.
 
 Usage:
     python ml/train_branching_model.py \
@@ -12,7 +11,19 @@ Usage:
         --valid data/processed/features/er125_p01/valid \
         --hidden 32 32 --output experiments/er125_p01/models/mlp32.model
 
-Use --hidden with no value for a linear model.
+By default the network scores each candidate on its own (a multilayer
+perceptron); use --hidden with no value for a linear model.
+
+With --graph-layers K, the network is a graph neural network over the
+candidates of the node, linked by the edges of the graph: the --hidden
+layers transform each candidate, then K graph layers mix every
+candidate's state with the mean state of its candidate neighbours and of
+all the candidates (see branching_model_file.py). The graphs are read from
+the instance files, searched for by name under --instances.
+
+--device cuda trains on the GPU; it needs a CUDA build of PyTorch, which
+the project's CPU environment does not install. Training on the CPU (the
+default) is reproducible bit for bit; on the GPU it is not.
 
 --train and --valid accept several directories, which are aggregated:
 this is how samples collected along the search of a previous model
@@ -30,8 +41,20 @@ import time
 import numpy as np
 import torch
 
-from branching_data import BranchingDataset, load_feature_tables, segment_argmax
-from branching_model_file import BranchingModel, read_model, write_model
+from branching_data import (
+    BranchingDataset,
+    GraphBatch,
+    load_feature_tables,
+    segment_argmax,
+)
+from branching_model_file import (
+    DENSE,
+    GRAPH,
+    BranchingModel,
+    Layer,
+    read_model,
+    write_model,
+)
 
 
 def decision_metrics(
@@ -116,31 +139,141 @@ class CandidateScorer(torch.nn.Module):
 
         for index, layer in enumerate(linear):
             activation = "relu" if index < len(linear) - 1 else "linear"
-            layers.append(
-                (
-                    layer.weight.detach().numpy().astype(np.float64),
-                    layer.bias.detach().numpy().astype(np.float64),
-                    activation,
-                )
-            )
+            layers.append(_dense_layer(layer, activation))
 
         return BranchingModel(
             feature_names,
-            self.mean.numpy().astype(np.float64),
-            self.std.numpy().astype(np.float64),
+            self.mean.cpu().numpy().astype(np.float64),
+            self.std.cpu().numpy().astype(np.float64),
             layers,
         )
 
 
-def predict(model: CandidateScorer, dataset: BranchingDataset) -> np.ndarray:
-    """Score of every candidate (the model scores candidates one by one)."""
+def _dense_layer(layer: torch.nn.Linear, activation: str) -> Layer:
+    return Layer(
+        DENSE,
+        layer.weight.detach().cpu().numpy().astype(np.float64),
+        layer.bias.detach().cpu().numpy().astype(np.float64),
+        activation,
+    )
+
+
+class GraphLayer(torch.nn.Module):
+    """h'_v = relu(W_self h_v + W_neighbours mean of the neighbours of v
+                   + W_node mean of all the candidates of the node + b)."""
+
+    def __init__(self, inputs: int, outputs: int):
+        super().__init__()
+        self.own = torch.nn.Linear(inputs, outputs)
+        self.neighbours = torch.nn.Linear(inputs, outputs, bias=False)
+        self.node = torch.nn.Linear(inputs, outputs, bias=False)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        sample_of_row: torch.Tensor,
+        sample_size: torch.Tensor,
+        sources: torch.Tensor,
+        targets: torch.Tensor,
+        degree: torch.Tensor,
+    ) -> torch.Tensor:
+        # Mean over no neighbour is 0: degree is clamped to 1.
+        neighbours = torch.zeros_like(x).index_add_(0, targets, x[sources]) / degree
+        node = x.new_zeros((len(sample_size), x.shape[1])).index_add_(0, sample_of_row, x)
+        node = node / sample_size
+
+        return torch.relu(
+            self.own(x) + self.neighbours(neighbours) + self.node(node[sample_of_row])
+        )
+
+
+class GraphScorer(torch.nn.Module):
+    """Standardization, dense layers on each candidate, graph layers over
+    the candidates of the node, then a linear output."""
+
+    def __init__(
+        self, mean: np.ndarray, std: np.ndarray, hidden: list[int], graph_layers: int
+    ):
+        super().__init__()
+
+        if not hidden:
+            raise ValueError("A graph model needs at least one hidden layer")
+
+        self.register_buffer("mean", torch.tensor(mean, dtype=torch.float32))
+        self.register_buffer("std", torch.tensor(std, dtype=torch.float32))
+
+        sizes = [len(mean), *hidden]
+        self.dense = torch.nn.ModuleList(
+            torch.nn.Linear(sizes[i], sizes[i + 1]) for i in range(len(hidden))
+        )
+        self.graph = torch.nn.ModuleList(
+            GraphLayer(hidden[-1], hidden[-1]) for _ in range(graph_layers)
+        )
+        self.output = torch.nn.Linear(hidden[-1], 1)
+
+    def forward(self, batch: GraphBatch) -> torch.Tensor:
+        device = self.mean.device
+        x = (torch.from_numpy(batch.features).to(device) - self.mean) / self.std
+
+        for layer in self.dense:
+            x = torch.relu(layer(x))
+
+        sample_of_row = torch.from_numpy(batch.sample_of_row).to(device)
+        sources = torch.from_numpy(batch.sources).to(device)
+        targets = torch.from_numpy(batch.targets).to(device)
+        sample_size = torch.bincount(
+            sample_of_row, minlength=batch.number_of_samples
+        ).unsqueeze(1).to(x.dtype)
+        degree = torch.bincount(targets, minlength=len(x)).clamp(min=1).unsqueeze(1).to(x.dtype)
+
+        for layer in self.graph:
+            x = layer(x, sample_of_row, sample_size, sources, targets, degree)
+
+        return self.output(x).squeeze(-1)
+
+    def export(self, feature_names: list[str]) -> BranchingModel:
+        layers = [_dense_layer(layer, "relu") for layer in self.dense]
+
+        for layer in self.graph:
+            weights = np.stack(
+                [
+                    layer.own.weight.detach().cpu().numpy(),
+                    layer.neighbours.weight.detach().cpu().numpy(),
+                    layer.node.weight.detach().cpu().numpy(),
+                ]
+            ).astype(np.float64)
+            bias = layer.own.bias.detach().cpu().numpy().astype(np.float64)
+            layers.append(Layer(GRAPH, weights, bias, "relu"))
+
+        layers.append(_dense_layer(self.output, "linear"))
+
+        return BranchingModel(
+            feature_names,
+            self.mean.cpu().numpy().astype(np.float64),
+            self.std.cpu().numpy().astype(np.float64),
+            layers,
+        )
+
+
+# Samples per block when a graph model scores a whole dataset.
+GRAPH_BLOCK = 1024
+
+
+def predict(model: torch.nn.Module, dataset: BranchingDataset) -> np.ndarray:
+    """Score of every candidate, laid out like dataset.scores."""
     model.eval()
     outputs = []
+    device = model.mean.device
 
     with torch.no_grad():
-        for start in range(0, dataset.number_of_candidates, 65536):
-            block = torch.from_numpy(dataset.features[start : start + 65536])
-            outputs.append(model(block).numpy())
+        if isinstance(model, GraphScorer):
+            for start in range(0, dataset.number_of_samples, GRAPH_BLOCK):
+                samples = np.arange(start, min(start + GRAPH_BLOCK, dataset.number_of_samples))
+                outputs.append(model(dataset.graph_batch(samples)).cpu().numpy())
+        else:
+            for start in range(0, dataset.number_of_candidates, 65536):
+                block = torch.from_numpy(dataset.features[start : start + 65536]).to(device)
+                outputs.append(model(block).cpu().numpy())
 
     return np.concatenate(outputs) if outputs else np.zeros(0, np.float32)
 
@@ -151,6 +284,24 @@ def file_scores(model: BranchingModel, dataset: BranchingDataset) -> np.ndarray:
     Computed by blocks: the double precision activations of a whole
     validation set would take several gigabytes.
     """
+    if model.has_graph_layers:
+        parts = []
+
+        for start in range(0, dataset.number_of_samples, GRAPH_BLOCK // 2):
+            samples = np.arange(start, min(start + GRAPH_BLOCK // 2, dataset.number_of_samples))
+            batch = dataset.graph_batch(samples)
+            parts.append(
+                model.graph_scores(
+                    batch.features,
+                    batch.sample_of_row,
+                    batch.number_of_samples,
+                    batch.sources,
+                    batch.targets,
+                )
+            )
+
+        return np.concatenate(parts)
+
     return np.concatenate(
         [
             model.scores(dataset.features[start : start + 65536])
@@ -159,15 +310,40 @@ def file_scores(model: BranchingModel, dataset: BranchingDataset) -> np.ndarray:
     )
 
 
+def batch_scores(
+    model: torch.nn.Module, dataset: BranchingDataset, batch: np.ndarray
+) -> torch.Tensor:
+    """Model scores of the candidates of some samples, [samples, width],
+    padded with a very low score."""
+    if isinstance(model, GraphScorer):
+        graph = dataset.graph_batch(batch)
+        flat = model(graph)
+        scores = flat.new_full((len(batch), int(graph.position.max()) + 1), -1e9)
+        rows = torch.from_numpy(graph.sample_of_row).to(flat.device)
+        columns = torch.from_numpy(graph.position).to(flat.device)
+        scores[rows, columns] = flat
+        return scores
+
+    # Padded to the largest number of candidates of the dataset: every
+    # batch has the same shape.
+    device = model.mean.device
+    features, mask = dataset.padded_batch(batch)
+    return model(torch.from_numpy(features).to(device)).masked_fill(
+        ~torch.from_numpy(mask).to(device), -1e9
+    )
+
+
 def train(
     train_set: BranchingDataset,
     valid_set: BranchingDataset,
     hidden: list[int],
+    graph_layers: int,
     epochs: int,
     learning_rate: float,
     batch_size: int,
     seed: int,
-) -> tuple[CandidateScorer, list[dict[str, float]]]:
+    device: torch.device,
+) -> tuple[torch.nn.Module, list[dict[str, float]]]:
     torch.manual_seed(seed)
 
     # Standardize with the statistics of the training candidates.
@@ -189,32 +365,36 @@ def train(
     std = np.sqrt(np.maximum(total_of_squares / count - mean * mean, 0.0))
     std[std < 1e-12] = 1.0
 
-    model = CandidateScorer(mean, std, hidden)
+    model: torch.nn.Module
+
+    if graph_layers > 0:
+        model = GraphScorer(mean, std, hidden, graph_layers)
+    else:
+        model = CandidateScorer(mean, std, hidden)
+
+    # Initialized on the CPU, then moved: the same seed gives the same
+    # initial weights on every device.
+    model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    target = torch.from_numpy(train_set.target)
+    target = torch.from_numpy(train_set.target).to(device)
 
     history = []
     best_ratio = -1.0
     best_state = None
 
     for epoch in range(1, epochs + 1):
+        epoch_started = time.time()
         model.train()
         order = torch.randperm(train_set.number_of_samples)
         total_loss = 0.0
 
         for start in range(0, len(order), batch_size):
             batch = order[start : start + batch_size]
-
-            # Padded to the largest number of candidates of the dataset:
-            # every batch has the same shape.
-            features, mask = train_set.padded_batch(batch.numpy())
-            scores = model(torch.from_numpy(features)).masked_fill(
-                ~torch.from_numpy(mask), -1e9
-            )
+            scores = batch_scores(model, train_set, batch.numpy())
 
             # The expert's choice should get the highest score of its node.
-            loss = torch.nn.functional.cross_entropy(scores, target[batch])
+            loss = torch.nn.functional.cross_entropy(scores, target[batch.to(device)])
 
             optimizer.zero_grad()
             loss.backward()
@@ -231,7 +411,8 @@ def train(
             f"epoch {epoch:3d}  loss {metrics['train_loss']:.4f}  "
             f"valid accuracy {metrics['accuracy']:.3f}  "
             f"top5 {metrics['top5']:.3f}  "
-            f"score ratio {metrics['score_ratio']:.4f}",
+            f"score ratio {metrics['score_ratio']:.4f}  "
+            f"({time.time() - epoch_started:.0f} s)",
             flush=True,
         )
 
@@ -253,11 +434,17 @@ def main() -> None:
     parser.add_argument("--output", required=True, help="path of the model file to write")
     parser.add_argument("--features", nargs="+", help="names of the features the model reads (default: all those of the tables)")
     parser.add_argument("--hidden", type=int, nargs="*", default=[32, 32], help="hidden layer sizes; none for a linear model")
+    parser.add_argument("--graph-layers", type=int, default=0, help="graph layers after the hidden layers (0: each candidate is scored on its own)")
+    parser.add_argument("--instances", default="data/instances", help="directory searched for the instance files of the graphs (graph models only)")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu", help="where the network is trained (cuda: the GPU, needs a CUDA build of PyTorch; results are then not bit-for-bit reproducible)")
     arguments = parser.parse_args()
+
+    if arguments.device == "cuda" and not torch.cuda.is_available():
+        raise SystemExit("--device cuda: no GPU usable by this PyTorch build")
 
     output = pathlib.Path(arguments.output)
 
@@ -280,11 +467,26 @@ def main() -> None:
         train_set = train_set.with_features(arguments.features)
         valid_set = valid_set.with_features(arguments.features)
 
+    if arguments.graph_layers < 0:
+        raise SystemExit("--graph-layers must be at least 0")
+
+    if arguments.graph_layers > 0:
+        if not arguments.hidden:
+            raise SystemExit("A graph model needs at least one hidden layer")
+
+        train_set = train_set.with_candidate_graphs(arguments.instances)
+        valid_set = valid_set.with_candidate_graphs(arguments.instances)
+
     for name, dataset in [("train", train_set), ("valid", valid_set)]:
+        edges = (
+            f", {len(dataset.edges)} edges between candidates"
+            if dataset.edges is not None
+            else ""
+        )
         print(
             f"{name}: {len(dataset.instance_names)} feature tables, "
             f"{dataset.number_of_samples} usable samples of {dataset.total_samples}, "
-            f"{dataset.number_of_candidates} candidates"
+            f"{dataset.number_of_candidates} candidates{edges}"
         )
 
     print(f"loaded in {time.time() - started:.0f} s\n")
@@ -303,10 +505,12 @@ def main() -> None:
         train_set,
         valid_set,
         arguments.hidden,
+        arguments.graph_layers,
         arguments.epochs,
         arguments.learning_rate,
         arguments.batch_size,
         arguments.seed,
+        torch.device(arguments.device),
     )
 
     exported = model.export(train_set.feature_names)

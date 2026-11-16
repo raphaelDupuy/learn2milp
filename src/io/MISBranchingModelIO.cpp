@@ -141,11 +141,16 @@ bool readMISBranchingModel(
     std::vector<std::string> tokens;
 
     if (!readTokens(input, tokens)
-        || tokens != std::vector<std::string>{"MIS_BRANCHING_MODEL", "1"})
+        || tokens.size() != 2
+        || tokens[0] != "MIS_BRANCHING_MODEL"
+        || (tokens[1] != "1" && tokens[1] != "2"))
     {
         errorMessage = "Invalid header or unsupported model format version.";
         return false;
     }
+
+    // Graph layers exist from version 2 on.
+    const bool graphLayersAllowed = tokens[1] == "2";
 
     int featureCount = 0;
 
@@ -246,13 +251,17 @@ bool readMISBranchingModel(
 
         if (!readTokens(input, tokens)
             || tokens.size() != 4
-            || tokens[0] != "layer"
+            || (tokens[0] != "layer"
+                && !(graphLayersAllowed && tokens[0] == "graph_layer"))
             || !parseCount(tokens[1], MAX_LAYER_WIDTH, inputs)
             || !parseCount(tokens[2], MAX_LAYER_WIDTH, outputs)
             || (tokens[3] != "relu" && tokens[3] != "linear"))
         {
-            errorMessage =
-                where + "expected: layer <inputs> <outputs> <relu|linear>.";
+            errorMessage = where
+                + (graphLayersAllowed
+                    ? "expected: layer|graph_layer <inputs> <outputs> "
+                      "<relu|linear>."
+                    : "expected: layer <inputs> <outputs> <relu|linear>.");
             return false;
         }
 
@@ -265,22 +274,30 @@ bool readMISBranchingModel(
             return false;
         }
 
+        // A graph layer has three matrices, W, W_neighbours and W_node,
+        // stored one after the other.
+        const bool graph = tokens[0] == "graph_layer";
+        const int matrices = graph ? 3 : 1;
         std::vector<double> weights;
 
-        for (int o = 0; o < outputs; ++o)
+        for (int m = 0; m < matrices; ++m)
         {
-            std::vector<double> row;
-
-            if (!readNumbers(input, inputs, row)
-                || row.size() != static_cast<std::size_t>(inputs))
+            for (int o = 0; o < outputs; ++o)
             {
-                errorMessage =
-                    where + "weight row " + std::to_string(o) + " must have "
-                    + std::to_string(inputs) + " finite numbers.";
-                return false;
-            }
+                std::vector<double> row;
 
-            weights.insert(weights.end(), row.begin(), row.end());
+                if (!readNumbers(input, inputs, row)
+                    || row.size() != static_cast<std::size_t>(inputs))
+                {
+                    errorMessage =
+                        where + "weight row "
+                        + std::to_string(m * outputs + o) + " must have "
+                        + std::to_string(inputs) + " finite numbers.";
+                    return false;
+                }
+
+                weights.insert(weights.end(), row.begin(), row.end());
+            }
         }
 
         std::vector<double> biases;
@@ -302,6 +319,7 @@ bool readMISBranchingModel(
         layer.number_of_inputs = inputs;
         layer.number_of_outputs = outputs;
         layer.relu = relu.back();
+        layer.graph = graph ? 1 : 0;
         parsed.layers_.push_back(layer);
 
         expectedInputs = outputs;
@@ -325,8 +343,20 @@ bool readMISBranchingModel(
     // Point the C view to the final storage.
     for (std::size_t l = 0; l < parsed.layers_.size(); ++l)
     {
-        parsed.layers_[l].weights = parsed.weights_[l].data();
-        parsed.layers_[l].biases = parsed.biases_[l].data();
+        MISBranchingModelLayer& layer = parsed.layers_[l];
+        const double* weights = parsed.weights_[l].data();
+        const std::size_t matrix =
+            static_cast<std::size_t>(layer.number_of_outputs)
+            * static_cast<std::size_t>(layer.number_of_inputs);
+
+        layer.weights = weights;
+        layer.biases = parsed.biases_[l].data();
+
+        if (layer.graph)
+        {
+            layer.neighbour_weights = weights + matrix;
+            layer.node_weights = weights + 2 * matrix;
+        }
     }
 
     parsed.model_.number_of_features = featureCount;

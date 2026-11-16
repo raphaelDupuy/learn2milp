@@ -230,6 +230,7 @@ if(BUILD_TESTING)
     add_executable(test_MISBranchingModelIO
         tests/test_MISBranchingModelIO.cpp
         src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
     )
 
     target_link_libraries(test_MISBranchingModelIO

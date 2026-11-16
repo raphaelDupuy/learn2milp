@@ -11,17 +11,24 @@
  * Text format of a branching model (written by
  * ml/branching_model_file.py):
  *
- *   MIS_BRANCHING_MODEL 1
+ *   MIS_BRANCHING_MODEL <1|2>
  *   features <count>
  *   feature <name> <mean> <standard deviation>     one line per feature
  *   layers <count>
- *   layer <inputs> <outputs> <relu|linear>         then, for each layer:
- *   <inputs values>                                one line per output
- *   <outputs values>                               one line of biases
+ *   then, for each layer, one of:
+ *   layer <inputs> <outputs> <relu|linear>         dense layer:
+ *   <inputs values>                                  one line per output (W)
+ *   <outputs values>                                 one line of biases
+ *   graph_layer <inputs> <outputs> <relu|linear>   graph layer (version 2):
+ *   <inputs values>                                  one line per output (W),
+ *                                                    then W_neighbours and
+ *                                                    W_node the same way
+ *   <outputs values>                                 one line of biases
  *
- * A model reads all the compiled features or a subset of them, in any
- * order. It is refused if it names a feature that this program does not
- * compute: it was trained on another feature set.
+ * The layers are described in learning/MISBranchingModel.h. A model reads
+ * all the compiled features or a subset of them, in any order. It is
+ * refused if it names a feature that this program does not compute: it
+ * was trained on another feature set.
  */
 
 // A model with the storage its C view points to.

@@ -9,6 +9,11 @@ padding: graph families with many candidates per node (Barabasi-Albert
 graphs have twice as many as Erdos-Renyi ones of the same density) would
 otherwise make every sample as large as the largest one. Padded arrays
 are built only for small groups of samples (padded_batch()).
+
+Graph models also need, for every sample, the edges of the graph between
+its candidates. with_candidate_graphs() reads them from the instance
+files, found by name: the feature tables keep the vertex of every
+candidate.
 """
 
 from __future__ import annotations
@@ -41,6 +46,7 @@ class BranchingDataset:
 
     features  [candidates, features], float32
     scores    [candidates], strong branching score of each candidate
+    vertices  [candidates], graph vertex of each candidate
     offsets   [samples + 1], the candidates of sample s are the rows
               offsets[s] to offsets[s + 1] - 1, in candidate order
     target    [samples], position, within its sample, of the candidate
@@ -48,17 +54,28 @@ class BranchingDataset:
     instance  [samples], index of the instance each sample comes from
     source    [samples], index of the directory each sample comes from;
               the samples of one directory are consecutive
+
+    After with_candidate_graphs() only:
+
+    edges         [edges, 2], int16, the graph edges between the
+                  candidates of each sample, as two positions within the
+                  sample, the first one smaller
+    edge_offsets  [samples + 1], the edges of sample s are the rows
+                  edge_offsets[s] to edge_offsets[s + 1] - 1
     """
 
     feature_names: list[str]
     features: np.ndarray
     scores: np.ndarray
+    vertices: np.ndarray
     offsets: np.ndarray
     target: np.ndarray
     instance: np.ndarray
     source: np.ndarray
     instance_names: list[str]
     total_samples: int
+    edges: np.ndarray | None = None
+    edge_offsets: np.ndarray | None = None
 
     @property
     def number_of_samples(self) -> int:
@@ -109,6 +126,87 @@ class BranchingDataset:
 
         return features, mask
 
+    def graph_batch(self, samples: np.ndarray) -> GraphBatch:
+        """Candidates of some samples, without padding, and their edges.
+
+        Requires with_candidate_graphs(). The candidates are laid out one
+        sample after the other, in the order of samples; every edge is
+        given in both directions.
+        """
+        if self.edges is None or self.edge_offsets is None:
+            raise ValueError("Candidate graphs are not loaded")
+
+        samples = np.asarray(samples, np.int64)
+        lengths = self.lengths[samples]
+        first_row = np.cumsum(lengths) - lengths
+        sample_of_row = np.repeat(np.arange(len(samples)), lengths)
+        position = np.arange(int(lengths.sum())) - first_row[sample_of_row]
+        rows = self.starts[samples][sample_of_row] + position
+
+        edge_lengths = self.edge_offsets[samples + 1] - self.edge_offsets[samples]
+        first_edge = np.cumsum(edge_lengths) - edge_lengths
+        sample_of_edge = np.repeat(np.arange(len(samples)), edge_lengths)
+        edge_rows = (
+            self.edge_offsets[samples][sample_of_edge]
+            + np.arange(int(edge_lengths.sum()))
+            - first_edge[sample_of_edge]
+        )
+        ends = self.edges[edge_rows].astype(np.int64) + first_row[sample_of_edge, None]
+
+        return GraphBatch(
+            features=self.features[rows],
+            sample_of_row=sample_of_row,
+            position=position,
+            sources=np.concatenate([ends[:, 0], ends[:, 1]]),
+            targets=np.concatenate([ends[:, 1], ends[:, 0]]),
+            number_of_samples=len(samples),
+        )
+
+    def with_candidate_graphs(
+        self, instances_root: str | pathlib.Path
+    ) -> BranchingDataset:
+        """The same samples, with the graph edges between their candidates.
+
+        The graph of every feature table is read from the instance file of
+        the same name, searched for under instances_root.
+        """
+        paths = find_instance_files(instances_root, self.instance_names)
+        counts = np.zeros(self.number_of_samples, np.int64)
+        parts = []
+
+        for index, name in enumerate(self.instance_names):
+            samples = np.flatnonzero(self.instance == index)
+
+            if len(samples) == 0:
+                continue
+
+            number_of_vertices, graph_edges = read_instance_graph(paths[name])
+            adjacency = np.zeros((number_of_vertices, number_of_vertices), bool)
+            adjacency[graph_edges[:, 0], graph_edges[:, 1]] = True
+            adjacency[graph_edges[:, 1], graph_edges[:, 0]] = True
+
+            for sample in samples:
+                vertices = self.vertices[self.offsets[sample] : self.offsets[sample + 1]]
+
+                if vertices.max() >= number_of_vertices:
+                    raise ValueError(f"Candidate vertex out of range in {name}")
+
+                first, second = np.nonzero(np.triu(adjacency[np.ix_(vertices, vertices)], 1))
+                parts.append(np.stack([first, second], axis=1).astype(np.int16))
+                counts[sample] = len(first)
+
+        if self.max_candidates > np.iinfo(np.int16).max:
+            raise ValueError("Too many candidates in a sample for int16 positions")
+
+        edge_offsets = np.zeros(self.number_of_samples + 1, np.int64)
+        edge_offsets[1:] = np.cumsum(counts)
+
+        return dataclasses.replace(
+            self,
+            edges=np.concatenate(parts) if parts else np.zeros((0, 2), np.int16),
+            edge_offsets=edge_offsets,
+        )
+
     def with_features(self, names: list[str]) -> BranchingDataset:
         """The same samples, described by the given features only."""
         columns = [self.feature_names.index(name) for name in names]
@@ -132,16 +230,93 @@ class BranchingDataset:
                 raise ValueError("Samples of a directory are not consecutive")
 
         rows = slice(int(self.offsets[first]), int(self.offsets[last]))
+        edges, edge_offsets = self.edges, self.edge_offsets
+
+        if edges is not None and edge_offsets is not None:
+            edges = edges[int(edge_offsets[first]) : int(edge_offsets[last])]
+            edge_offsets = edge_offsets[first : last + 1] - edge_offsets[first]
 
         return dataclasses.replace(
             self,
             features=self.features[rows],
             scores=self.scores[rows],
+            vertices=self.vertices[rows],
             offsets=self.offsets[first : last + 1] - self.offsets[first],
             target=self.target[first:last],
             instance=self.instance[first:last],
             source=self.source[first:last],
+            edges=edges,
+            edge_offsets=edge_offsets,
         )
+
+
+@dataclasses.dataclass
+class GraphBatch:
+    """Candidates of a group of samples, for a graph model.
+
+    features       [rows, features], one row per candidate
+    sample_of_row  [rows], sample (0 .. number_of_samples - 1) of each row
+    position       [rows], position of each candidate within its sample
+    sources, targets
+                   [2 * edges], rows linked by a graph edge, in both
+                   directions: row sources[i] sends to row targets[i]
+    """
+
+    features: np.ndarray
+    sample_of_row: np.ndarray
+    position: np.ndarray
+    sources: np.ndarray
+    targets: np.ndarray
+    number_of_samples: int
+
+
+def find_instance_files(
+    root: str | pathlib.Path, names: list[str]
+) -> dict[str, pathlib.Path]:
+    """Instance file of each name (without .mis), searched for under root."""
+    found: dict[str, list[pathlib.Path]] = {}
+
+    for path in pathlib.Path(root).rglob("*.mis"):
+        found.setdefault(path.stem, []).append(path)
+
+    paths = {}
+
+    for name in names:
+        candidates = found.get(name, [])
+
+        if not candidates:
+            raise FileNotFoundError(f"No instance file {name}.mis under {root}")
+
+        contents = {path.read_bytes() for path in candidates}
+
+        if len(contents) > 1:
+            raise ValueError(f"Several different instance files named {name}.mis")
+
+        paths[name] = candidates[0]
+
+    return paths
+
+
+def read_instance_graph(path: str | pathlib.Path) -> tuple[int, np.ndarray]:
+    """Number of vertices and edges [m, 2] of a .mis instance file."""
+    tokens = pathlib.Path(path).read_text().split()
+
+    if tokens[:2] != ["MIS_INSTANCE", "1"] or tokens[2] != "n" or tokens[4] != "m":
+        raise ValueError(f"Not a MIS instance file: {path}")
+
+    number_of_vertices = int(tokens[3])
+    number_of_edges = int(tokens[5])
+    values = tokens[6 : 6 + 2 * number_of_edges]
+
+    if len(values) != 2 * number_of_edges:
+        raise ValueError(f"Truncated MIS instance file: {path}")
+
+    edges = np.array(values, np.int64).reshape(number_of_edges, 2)
+
+    if number_of_edges and (edges.min() < 0 or edges.max() >= number_of_vertices):
+        raise ValueError(f"Edge end out of range in {path}")
+
+    return number_of_vertices, edges
 
 
 def segment_argmax(values: np.ndarray, offsets: np.ndarray) -> np.ndarray:
@@ -234,6 +409,7 @@ def load_feature_tables(
 
     features = np.zeros((candidates, len(feature_names)), np.float32)
     scores = np.zeros(candidates, np.float32)
+    vertices = np.zeros(candidates, np.int32)
     offsets = np.zeros(samples + 1, np.int64)
     target = np.full(samples, -1, np.int64)
     instance = np.zeros(samples, np.int64)
@@ -272,6 +448,7 @@ def load_feature_tables(
         rows = slice(first_row, first_row + len(table))
         features[rows] = table[feature_names].to_numpy(np.float32)
         scores[rows] = table["score"].to_numpy(np.float32)
+        vertices[rows] = table["vertex_id"].to_numpy(np.int32)
         offsets[first_sample + 1 : first_sample + count + 1] = (
             first_row + np.cumsum(lengths)
         )
@@ -296,6 +473,7 @@ def load_feature_tables(
         feature_names=feature_names,
         features=features,
         scores=scores,
+        vertices=vertices,
         offsets=offsets,
         target=target,
         instance=instance,
