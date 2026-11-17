@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound
+erdos_renyi_n150_p0_083_seed81.mis,150,941,study,mislearned,0,OPTIMAL,1,2985,112220,7.76953,41,41
+erdos_renyi_n150_p0_083_seed82.mis,150,905,study,mislearned,0,OPTIMAL,1,8506,264411,17.5576,42,42
+erdos_renyi_n150_p0_083_seed83.mis,150,942,study,mislearned,0,OPTIMAL,1,12260,328195,21.5686,40,40
+erdos_renyi_n150_p0_083_seed84.mis,150,941,study,mislearned,0,OPTIMAL,1,10969,316282,20.721,40,40
+erdos_renyi_n150_p0_083_seed85.mis,150,962,study,mislearned,0,OPTIMAL,1,11338,328464,21.4189,40,40
+erdos_renyi_n150_p0_083_seed86.mis,150,969,study,mislearned,0,OPTIMAL,1,10372,283885,18.7006,40,40
+erdos_renyi_n150_p0_083_seed87.mis,150,875,study,mislearned,0,OPTIMAL,1,4002,126212,8.13364,43,43
+erdos_renyi_n150_p0_083_seed88.mis,150,935,study,mislearned,0,OPTIMAL,1,6890,232234,15.3038,41,41
+erdos_renyi_n150_p0_083_seed89.mis,150,916,study,mislearned,0,OPTIMAL,1,7612,219517,14.2072,41,41
+erdos_renyi_n150_p0_083_seed90.mis,150,868,study,mislearned,0,OPTIMAL,1,3699,135205,8.37857,43,43

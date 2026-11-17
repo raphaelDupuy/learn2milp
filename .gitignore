@@ -35,3 +35,7 @@ Thumbs.db
 
 # Generated MIS instances
 /data/instances/
+
+# Progress logs and per-run tables of long experiments
+/data/logs/
+/experiments/generalization/results/runs/

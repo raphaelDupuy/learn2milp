@@ -125,3 +125,27 @@ Strong branching does what no imitation can: it proves that a node can be pruned
 From K = 5 on, the trees are smaller than those of SCIP with its default settings and its cuts at every node, and smaller than full strong branching's: the model's ranking and the pruning together do better than strong branching on every candidate. Each evaluated candidate costs two LP solves, so the solving time grows with K and the learned rule without strong branching stays the fastest: 32% faster than `relpscost` on Erdős–Rényi graphs and twice as fast on Barabási–Albert graphs. With K = 1, the rule beats `relpscost` on both counts on Barabási–Albert graphs (28% less time, 95% interval [0.66, 0.77] on the ratio, and 28% fewer nodes) and matches its time with half the nodes on Erdős–Rényi graphs ([0.92, 1.02]).
 
 Against SCIP with its default settings, every rule run with the study settings is faster, which comes from the settings rather than from learning (`relpscost` alone is three times faster); with K = 5, the learned rule also explores fewer nodes, on both families.
+
+## Larger instances
+
+`experiments/generalization/run_benchmark.sh` evaluates the models trained on G(125, 0.1) and BA(200, 8), without retraining, on larger graphs of the same families (same mean degree for Erdős–Rényi graphs, same \(k\) for Barabási–Albert graphs), 10 instances per size, SCIP seed 0, one run at a time on an idle machine (9 h 43 in all, every run solved; `scripts/watch_progress.sh` follows its progress log). Shifted geometric means of nodes and seconds; tables in `experiments/generalization/results/`:
+
+| Instances | SCIP, default settings | `relpscost` | learned rule | K = 1 | K = 2 |
+|---|---|---|---|---|---|
+| G(150, 0.083) | 4,825 · 29.3 s | 15,116 · 13.6 s | 10,642 · 10.2 s | 7,083 · 14.4 s | 5,388 · 17.0 s |
+| G(200, 0.0625) | 93,064 · 316.5 s | 388,752 · 322.6 s | 320,583 · 311.5 s | 239,866 · 500.4 s | 169,015 · 566.2 s |
+| BA(250, 8) | 2,301 · 29.4 s | 5,498 · 18.4 s | 4,149 · 11.5 s | 2,892 · 16.9 s | 2,474 · 22.2 s |
+| BA(300, 8) | 6,172 · 71.3 s | 22,174 · 65.1 s | 19,821 · 54.3 s | 14,208 · 86.3 s | 11,618 · 111.8 s |
+
+Ratio of the learned rule (without strong branching) to `relpscost`, per instance, with a bootstrap 95% interval, from the training size up:
+
+| Family | size | time | nodes |
+|---|---|---|---|
+| Erdős–Rényi | 125 (training) | 0.68 | 0.73 |
+| | 150 | 0.76 [0.69, 0.84] | 0.71 [0.61, 0.81] |
+| | 200 | 0.97 [0.90, 1.03] | 0.83 [0.77, 0.88] |
+| Barabási–Albert | 200 (training) | 0.48 | 1.02 |
+| | 250 | 0.65 [0.60, 0.70] | 0.76 [0.68, 0.85] |
+| | 300 | 0.84 [0.71, 1.00] | 0.89 [0.74, 1.08] |
+
+The models carry over to larger graphs in node counts: the learned rule still explores fewer nodes than `relpscost` on every set, and strong branching on its first candidates halves them again. The gain in time shrinks with the size and vanishes on G(200, 0.0625). A learned decision costs about the same at every node, while `relpscost` pays for strong branching only until its pseudo-costs are reliable, which a large tree amortizes; strong branching on the model's candidates, which pays at every node, is slower than `relpscost` on the largest sets. SCIP with its default settings, whose cuts at every node shrink the trees three to four times, catches up with the study settings in time on the largest sets.

@@ -103,3 +103,11 @@ The features are described in [learning-to-branch.md](learning-to-branch.md#1-fe
 - runs are executed one at a time, with the rules interleaved on each instance: do not run anything else on the machine if solving times matter.
 
 The tool ends with a summary per rule: number of solved runs and shifted geometric means of the node counts (shift 100) and of the solving times (shift 1 second). Node counts are reproducible for a given seed; solving times are not, and should be compared over several runs.
+
+## Long experiments
+
+`experiments/generalization/run_benchmark.sh` runs `mis-benchmark` one instance and one configuration at a time and appends one line per finished run to `data/logs/generalization.log`: time of day, progress, status, nodes, solving time, elapsed and estimated remaining time, and a comparison of the configurations after each instance. It skips the runs already made, so it resumes after an interruption. `scripts/watch_progress.sh` prints the log and follows it; from WSL it can run in its own Windows Terminal window:
+
+```bash
+wt.exe -w new new-tab --title Learn2MILP wsl.exe -d "$WSL_DISTRO_NAME" --cd "$PWD" -- scripts/watch_progress.sh
+```
