@@ -153,3 +153,19 @@ The models carry over to larger graphs in node counts: the perceptron and the ca
 Time per node (total time over total nodes) explains it. A learned decision costs about the same at every node: 0.92, 0.92 and 0.89 ms for the perceptron on Erdős–Rényi graphs of 125, 150 and 200 vertices, 2.44, 2.31 and 2.33 ms on Barabási–Albert graphs of 200, 250 and 300 vertices. `relpscost` pays for strong branching only until its pseudo-costs are reliable, which a large tree amortizes: 0.95, 0.84 and 0.74 ms, and 4.02, 2.83 and 2.40 ms. Strong branching on the model's candidates, which pays at every node, is 1.3 to 1.8 times slower than `relpscost` on the largest sets. SCIP with its default settings, whose cuts at every node shrink the trees two to four times, catches up with the study settings in time on the largest sets.
 
 The graph models do not generalize better than the perceptron. The candidate graph model, which explores 7 to 9% more nodes than the perceptron at the training size, explores as many on the largest sets (ratio to the perceptron 0.93 [0.79, 1.10] on G(200, 0.0625), 0.99 [0.83, 1.13] on BA(300, 8)), 19% more on BA(250, 8), and is never faster. The bipartite model scores a graph that grows with the instance: its time per node rises from 3.3 to 3.8 ms, and it is slower than `relpscost` from 250 vertices on (1.6 times at 300).
+
+## Two more baselines
+
+Two checks on the test sets (SCIP seed 0, 20 instances each, all solved; results in `experiments/*/results/test_pscost.csv` and `test_learned_*_default.csv`) tell what the learned rule's gain is made of. Shifted geometric means; time per node is the total time over the total number of nodes:
+
+| Rule | Settings | Erdős–Rényi nodes | time | ms per node | Barabási–Albert nodes | time | ms per node |
+|---|---|---|---|---|---|---|---|
+| `pscost` | study | 6,955 | 4.27 s | 0.57 | 3,186 | 5.53 s | 1.43 |
+| `relpscost` | study | 3,596 | 3.86 s | 0.96 | 863 | 5.96 s | 4.01 |
+| learned rule | study | 2,679 | 2.69 s | 0.92 | 903 | 2.92 s | 2.39 |
+| `relpscost` | default | 1,560 | 11.44 s | 6.95 | 492 | 9.29 s | 14.80 |
+| learned rule | default | 1,372 | 7.09 s | 4.88 | 563 | 5.25 s | 8.07 |
+
+`pscost` branches on pseudo-costs without ever running strong branching: it is the cheapest informed decision. The learned rule is faster than `pscost` on every instance (time ratio 0.63, 95% interval [0.58, 0.68], on Erdős–Rényi graphs; 0.52, [0.48, 0.57], on Barabási–Albert graphs) and explores 2.5 to 3 times fewer nodes (ratios 0.39 and 0.31). Its gain over `relpscost` is therefore not only the strong branching it saves: it recovers most of what strong branching tells, at a fraction of its cost. On Barabási–Albert graphs it builds trees of the size of `relpscost`'s with nodes 40% cheaper; on Erdős–Rényi graphs, trees 27% smaller at the same cost per node. Compared with `pscost`, computing the features and evaluating the model take about 0.35 ms per node on Erdős–Rényi graphs and 1 ms on Barabási–Albert graphs, some 40% of the learned rule's time per node (an estimate: the two rules do not solve the same nodes).
+
+The learned rule was trained without cuts at the nodes. With SCIP's default settings, which separate cuts at the nodes, it keeps its lead over `relpscost` on every instance: time ratio 0.62 ([0.55, 0.69]) on Erdős–Rényi graphs and 0.56 ([0.49, 0.63]) on Barabási–Albert graphs, with 0.89 and 1.12 times the nodes. Branching and cutting look complementary rather than redundant. At this size, the cuts at the nodes halve the trees but multiply the time per node by five to seven, so that both rules are slower with the default settings than with the study settings.
