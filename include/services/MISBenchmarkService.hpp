@@ -63,6 +63,12 @@ struct MISBenchmarkConfig
      */
     std::filesystem::path parameterFile;
 
+    /*
+     * Cut selector: empty for SCIP's own (hybrid), or "lookahead", the
+     * expert of Paulus et al. (2022) at the root (cuts/MISLookaheadCutsel.h).
+     */
+    std::string cutSelector;
+
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.
@@ -85,6 +91,19 @@ struct MISBenchmarkResult
     double primalBound = 0.0;
     double dualBound = 0.0;
 
+    // Root node: bound of the first LP, before any cut, and dual bound at
+    // the end of the root, after its cuts.
+    double rootFirstLPBound = 0.0;
+    double rootDualBound = 0.0;
+
+    // Cuts applied to the LP over the whole solve.
+    long long cutsApplied = 0;
+
+    // Lookahead selector only: candidate cuts scored at the root, and how
+    // many of them raised the LP bound when added alone.
+    long long lookaheadScored = 0;
+    long long lookaheadImproving = 0;
+
     // Vertices of the best solution found, in increasing order; empty
     // when there is no solution.
     std::vector<int> selectedVertices;
@@ -102,12 +121,17 @@ bool parseMISBenchmarkSettings(
 /*
  * Name of the settings of a run, as written in result tables: the name of
  * the settings, followed by "+" and the stem of the parameter file when
- * there is one, e.g. "default+no_node_gomory" (commas become "_").
+ * there is one, then by "+" and the cut selector when it is not SCIP's,
+ * e.g. "default+no_node_gomory" or "study+lookahead" (commas become "_").
  */
 std::string misBenchmarkSettingsLabel(
     MISBenchmarkSettings settings,
-    const std::filesystem::path& parameterFile
+    const std::filesystem::path& parameterFile,
+    const std::string& cutSelector = ""
 );
+
+// True for the cut selectors benchmarkMIS() accepts: "" and "lookahead".
+bool isMISBenchmarkCutSelectorAvailable(const std::string& cutSelector);
 
 /*
  * Checks a SCIP settings file before any run, as benchmarkMIS() does: the

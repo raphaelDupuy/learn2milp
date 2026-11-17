@@ -13,6 +13,7 @@
 
 #include "branching/MISFullstrongBranchrule.h"
 #include "branching/MISLearnedBranchrule.h"
+#include "cuts/MISLookaheadCutsel.h"
 #include "io/MISBranchingModelIO.hpp"
 #include "io/MISInstanceIO.hpp"
 #include "learning/MISAdjacency.hpp"
@@ -28,6 +29,7 @@ const char* const MIS_FULLSTRONG_RULE = "misfullstrong";
 // imitation of its choices would explore.
 const char* const MIS_FULLSTRONG_NOCUTOFF_RULE = "misfullstrong_nocutoff";
 const char* const MIS_LEARNED_RULE = "mislearned";
+const char* const MIS_LOOKAHEAD_CUT_SELECTOR = "lookahead";
 
 // Highest value accepted by SCIP for a branching rule priority.
 const int MAX_BRANCHING_PRIORITY = INT_MAX / 4;
@@ -185,13 +187,17 @@ bool parseMISBenchmarkSettings(
 
 std::string misBenchmarkSettingsLabel(
     MISBenchmarkSettings settings,
-    const std::filesystem::path& parameterFile
+    const std::filesystem::path& parameterFile,
+    const std::string& cutSelector
 )
 {
     std::string label = misBenchmarkSettingsName(settings);
 
     if (!parameterFile.empty())
         label += "+" + parameterFile.stem().string();
+
+    if (!cutSelector.empty())
+        label += "+" + cutSelector;
 
     for (char& c : label)
     {
@@ -200,6 +206,11 @@ std::string misBenchmarkSettingsLabel(
     }
 
     return label;
+}
+
+bool isMISBenchmarkCutSelectorAvailable(const std::string& cutSelector)
+{
+    return cutSelector.empty() || cutSelector == MIS_LOOKAHEAD_CUT_SELECTOR;
 }
 
 bool validateMISBenchmarkParameters(
@@ -343,6 +354,15 @@ bool benchmarkMIS(
         const bool expert = config.branchingRule == MIS_FULLSTRONG_RULE
             || config.branchingRule == MIS_FULLSTRONG_NOCUTOFF_RULE;
 
+        if (!isMISBenchmarkCutSelectorAvailable(config.cutSelector))
+        {
+            throw std::invalid_argument(
+                "Unknown cut selector: " + config.cutSelector
+            );
+        }
+
+        const bool lookahead = config.cutSelector == MIS_LOOKAHEAD_CUT_SELECTOR;
+
         requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
         // Declared before the solver: the learned rule points to them,
@@ -373,6 +393,14 @@ bool benchmarkMIS(
             SCIPincludeDefaultPlugins(scip),
             "include the default plugins"
         );
+
+        if (lookahead)
+        {
+            require(
+                SCIPincludeCutselMISLookahead(scip),
+                "include the lookahead cut selector"
+            );
+        }
 
         std::vector<SCIP_VAR*> vars;
         require(
@@ -501,6 +529,30 @@ bool benchmarkMIS(
         measured.primalBound =
             measured.hasSolution ? SCIPgetPrimalbound(scip) : 0.0;
         measured.dualBound = SCIPgetDualbound(scip);
+        measured.rootFirstLPBound = SCIPgetFirstLPDualboundRoot(scip);
+        measured.rootDualBound = SCIPgetDualboundRoot(scip);
+
+        // SCIP reports an infinite root bound when the root closes the gap
+        // on its own: the bound at the end of the root is then the optimum.
+        if (SCIPisInfinity(scip, std::fabs(measured.rootDualBound))
+            && measured.solved)
+        {
+            measured.rootDualBound = measured.dualBound;
+        }
+        measured.cutsApplied =
+            static_cast<long long>(SCIPgetNCutsApplied(scip));
+
+        if (lookahead)
+        {
+            MISLookaheadStatistics statistics;
+            require(
+                SCIPgetMISLookaheadStatistics(scip, &statistics),
+                "read the lookahead statistics"
+            );
+
+            measured.lookaheadScored = statistics.scored;
+            measured.lookaheadImproving = statistics.improving;
+        }
 
         if (measured.hasSolution)
         {

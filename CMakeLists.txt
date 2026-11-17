@@ -52,6 +52,21 @@ target_link_libraries(mis_branching
     scip
 )
 
+# SCIP cut selection plugins.
+add_library(mis_cutting STATIC
+    src/cuts/MISLookaheadCutsel.c
+)
+
+target_include_directories(mis_cutting
+    PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(mis_cutting
+    PUBLIC
+    scip
+)
+
 add_executable(learn2milp
     src/main.cpp
     src/problems/MIS.cpp
@@ -85,6 +100,7 @@ target_link_libraries(learn2milp
     PRIVATE
     command_line
     mis_branching
+    mis_cutting
 )
 
 add_executable(mis-generator
@@ -144,6 +160,7 @@ target_link_libraries(mis-benchmark
     PRIVATE
     command_line
     mis_branching
+    mis_cutting
 )
 
 add_executable(mis-featurizer
@@ -389,6 +406,7 @@ if(BUILD_TESTING)
     target_link_libraries(test_MISBenchmarkService
         PRIVATE
         mis_branching
+        mis_cutting
     )
 
     add_test(
@@ -492,11 +510,28 @@ if(BUILD_TESTING)
     target_link_libraries(test_MISSolvingService
         PRIVATE
         mis_branching
+        mis_cutting
     )
 
     add_test(
         NAME MISSolvingService
         COMMAND test_MISSolvingService
+    )
+
+    add_executable(test_MISLookaheadCutsel
+        tests/test_MISLookaheadCutsel.cpp
+        src/problems/MIS.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+    )
+
+    target_link_libraries(test_MISLookaheadCutsel
+        PRIVATE
+        mis_cutting
+    )
+
+    add_test(
+        NAME MISLookaheadCutsel
+        COMMAND test_MISLookaheadCutsel
     )
 
     add_executable(test_MISGenerationService

@@ -520,6 +520,57 @@ int main(int argc, char* argv[])
         );
     }
 
+    // Root bounds, and the lookahead cut selector.
+    {
+        MISBenchmarkConfig config;
+        config.branchingRule = "relpscost";
+
+        MISBenchmarkResult scipSelector;
+        MISBenchmarkResult lookahead;
+        std::string error;
+
+        const bool ranScip = benchmarkMIS(instance, config, scipSelector, error);
+
+        config.cutSelector = "lookahead";
+        const bool ranLookahead = benchmarkMIS(instance, config, lookahead, error);
+
+        // Maximization: first LP bound >= bound after the root cuts >= optimum.
+        check(
+            ranScip && scipSelector.solved
+            && scipSelector.rootFirstLPBound >= scipSelector.rootDualBound - 1e-6
+            && scipSelector.rootDualBound >= scipSelector.primalBound - 1e-6
+            && scipSelector.rootFirstLPBound > scipSelector.primalBound + 0.5
+            && scipSelector.cutsApplied > 0
+            && scipSelector.lookaheadScored == 0,
+            "Root bounds are reported (first LP "
+                + std::to_string(scipSelector.rootFirstLPBound) + ", after cuts "
+                + std::to_string(scipSelector.rootDualBound) + ", optimum "
+                + std::to_string(scipSelector.primalBound) + ")"
+        );
+
+        check(
+            ranLookahead && lookahead.solved
+            && std::fabs(lookahead.primalBound - scipSelector.primalBound) < 1e-6
+            && lookahead.lookaheadScored > 0
+            && lookahead.lookaheadImproving <= lookahead.lookaheadScored,
+            "The lookahead cut selector reaches the same optimum ("
+                + std::to_string(lookahead.lookaheadScored) + " cuts scored, "
+                + std::to_string(lookahead.lookaheadImproving) + " improving)"
+        );
+
+        config.cutSelector = "no_such_selector";
+
+        check(
+            !benchmarkMIS(instance, config, lookahead, error)
+            && error == "Unknown cut selector: no_such_selector"
+            && isMISBenchmarkCutSelectorAvailable("lookahead")
+            && isMISBenchmarkCutSelectorAvailable("")
+            && misBenchmarkSettingsLabel(
+                MISBenchmarkSettings::Study, {}, "lookahead") == "study+lookahead",
+            "Cut selectors are checked and named in the settings label"
+        );
+    }
+
     if (failures > 0)
     {
         std::cerr << failures << " test(s) failed.\n";

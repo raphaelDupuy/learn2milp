@@ -25,7 +25,8 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << " --instances DIR --rules R1,R2 --output PATH\n"
         << "      [--seeds S1,S2] [--settings study|default]"
         << " [--time-limit SECONDS]\n"
-        << "      [--parameters FILE] [--model PATH] [--strong-branching K]\n\n"
+        << "      [--parameters FILE] [--cut-selector NAME] [--model PATH]\n"
+        << "      [--strong-branching K]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -50,6 +51,10 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  --parameters  SCIP settings file (name = value per line)\n"
         << "                applied after --settings, e.g. to choose the\n"
         << "                separators called at the nodes\n"
+        << "  --cut-selector\n"
+        << "                lookahead: at the root, cuts ranked by the LP\n"
+        << "                bound increase of each cut added alone\n"
+        << "                (default: SCIP's own selector)\n"
         << "  --time-limit  Time limit per run in seconds (default "
         << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
         << "  -h, --help    Show this help and exit\n";
@@ -73,14 +78,15 @@ int main(int argc, char* argv[])
     double timeLimit = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     std::string modelPath;
     std::string parameterFile;
+    std::string cutSelector;
     int strongBranching = 0;
 
     try
     {
         const CommandLineOptions options(argc, argv, 1, {
             "--instances", "--rules", "--output", "--seeds",
-            "--settings", "--parameters", "--model", "--time-limit",
-            "--strong-branching"});
+            "--settings", "--parameters", "--cut-selector", "--model",
+            "--time-limit", "--strong-branching"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -97,6 +103,9 @@ int main(int argc, char* argv[])
 
         if (options.has("--parameters"))
             parameterFile = options.text("--parameters");
+
+        if (options.has("--cut-selector"))
+            cutSelector = options.text("--cut-selector");
 
         strongBranching = options.get(
             "--strong-branching", parseNonNegativeInt, strongBranching);
@@ -145,8 +154,14 @@ int main(int argc, char* argv[])
         }
     }
 
+    if (!isMISBenchmarkCutSelectorAvailable(cutSelector))
+    {
+        std::cerr << "Unknown cut selector: " << cutSelector << '\n';
+        return 2;
+    }
+
     const std::string settingsLabel =
-        misBenchmarkSettingsLabel(settings, parameterFile);
+        misBenchmarkSettingsLabel(settings, parameterFile, cutSelector);
 
     // Instances, in a fixed order.
     std::vector<std::filesystem::path> instancePaths;
@@ -185,7 +200,9 @@ int main(int argc, char* argv[])
 
     output
         << "instance,n,m,settings,rule,seed,status,solved,nodes,"
-        << "lp_iterations,time_seconds,primal_bound,dual_bound\n";
+        << "lp_iterations,time_seconds,primal_bound,dual_bound,"
+        << "root_first_lp_bound,root_dual_bound,cuts_applied,"
+        << "lookahead_scored,lookahead_improving\n";
 
     const std::size_t totalRuns =
         instancePaths.size() * seeds.size() * rules.size();
@@ -216,6 +233,7 @@ int main(int argc, char* argv[])
                 config.branchingRule = rule;
                 config.settings = settings;
                 config.parameterFile = parameterFile;
+                config.cutSelector = cutSelector;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
 
@@ -256,7 +274,13 @@ int main(int argc, char* argv[])
                     output << result.primalBound;
                 }
 
-                output << ',' << result.dualBound << '\n';
+                output
+                    << ',' << result.dualBound
+                    << ',' << result.rootFirstLPBound
+                    << ',' << result.rootDualBound
+                    << ',' << result.cutsApplied
+                    << ',' << result.lookaheadScored
+                    << ',' << result.lookaheadImproving << '\n';
                 output.flush();
 
                 if (!output)
