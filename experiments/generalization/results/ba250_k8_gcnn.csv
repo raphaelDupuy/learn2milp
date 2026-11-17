@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound
+barabasi_albert_n250_k8_seed81.mis,250,1936,study,mislearned,0,OPTIMAL,1,3359,148862,14.3185,83,83
+barabasi_albert_n250_k8_seed82.mis,250,1936,study,mislearned,0,OPTIMAL,1,24068,724724,71.1101,80,80
+barabasi_albert_n250_k8_seed83.mis,250,1936,study,mislearned,0,OPTIMAL,1,2672,127353,12.2085,84,84
+barabasi_albert_n250_k8_seed84.mis,250,1936,study,mislearned,0,OPTIMAL,1,10350,361906,35.1023,82,82
+barabasi_albert_n250_k8_seed85.mis,250,1936,study,mislearned,0,OPTIMAL,1,15269,515617,49.1679,80,80
+barabasi_albert_n250_k8_seed86.mis,250,1936,study,mislearned,0,OPTIMAL,1,2221,104932,10.235,83,83
+barabasi_albert_n250_k8_seed87.mis,250,1936,study,mislearned,0,OPTIMAL,1,2498,124849,11.4337,83,83
+barabasi_albert_n250_k8_seed88.mis,250,1936,study,mislearned,0,OPTIMAL,1,11961,504611,45.5399,81,81
+barabasi_albert_n250_k8_seed89.mis,250,1936,study,mislearned,0,OPTIMAL,1,4289,208976,19.8769,82,82
+barabasi_albert_n250_k8_seed90.mis,250,1936,study,mislearned,0,OPTIMAL,1,2665,114976,11.0622,83,83

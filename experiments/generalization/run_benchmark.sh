@@ -36,27 +36,48 @@ TIME_LIMIT="${TIME_LIMIT:-3600}"
 SEEDS="${SEEDS:-0}"
 INSTANCE_SEEDS="${INSTANCE_SEEDS:-$(seq -s, 81 90)}"
 
-# Instance sets: name, family, n, p or k, model of the learned rule. The
-# Erdos-Renyi graphs keep the mean degree of er125_p01 (about 12.4), the
-# Barabasi-Albert ones the k of ba200_k8. Calibration (relpscost, one
-# instance): G(150, 0.083) 24 s, G(200, 0.0625) 4 min, BA(250, 8) 1 min,
-# BA(300, 8) 3 min, while G(250, 0.05) and BA(400, 8) were not solved
-# within 10 minutes.
+# Instance sets: name, family, n, p or k, models of the learned rule by
+# kind (kind:path, comma-separated). The Erdos-Renyi graphs keep the mean
+# degree of er125_p01 (about 12.4), the Barabasi-Albert ones the k of
+# ba200_k8. Calibration (relpscost, one instance): G(150, 0.083) 24 s,
+# G(200, 0.0625) 4 min, BA(250, 8) 1 min, BA(300, 8) 3 min, while
+# G(250, 0.05) and BA(400, 8) were not solved within 10 minutes.
+ER_MODELS="mlp:experiments/er125_p01/models/mlp32_h2.model,gnn:experiments/er125_p01/models/gnn32x2_h2.model"
+BA_MODELS="mlp:experiments/ba200_k8/models/mlp32_ba1.model,gnn:experiments/ba200_k8/models/gnn32x2_ba1.model,gcnn:experiments/ba200_k8/models/gcnn32x1_ba1.model"
+
 SETS=(
-    "er150_p0083 erdos_renyi 150 0.083 experiments/er125_p01/models/mlp32_h2.model"
-    "ba250_k8 barabasi_albert 250 8 experiments/ba200_k8/models/mlp32_ba1.model"
-    "er200_p00625 erdos_renyi 200 0.0625 experiments/er125_p01/models/mlp32_h2.model"
-    "ba300_k8 barabasi_albert 300 8 experiments/ba200_k8/models/mlp32_ba1.model"
+    "er150_p0083 erdos_renyi 150 0.083 $ER_MODELS"
+    "ba250_k8 barabasi_albert 250 8 $BA_MODELS"
+    "er200_p00625 erdos_renyi 200 0.0625 $ER_MODELS"
+    "ba300_k8 barabasi_albert 300 8 $BA_MODELS"
 )
 
-# Configurations: name, rule, settings, strong branching candidates.
+# Configurations: name, rule, settings, strong branching candidates, kind
+# of model (- for none). A configuration whose kind of model a set does
+# not have is skipped on that set (no bipartite model for Erdos-Renyi).
 CONFIGS=(
-    "scip_default relpscost default 0"
-    "relpscost relpscost study 0"
-    "learned mislearned study 0"
-    "learned_sb1 mislearned study 1"
-    "learned_sb2 mislearned study 2"
+    "scip_default relpscost default 0 -"
+    "relpscost relpscost study 0 -"
+    "learned mislearned study 0 mlp"
+    "learned_sb1 mislearned study 1 mlp"
+    "learned_sb2 mislearned study 2 mlp"
+    "gnn mislearned study 0 gnn"
+    "gcnn mislearned study 0 gcnn"
 )
+
+# model_for KIND MODELS: the path of the model of that kind, or nothing.
+model_for() {
+    local entry
+    for entry in ${2//,/ }; do
+        [[ "${entry%%:*}" == "$1" ]] && { echo "${entry#*:}"; return; }
+    done
+    return 0
+}
+
+# applies KIND MODELS: whether a configuration runs on a set.
+applies() {
+    [[ "$1" == - || -n "$(model_for "$1" "$2")" ]]
+}
 
 mkdir -p "$INSTANCES" "$PARTS" "$(dirname "$LOG")"
 
@@ -65,7 +86,7 @@ log() {
 }
 
 for entry in "${SETS[@]}"; do
-    read -r name family n parameter model <<< "$entry"
+    read -r name family n parameter _ <<< "$entry"
     directory="$INSTANCES/$name"
 
     if [[ ! -e "$directory/manifest.csv" ]]; then
@@ -86,11 +107,12 @@ total=0
 done_runs=0
 
 for entry in "${SETS[@]}"; do
-    read -r name _ <<< "$entry"
+    read -r name _ _ _ models <<< "$entry"
 
     for instance in "$INSTANCES/$name"/*.mis; do
         for config in "${CONFIGS[@]}"; do
-            read -r config_name _ <<< "$config"
+            read -r config_name _ _ _ kind <<< "$config"
+            applies "$kind" "$models" || continue
 
             for seed in ${SEEDS//,/ }; do
                 total=$((total + 1))
@@ -106,7 +128,7 @@ started=$(date +%s)
 made=0
 
 for entry in "${SETS[@]}"; do
-    read -r name family n parameter model <<< "$entry"
+    read -r name _ _ _ models <<< "$entry"
 
     for instance in "$INSTANCES/$name"/*.mis; do
         base="$(basename "$instance" .mis)"
@@ -116,7 +138,9 @@ for entry in "${SETS[@]}"; do
         [[ -e "$instance.meta" ]] && ln -sf "$instance.meta" "$single/"
 
         for config in "${CONFIGS[@]}"; do
-            read -r config_name rule settings strong <<< "$config"
+            read -r config_name rule settings strong kind <<< "$config"
+            applies "$kind" "$models" || continue
+            model="$(model_for "$kind" "$models")"
 
             for seed in ${SEEDS//,/ }; do
                 part="$PARTS/${name}__${config_name}__${base}__s$seed.csv"
@@ -157,7 +181,8 @@ for entry in "${SETS[@]}"; do
 
         # Comparison of the configurations on this instance.
         summary=$(for config in "${CONFIGS[@]}"; do
-            read -r config_name _ <<< "$config"
+            read -r config_name _ _ _ kind <<< "$config"
+            applies "$kind" "$models" || continue
             cat "$PARTS/${name}__${config_name}__${base}"__s*.csv 2>/dev/null \
                 | awk -F, -v c="$config_name" '$1 != "instance" {n += $9; t += $11; k++}
                     END {if (k) printf "%s %.0f nodes %.1f s | ", c, n / k, t / k}'
@@ -171,10 +196,11 @@ done
 log "summary (shifted geometric means over the runs of each set):"
 
 for entry in "${SETS[@]}"; do
-    read -r name _ <<< "$entry"
+    read -r name _ _ _ models <<< "$entry"
 
     for config in "${CONFIGS[@]}"; do
-        read -r config_name _ <<< "$config"
+        read -r config_name _ _ _ kind <<< "$config"
+        applies "$kind" "$models" || continue
         table="$RESULTS/${name}_${config_name}.csv"
         files=("$PARTS/${name}__${config_name}__"*.csv)
 

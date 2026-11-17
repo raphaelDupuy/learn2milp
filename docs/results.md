@@ -128,24 +128,28 @@ Against SCIP with its default settings, every rule run with the study settings i
 
 ## Larger instances
 
-`experiments/generalization/run_benchmark.sh` evaluates the models trained on G(125, 0.1) and BA(200, 8), without retraining, on larger graphs of the same families (same mean degree for Erdős–Rényi graphs, same \(k\) for Barabási–Albert graphs), 10 instances per size, SCIP seed 0, one run at a time on an idle machine (9 h 43 in all, every run solved; `scripts/watch_progress.sh` follows its progress log). Shifted geometric means of nodes and seconds; tables in `experiments/generalization/results/`:
+`experiments/generalization/run_benchmark.sh` evaluates the models trained on G(125, 0.1) and BA(200, 8), without retraining, on larger graphs of the same families (same mean degree for Erdős–Rényi graphs, same \(k\) for Barabási–Albert graphs), 10 instances per size, SCIP seed 0, one run at a time on an idle machine (12 h in all, every run solved; `scripts/watch_progress.sh` follows its progress log). The learned rule uses the perceptron (`mlp32_h2`, `mlp32_ba1`), alone or with strong branching on its K first candidates, the candidate graph model (`gnn32x2_h2`, `gnn32x2_ba1`) or the bipartite model (`gcnn32x1_ba1`, Barabási–Albert only). Shifted geometric means of nodes and seconds; tables in `experiments/generalization/results/`:
 
-| Instances | SCIP, default settings | `relpscost` | learned rule | K = 1 | K = 2 |
-|---|---|---|---|---|---|
-| G(150, 0.083) | 4,825 · 29.3 s | 15,116 · 13.6 s | 10,642 · 10.2 s | 7,083 · 14.4 s | 5,388 · 17.0 s |
-| G(200, 0.0625) | 93,064 · 316.5 s | 388,752 · 322.6 s | 320,583 · 311.5 s | 239,866 · 500.4 s | 169,015 · 566.2 s |
-| BA(250, 8) | 2,301 · 29.4 s | 5,498 · 18.4 s | 4,149 · 11.5 s | 2,892 · 16.9 s | 2,474 · 22.2 s |
-| BA(300, 8) | 6,172 · 71.3 s | 22,174 · 65.1 s | 19,821 · 54.3 s | 14,208 · 86.3 s | 11,618 · 111.8 s |
+| Instances | SCIP, default settings | `relpscost` | MLP | MLP, K = 1 | MLP, K = 2 | GNN | GCNN |
+|---|---|---|---|---|---|---|---|
+| G(150, 0.083) | 4,825 · 29.3 s | 15,116 · 13.6 s | 10,642 · 10.2 s | 7,083 · 14.4 s | 5,388 · 17.0 s | 10,199 · 10.5 s | |
+| G(200, 0.0625) | 93,064 · 316.5 s | 388,752 · 322.6 s | 320,583 · 311.5 s | 239,866 · 500.4 s | 169,015 · 566.2 s | 297,819 · 326.9 s | |
+| BA(250, 8) | 2,301 · 29.4 s | 5,498 · 18.4 s | 4,149 · 11.5 s | 2,892 · 16.9 s | 2,474 · 22.2 s | 4,939 · 13.3 s | 5,545 · 22.1 s |
+| BA(300, 8) | 6,172 · 71.3 s | 22,174 · 65.1 s | 19,821 · 54.3 s | 14,208 · 86.3 s | 11,618 · 111.8 s | 19,575 · 57.2 s | 24,428 · 104.2 s |
 
-Ratio of the learned rule (without strong branching) to `relpscost`, per instance, with a bootstrap 95% interval, from the training size up:
+Ratio to `relpscost`, from the training size (20 test instances, 3 seeds) up: geometric mean over the instances of the per-instance ratio (time unshifted, nodes shifted by 100), with a paired bootstrap 95% interval:
 
-| Family | size | time | nodes |
-|---|---|---|---|
-| Erdős–Rényi | 125 (training) | 0.68 | 0.73 |
-| | 150 | 0.76 [0.69, 0.84] | 0.71 [0.61, 0.81] |
-| | 200 | 0.97 [0.90, 1.03] | 0.83 [0.77, 0.88] |
-| Barabási–Albert | 200 (training) | 0.48 | 1.02 |
-| | 250 | 0.65 [0.60, 0.70] | 0.76 [0.68, 0.85] |
-| | 300 | 0.84 [0.71, 1.00] | 0.89 [0.74, 1.08] |
+| Family | size | MLP time | MLP nodes | GNN time | GNN nodes | GCNN time | GCNN nodes |
+|---|---|---|---|---|---|---|---|
+| Erdős–Rényi | 125 (training) | 0.68 [0.64, 0.72] | 0.73 [0.67, 0.80] | 0.73 [0.69, 0.77] | 0.79 [0.72, 0.86] | | |
+| | 150 | 0.75 [0.67, 0.83] | 0.71 [0.61, 0.81] | 0.77 [0.69, 0.86] | 0.68 [0.57, 0.77] | | |
+| | 200 | 0.97 [0.90, 1.03] | 0.83 [0.77, 0.88] | 1.01 [0.88, 1.17] | 0.77 [0.65, 0.89] | | |
+| Barabási–Albert | 200 (training) | 0.47 [0.44, 0.51] | 1.02 [0.89, 1.18] | 0.49 [0.45, 0.53] | 1.11 [0.97, 1.28] | 0.68 [0.59, 0.78] | 1.13 [0.99, 1.30] |
+| | 250 | 0.62 [0.57, 0.69] | 0.76 [0.68, 0.85] | 0.72 [0.63, 0.85] | 0.90 [0.80, 1.04] | 1.20 [1.05, 1.38] | 1.01 [0.93, 1.09] |
+| | 300 | 0.83 [0.69, 1.00] | 0.89 [0.74, 1.08] | 0.88 [0.80, 0.97] | 0.88 [0.81, 0.96] | 1.60 [1.46, 1.76] | 1.10 [1.03, 1.18] |
 
-The models carry over to larger graphs in node counts: the learned rule still explores fewer nodes than `relpscost` on every set, and strong branching on its first candidates halves them again. The gain in time shrinks with the size and vanishes on G(200, 0.0625). A learned decision costs about the same at every node, while `relpscost` pays for strong branching only until its pseudo-costs are reliable, which a large tree amortizes; strong branching on the model's candidates, which pays at every node, is slower than `relpscost` on the largest sets. SCIP with its default settings, whose cuts at every node shrink the trees three to four times, catches up with the study settings in time on the largest sets.
+The models carry over to larger graphs in node counts: the perceptron and the candidate graph model explore fewer nodes than `relpscost` on every larger set, and strong branching on the perceptron's first candidates divides them again by 1.3 to 2. The gain in time shrinks with the size and vanishes on G(200, 0.0625).
+
+Time per node (total time over total nodes) explains it. A learned decision costs about the same at every node: 0.92, 0.92 and 0.89 ms for the perceptron on Erdős–Rényi graphs of 125, 150 and 200 vertices, 2.44, 2.31 and 2.33 ms on Barabási–Albert graphs of 200, 250 and 300 vertices. `relpscost` pays for strong branching only until its pseudo-costs are reliable, which a large tree amortizes: 0.95, 0.84 and 0.74 ms, and 4.02, 2.83 and 2.40 ms. Strong branching on the model's candidates, which pays at every node, is 1.3 to 1.8 times slower than `relpscost` on the largest sets. SCIP with its default settings, whose cuts at every node shrink the trees two to four times, catches up with the study settings in time on the largest sets.
+
+The graph models do not generalize better than the perceptron. The candidate graph model, which explores 7 to 9% more nodes than the perceptron at the training size, explores as many on the largest sets (ratio to the perceptron 0.93 [0.79, 1.10] on G(200, 0.0625), 0.99 [0.83, 1.13] on BA(300, 8)), 19% more on BA(250, 8), and is never faster. The bipartite model scores a graph that grows with the instance: its time per node rises from 3.3 to 3.8 ms, and it is slower than `relpscost` from 250 vertices on (1.6 times at 300).
