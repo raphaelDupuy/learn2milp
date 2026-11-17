@@ -403,6 +403,123 @@ int main(int argc, char* argv[])
         );
     }
 
+    // SCIP parameter files, applied after the settings.
+    {
+        const auto write = [&](const std::string& name, const std::string& text)
+        {
+            const auto path = workDir / name;
+            std::ofstream(path) << text;
+            return path;
+        };
+
+        check(
+            misBenchmarkSettingsLabel(
+                MISBenchmarkSettings::Default, "dir/no_node_gomory.set")
+                == "default+no_node_gomory"
+            && misBenchmarkSettingsLabel(MISBenchmarkSettings::Study, {})
+                == "study",
+            "Settings labels name the parameter file"
+        );
+
+        // The study settings written as a file on top of SCIP's defaults
+        // give exactly the search of the study settings.
+        {
+            MISBenchmarkConfig study;
+            study.branchingRule = "relpscost";
+
+            MISBenchmarkConfig asFile = study;
+            asFile.settings = MISBenchmarkSettings::Default;
+            asFile.parameterFile = write("as_study.set",
+                "# the study settings, as a parameter file\n"
+                "presolving/maxrestarts = 0\n"
+                "\n"
+                "separating/maxrounds = 0   # cuts at the root only\n");
+
+            MISBenchmarkResult fromSettings;
+            MISBenchmarkResult fromFile;
+            std::string error;
+
+            // Solved before the message is built (argument order).
+            const bool ran =
+                benchmarkMIS(instance, study, fromSettings, error)
+                && benchmarkMIS(instance, asFile, fromFile, error);
+
+            check(
+                ran
+                && fromFile.solved
+                && fromFile.exploredNodes == fromSettings.exploredNodes
+                && fromFile.lpIterations == fromSettings.lpIterations,
+                "A parameter file reproduces the study settings ("
+                    + std::to_string(fromFile.exploredNodes) + " and "
+                    + std::to_string(fromSettings.exploredNodes) + " nodes) "
+                    + error
+            );
+        }
+
+        {
+            MISBenchmarkConfig config;
+            config.branchingRule = "relpscost";
+            config.parameterFile = write("one_node.set", "limits/nodes = 1\n");
+
+            MISBenchmarkResult result;
+            std::string error;
+
+            check(
+                benchmarkMIS(instance, config, result, error)
+                && !result.solved && result.status == "NODELIMIT",
+                "A parameter file changes the search (node limit)"
+            );
+
+            // The run's own time limit takes precedence over the file.
+            config.parameterFile = write("short_time.set", "limits/time = 0.001\n");
+
+            check(
+                benchmarkMIS(instance, config, result, error) && result.solved,
+                "The time limit of the run takes precedence over the file"
+            );
+        }
+
+        std::string error;
+        MISBenchmarkResult result;
+        MISBenchmarkConfig config;
+        config.branchingRule = "relpscost";
+
+        config.parameterFile = write("unknown.set", "separating/gomori/freq = 0\n");
+
+        check(
+            !validateMISBenchmarkParameters(config.parameterFile, error)
+            && error.find("separating/gomori/freq") != std::string::npos
+            && !benchmarkMIS(instance, config, result, error),
+            "A misspelled parameter is rejected"
+        );
+
+        config.parameterFile = write("out_of_range.set", "separating/gomory/freq = -5\n");
+
+        check(
+            !validateMISBenchmarkParameters(config.parameterFile, error)
+            && !benchmarkMIS(instance, config, result, error),
+            "A value out of range is rejected"
+        );
+
+        config.parameterFile = write("no_value.set", "separating/gomory/freq\n");
+
+        check(
+            !validateMISBenchmarkParameters(config.parameterFile, error)
+            && error.find("line 1") != std::string::npos,
+            "A line without a value is rejected"
+        );
+
+        config.parameterFile = workDir / "missing.set";
+
+        check(
+            !validateMISBenchmarkParameters(config.parameterFile, error)
+            && error.find("Unable to open parameter file") == 0
+            && validateMISBenchmarkParameters(
+                write("valid.set", "separating/gomory/freq = 0\n"), error),
+            "A missing file is reported, a valid one accepted"
+        );
+    }
+
     if (failures > 0)
     {
         std::cerr << failures << " test(s) failed.\n";

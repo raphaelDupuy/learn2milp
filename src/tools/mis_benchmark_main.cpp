@@ -25,7 +25,7 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << " --instances DIR --rules R1,R2 --output PATH\n"
         << "      [--seeds S1,S2] [--settings study|default]"
         << " [--time-limit SECONDS]\n"
-        << "      [--model PATH] [--strong-branching K]\n\n"
+        << "      [--parameters FILE] [--model PATH] [--strong-branching K]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -47,6 +47,9 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  --settings    study: settings used for data collection"
         << " (default)\n"
         << "                default: SCIP with no parameter changed\n"
+        << "  --parameters  SCIP settings file (name = value per line)\n"
+        << "                applied after --settings, e.g. to choose the\n"
+        << "                separators called at the nodes\n"
         << "  --time-limit  Time limit per run in seconds (default "
         << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
         << "  -h, --help    Show this help and exit\n";
@@ -69,13 +72,15 @@ int main(int argc, char* argv[])
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
     double timeLimit = MIS_DEFAULT_TIME_LIMIT_SECONDS;
     std::string modelPath;
+    std::string parameterFile;
     int strongBranching = 0;
 
     try
     {
         const CommandLineOptions options(argc, argv, 1, {
             "--instances", "--rules", "--output", "--seeds",
-            "--settings", "--model", "--time-limit", "--strong-branching"});
+            "--settings", "--parameters", "--model", "--time-limit",
+            "--strong-branching"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -89,6 +94,9 @@ int main(int argc, char* argv[])
 
         if (options.has("--model"))
             modelPath = options.text("--model");
+
+        if (options.has("--parameters"))
+            parameterFile = options.text("--parameters");
 
         strongBranching = options.get(
             "--strong-branching", parseNonNegativeInt, strongBranching);
@@ -125,6 +133,20 @@ int main(int argc, char* argv[])
             return 2;
         }
     }
+
+    if (!parameterFile.empty())
+    {
+        std::string parameterError;
+
+        if (!validateMISBenchmarkParameters(parameterFile, parameterError))
+        {
+            std::cerr << parameterError << '\n';
+            return 2;
+        }
+    }
+
+    const std::string settingsLabel =
+        misBenchmarkSettingsLabel(settings, parameterFile);
 
     // Instances, in a fixed order.
     std::vector<std::filesystem::path> instancePaths;
@@ -193,6 +215,7 @@ int main(int argc, char* argv[])
                 MISBenchmarkConfig config;
                 config.branchingRule = rule;
                 config.settings = settings;
+                config.parameterFile = parameterFile;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
 
@@ -219,7 +242,7 @@ int main(int argc, char* argv[])
                     << name << ','
                     << loaded.instance.n << ','
                     << loaded.instance.edges.size() << ','
-                    << misBenchmarkSettingsName(settings) << ','
+                    << settingsLabel << ','
                     << rule << ','
                     << seed << ','
                     << result.status << ','
@@ -258,7 +281,7 @@ int main(int argc, char* argv[])
 
     // Summary, in the order the rules were given.
     std::cout
-        << "\nSettings: " << misBenchmarkSettingsName(settings)
+        << "\nSettings: " << settingsLabel
         << ", " << instancePaths.size() << " instances, "
         << seeds.size() << " seed(s), time limit " << timeLimit << " s\n"
         << "Shifted geometric means: nodes (shift 100),"

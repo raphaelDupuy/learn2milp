@@ -3,7 +3,9 @@
 #include <climits>
 #include <cmath>
 #include <exception>
+#include <fstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <scip/scip.h>
@@ -62,6 +64,72 @@ void ignoreSample(
 {
 }
 
+std::string trim(const std::string& text)
+{
+    const auto first = text.find_first_not_of(" \t\r");
+
+    if (first == std::string::npos)
+        return "";
+
+    return text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
+}
+
+/*
+ * Applies a SCIP settings file. SCIP itself only warns about a parameter
+ * it does not know, which would silently ignore a misspelled name: every
+ * name is checked first.
+ */
+void applyParameterFile(SCIP* scip, const std::filesystem::path& file)
+{
+    std::ifstream input(file);
+
+    if (!input)
+    {
+        throw std::invalid_argument(
+            "Unable to open parameter file: " + file.string()
+        );
+    }
+
+    std::string line;
+    int lineNumber = 0;
+
+    while (std::getline(input, line))
+    {
+        ++lineNumber;
+        line = trim(line.substr(0, line.find('#')));
+
+        if (line.empty())
+            continue;
+
+        const auto equals = line.find('=');
+        const std::string name =
+            trim(equals == std::string::npos ? line : line.substr(0, equals));
+
+        if (equals == std::string::npos || name.empty())
+        {
+            throw std::invalid_argument(
+                "Invalid line " + std::to_string(lineNumber)
+                + " in parameter file " + file.string()
+                + " (expected: name = value)"
+            );
+        }
+
+        if (SCIPgetParam(scip, name.c_str()) == nullptr)
+        {
+            throw std::invalid_argument(
+                "Unknown SCIP parameter in " + file.string() + ": " + name
+            );
+        }
+    }
+
+    if (SCIPreadParams(scip, file.string().c_str()) != SCIP_OKAY)
+    {
+        throw std::invalid_argument(
+            "SCIP rejected a value of the parameter file: " + file.string()
+        );
+    }
+}
+
 // The mislearned rule, and only it, takes a model file.
 void requireModelOfRule(
     const std::string& branchingRule,
@@ -113,6 +181,55 @@ bool parseMISBenchmarkSettings(
     }
 
     return false;
+}
+
+std::string misBenchmarkSettingsLabel(
+    MISBenchmarkSettings settings,
+    const std::filesystem::path& parameterFile
+)
+{
+    std::string label = misBenchmarkSettingsName(settings);
+
+    if (!parameterFile.empty())
+        label += "+" + parameterFile.stem().string();
+
+    for (char& c : label)
+    {
+        if (c == ',')
+            c = '_';
+    }
+
+    return label;
+}
+
+bool validateMISBenchmarkParameters(
+    const std::filesystem::path& parameterFile,
+    std::string& errorMessage
+)
+{
+    try
+    {
+        SCIPHandle handle;
+        require(SCIPcreate(&handle.scip), "create a solver instance");
+        require(
+            SCIPincludeDefaultPlugins(handle.scip),
+            "include the default plugins"
+        );
+        require(
+            SCIPsetIntParam(handle.scip, "display/verblevel", 0),
+            "disable console output"
+        );
+
+        applyParameterFile(handle.scip, parameterFile);
+
+        errorMessage.clear();
+        return true;
+    }
+    catch (const std::exception& exception)
+    {
+        errorMessage = exception.what();
+        return false;
+    }
 }
 
 double misShiftedGeometricMean(const std::vector<double>& values, double shift)
@@ -275,6 +392,9 @@ bool benchmarkMIS(
                 "apply the branching study settings"
             );
         }
+
+        if (!config.parameterFile.empty())
+            applyParameterFile(scip, config.parameterFile);
 
         require(
             SCIPsetRealParam(

@@ -54,6 +54,15 @@ struct MISBenchmarkConfig
 
     MISBenchmarkSettings settings = MISBenchmarkSettings::Study;
 
+    /*
+     * SCIP settings file (SCIP's own format: one "name = value" per line,
+     * "#" starts a comment) applied after the settings above, so that it
+     * can change any parameter, for instance which separators run at the
+     * nodes. Empty for none. Every parameter it names must exist; the time
+     * limit and the seed of the run take precedence over the file.
+     */
+    std::filesystem::path parameterFile;
+
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.
@@ -88,6 +97,26 @@ const char* misBenchmarkSettingsName(MISBenchmarkSettings settings);
 bool parseMISBenchmarkSettings(
     const std::string& name,
     MISBenchmarkSettings& settings
+);
+
+/*
+ * Name of the settings of a run, as written in result tables: the name of
+ * the settings, followed by "+" and the stem of the parameter file when
+ * there is one, e.g. "default+no_node_gomory" (commas become "_").
+ */
+std::string misBenchmarkSettingsLabel(
+    MISBenchmarkSettings settings,
+    const std::filesystem::path& parameterFile
+);
+
+/*
+ * Checks a SCIP settings file before any run, as benchmarkMIS() does: the
+ * file must be readable, every parameter it names must be a parameter of
+ * SCIP with its default plugins, and SCIP must accept every value.
+ */
+bool validateMISBenchmarkParameters(
+    const std::filesystem::path& parameterFile,
+    std::string& errorMessage
 );
 
 // True if the name designates a branching rule that benchmarkMIS() can
