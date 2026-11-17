@@ -1,0 +1,6 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving
+barabasi_albert_n250_k8_seed81.mis,250,1936,default+clique_every_node,relpscost,0,OPTIMAL,1,1447,131247,12.453,83,83,,,,,
+barabasi_albert_n250_k8_seed82.mis,250,1936,default+clique_every_node,relpscost,0,OPTIMAL,1,4355,370493,26.4447,80,80,,,,,
+barabasi_albert_n250_k8_seed83.mis,250,1936,default+clique_every_node,relpscost,0,OPTIMAL,1,1270,115359,11.4421,84,84,,,,,
+barabasi_albert_n250_k8_seed84.mis,250,1936,default+clique_every_node,relpscost,0,OPTIMAL,1,3111,240530,18.2943,82,82,,,,,
+barabasi_albert_n250_k8_seed85.mis,250,1936,default+clique_every_node,relpscost,0,OPTIMAL,1,5177,426269,31.5963,80,80,,,,,

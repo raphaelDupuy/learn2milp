@@ -1,0 +1,6 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+clique_every_node,relpscost,0,OPTIMAL,1,2028,104796,6.98814,41,41,,,,,
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+clique_every_node,relpscost,0,OPTIMAL,1,4472,222123,11.3618,42,42,,,,,
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+clique_every_node,relpscost,0,OPTIMAL,1,8748,354749,16.8739,40,40,,,,,
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+clique_every_node,relpscost,0,OPTIMAL,1,8237,403247,17.954,40,40,,,,,
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+clique_every_node,relpscost,0,OPTIMAL,1,6164,294802,13.8516,40,40,,,,,

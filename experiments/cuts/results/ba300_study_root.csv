@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving
+barabasi_albert_n300_k8_seed81.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6919,2.09602,96,113.345,150,113.345,333,0,0
+barabasi_albert_n300_k8_seed82.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6613,3.24814,96,114.31,150,114.31,315,0,0
+barabasi_albert_n300_k8_seed83.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,7162,2.1507,95,113.53,150,113.53,326,0,0
+barabasi_albert_n300_k8_seed84.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,7104,1.95458,99,114.94,150,114.94,323,0,0
+barabasi_albert_n300_k8_seed85.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6562,2.03342,92,112.622,150,112.622,323,0,0
+barabasi_albert_n300_k8_seed86.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6705,2.07323,93,112.82,150,112.82,333,0,0
+barabasi_albert_n300_k8_seed87.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6789,2.13657,93,112.563,150,112.563,323,0,0
+barabasi_albert_n300_k8_seed88.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,7149,2.3037,89,113.685,150,113.685,311,0,0
+barabasi_albert_n300_k8_seed89.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6401,2.52292,89,112.833,150,112.833,342,0,0
+barabasi_albert_n300_k8_seed90.mis,300,2336,study+root_only,relpscost,0,NODELIMIT,0,1,6462,1.9368,92,112.88,150,112.88,305,0,0

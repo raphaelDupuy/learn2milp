@@ -1,0 +1,2 @@
+# Stops after the root node, to read the bound at the end of the root.
+limits/nodes = 1

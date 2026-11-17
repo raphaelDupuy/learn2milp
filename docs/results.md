@@ -1,6 +1,6 @@
 # Results
 
-Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`.
+Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`. The last two sections turn to the cutting planes: which separators are worth calling at the nodes, and what a better selection of the cuts at the root would be worth.
 
 ## Erdős–Rényi G(125, 0.1)
 
@@ -169,3 +169,50 @@ Two checks on the test sets (SCIP seed 0, 20 instances each, all solved; results
 `pscost` branches on pseudo-costs without ever running strong branching: it is the cheapest informed decision. The learned rule is faster than `pscost` on every instance (time ratio 0.63, 95% interval [0.58, 0.68], on Erdős–Rényi graphs; 0.52, [0.48, 0.57], on Barabási–Albert graphs) and explores 2.5 to 3 times fewer nodes (ratios 0.39 and 0.31). Its gain over `relpscost` is therefore not only the strong branching it saves: it recovers most of what strong branching tells, at a fraction of its cost. On Barabási–Albert graphs it builds trees of the size of `relpscost`'s with nodes 40% cheaper; on Erdős–Rényi graphs, trees 27% smaller at the same cost per node. Compared with `pscost`, computing the features and evaluating the model take about 0.35 ms per node on Erdős–Rényi graphs and 1 ms on Barabási–Albert graphs, some 40% of the learned rule's time per node (an estimate: the two rules do not solve the same nodes).
 
 The learned rule was trained without cuts at the nodes. With SCIP's default settings, which separate cuts at the nodes, it keeps its lead over `relpscost` on every instance: time ratio 0.62 ([0.55, 0.69]) on Erdős–Rényi graphs and 0.56 ([0.49, 0.63]) on Barabási–Albert graphs, with 0.89 and 1.12 times the nodes. Branching and cutting look complementary rather than redundant. At this size, the cuts at the nodes halve the trees but multiply the time per node by five to seven, so that both rules are slower with the default settings than with the study settings.
+
+## Cutting planes at the nodes
+
+The study settings separate cuts at the root only, so that branching is measured alone. SCIP's default settings also separate at the nodes, which halves the trees but makes SCIP slower at the training sizes (previous section). `experiments/cuts/run_ablation.sh` measures which separators are worth calling at the nodes. It runs `mis-benchmark` with SCIP's default settings and one of the parameter files of `experiments/cuts/settings/` (`--parameters`), SCIP seed 0, one run at a time on an idle machine, on the 20 test instances of each family and the 10 instances of each larger set; every run is solved, and the tables are in `experiments/cuts/results/`. The configurations differ from SCIP's default settings as follows:
+
+- `no_node_gomory`: Gomory cuts at the root only;
+- `zerohalf_every_node`: {0,½}-cuts (zero-half separator) at every node, every other separator at the root only;
+- `oddcycle`: zero-half cuts at depths 10, 40 and 160 as by default (SCIP calls its separators of frequency 10 at depths that grow fourfold), the odd-cycle separator, off by default, at the same depths, every other separator at the root only.
+
+Ratios to the study settings with `relpscost`, time (unshifted) · nodes (shifted by 100), geometric means of the per-instance ratios. With the study settings, `relpscost` takes 3.83 s and 3,596 nodes on G(125, 0.1), 13.1 s and 15,116 nodes on G(150, 0.083), 5.90 s and 863 nodes on BA(200, 8), 18.0 s and 5,498 nodes on BA(250, 8), 64.8 s and 22,174 nodes on BA(300, 8):
+
+| Configuration | G(125, 0.1) | G(150, 0.083) | BA(200, 8) | BA(250, 8) | BA(300, 8) |
+|---|---|---|---|---|---|
+| SCIP, default settings | 2.97 · 0.45 | 2.19 · 0.32 | 1.55 · 0.61 | 1.60 · 0.43 | 1.10 · 0.28 |
+| `no_node_gomory` | 0.95 · 0.42 | 0.84 · 0.34 | 0.95 · 0.62 | 0.96 · 0.40 | 0.77 · 0.30 |
+| `zerohalf_every_node` | 1.02 · 0.34 | 0.89 · 0.23 | 0.99 · 0.49 | 0.93 · 0.29 | 0.84 · 0.17 |
+| `oddcycle` | 1.01 · 0.33 | 0.93 · 0.25 | 1.03 · 0.43 | 0.85 · 0.19 | 0.68 · 0.12 |
+| learned rule, study settings | 0.69 · 0.75 | 0.77 · 0.71 | 0.48 · 1.04 | 0.63 · 0.76 | 0.83 · 0.89 |
+| learned rule, `no_node_gomory` | 0.63 · 0.38 | 0.56 · 0.27 | 0.44 · 0.68 | 0.47 · 0.32 | 0.49 · 0.22 |
+
+The reference runs (study settings, default settings, learned rule with the study settings) are those of the previous sections, made on other days. On the 5 instances of G(150, 0.083) and BA(250, 8) where they were made again, the trees were the same and the times 1 to 15% shorter (7 and 3% on average): a difference of a few percent with a reference is not significant, and the conclusions below do not rest on one.
+
+**Gomory cuts at the nodes cost time and save nothing.** Without them, the trees keep their size (nodes of `no_node_gomory` over those of the default settings: 0.94 to 1.05, every interval but one containing 1) and the time falls by 30 to 68%, on every instance (time ratio 0.32 [0.30, 0.34] on G(125, 0.1), up to 0.70 [0.64, 0.76] on BA(300, 8)). This is a setting to change once, not a decision to learn.
+
+**Cuts at the nodes pay off more as the graphs grow.** They make the trees 1.6 to 8 times smaller, but at the training sizes they cost about what they save: without Gomory cuts at the nodes, every configuration takes about the time of the study settings (0.95 to 1.03) on G(125, 0.1) and BA(200, 8). On the larger sets they are faster: 0.84 to 0.93 of the study time on G(150, 0.083), 0.68 to 0.84 on BA(300, 8). The zero-half separator does the work at the nodes. On a pilot (5 instances of G(150, 0.083) and BA(250, 8)), the cut pool alone keeps 60 and 84% of the study settings' nodes, and zero-half cuts at depths 10, 40 and 160 bring this down to 34 and 31%; zero-half cuts every 10 levels and clique cuts at every node (SCIP: root only) are within the noise of 5 instances in time (0.79 to 0.97 of the study time for all the variants). The odd-cycle separator gives the smallest trees on Barabási–Albert graphs and the best time at 250 and 300 vertices; `no_node_gomory` is the fastest on the other sets.
+
+**The best configuration depends on the instances, but choosing it per instance would gain little.** The per-instance best of the five configurations with `relpscost` (study settings, default settings, `no_node_gomory`, `zerohalf_every_node`, `oddcycle`) is 1 to 7% faster than the best single one of each set, an optimistic figure since it takes the minimum of five noisy times. At the training sizes, `oddcycle` takes the time of the study settings with two to three times fewer nodes: over a whole instance, the cost of the cuts and their savings balance out, which leaves open where in the tree they pay off.
+
+**The learned rule and the cuts at the nodes add up.** With `no_node_gomory`, the learned rule is the fastest configuration on every set, at 0.44 to 0.63 of the study time and 0.46 to 0.72 of the time of the best configuration with `relpscost`. Its lead over `relpscost` no longer fades with the size of the graphs. Time ratio to `relpscost`, both with `no_node_gomory`: 0.66 [0.61, 0.71] and 0.67 [0.60, 0.74] on Erdős–Rényi graphs of 125 and 150 vertices (0.69 and 0.77 with the study settings), 0.46 [0.42, 0.51], 0.49 [0.45, 0.53] and 0.64 [0.54, 0.78] on Barabási–Albert graphs of 200, 250 and 300 vertices (0.48, 0.63 and 0.83). A likely reason: the cuts add rows to the node LPs, which makes every strong branching LP of `relpscost` dearer, while a learned decision costs the same. On the larger sets, the two gains combine better than their product (0.49 against 0.83 × 0.77 = 0.64 on BA(300, 8)), with a model trained without cuts at the nodes and not retrained.
+
+## Cut selection at the root
+
+At each round of the root's cut loop, the separators find more cuts than SCIP adds to the LP. SCIP's selector (`hybrid`) scores them mostly by efficacy (how far the cut is from the LP solution), with small weights on parallelism to the objective and integer support, and skips the cuts too parallel to those already taken. The lookahead expert of Paulus et al. (2022), `--cut-selector lookahead` (see [command-line-tools.md](command-line-tools.md#mis-benchmark-evaluating-branching-rules)), scores each candidate by the increase of the LP bound when it alone is added, and takes the cuts in that order with the same parallelism filter. It is to cut selection what full strong branching is to branching: too slow to use, but it tells what a better selection is worth. Runs stopped after the root (`limits/nodes = 1`) give the bound at the end of SCIP's root; same instances, settings and seed as above, ratios to the study settings with SCIP's selector:
+
+| Instances | gap closed at the root, SCIP · lookahead | cuts in the LP | candidates raising the bound alone | time | nodes |
+|---|---|---|---|---|---|
+| G(125, 0.1) | 0.728 · 0.730 | 194 · 197 | 40% of 1,151 | 1.61 [1.49, 1.74] | 1.14 [0.99, 1.31] |
+| G(150, 0.083) | 0.709 · 0.704 | 218 · 220 | 44% of 1,177 | 1.29 [1.11, 1.49] | 0.97 [0.81, 1.16] |
+| BA(200, 8) | 0.790 · 0.786 | 232 · 236 | 53% of 1,295 | 1.93 [1.74, 2.14] | 1.11 [0.92, 1.36] |
+| BA(250, 8) | 0.747 · 0.749 | 278 · 281 | 62% of 1,327 | 1.57 [1.47, 1.67] | 1.15 [0.97, 1.36] |
+| BA(300, 8) | 0.726 · 0.725 | 323 · 325 | 52% of 1,418 | 1.46 [1.22, 1.69] | 1.24 [1.04, 1.42] |
+
+The gap closed is (first LP bound − bound at the end of the root) / (first LP bound − optimum); the first LP bound is \(n/2\), reached by \(x = ½\) everywhere.
+
+The expert closes the same share of the gap as SCIP's selector on every set, within 0.005, with as many cuts in the LP. Candidates are not lacking: 40 to 62% of them raise the bound on their own. The trees are no smaller (node ratios between 0.97 and 1.24), and the expert's LP solves make the runs 1.3 to 1.9 times slower. With cuts at the nodes (`no_node_gomory`, the expert at the root only), the result is the same: time ratio 1.36 to 1.99, node ratio 0.98 to 1.19.
+
+The reason is the cut loop. At the root, SCIP separates until the bound stalls, with no limit on the number of rounds: which cuts enter at each round changes the path of the bound, not where it ends, which is set by what the separators can find. Paulus et al. measured their expert after 30 rounds of one cut each, where the choice of every cut counts. Here the loop runs to its end, and the root takes 3 to 18% of the solving time with the study settings, so that even a selection reaching the same bound in fewer rounds would save little. For this problem and this formulation, there is nothing to learn in the selection of the cuts at the root: the decision that matters is where to separate in the tree (previous section).

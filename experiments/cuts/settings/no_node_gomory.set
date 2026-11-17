@@ -1,0 +1,3 @@
+# SCIP's default settings, except that Gomory cuts are only separated at
+# the root node.
+separating/gomory/freq = 0

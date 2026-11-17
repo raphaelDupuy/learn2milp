@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving
+erdos_renyi_n150_p0_083_seed81.mis,150,941,study+lookahead,relpscost,0,OPTIMAL,1,6721,205889,10.338,41,41,75,49.741,239,853,435
+erdos_renyi_n150_p0_083_seed82.mis,150,905,study+lookahead,relpscost,0,OPTIMAL,1,12149,296660,13.0051,42,42,75,52.3363,214,841,389
+erdos_renyi_n150_p0_083_seed83.mis,150,942,study+lookahead,relpscost,0,OPTIMAL,1,20211,481082,19.9217,40,40,75,50.1513,231,1457,422
+erdos_renyi_n150_p0_083_seed84.mis,150,941,study+lookahead,relpscost,0,OPTIMAL,1,21487,494918,19.9528,40,40,75,50.9376,215,750,453
+erdos_renyi_n150_p0_083_seed85.mis,150,962,study+lookahead,relpscost,0,OPTIMAL,1,23926,576920,23.8415,40,40,75,50.2795,226,1204,906
+erdos_renyi_n150_p0_083_seed86.mis,150,969,study+lookahead,relpscost,0,OPTIMAL,1,27886,603970,24.3541,40,40,75,51.5894,235,971,371
+erdos_renyi_n150_p0_083_seed87.mis,150,875,study+lookahead,relpscost,0,OPTIMAL,1,9169,268747,11.5238,43,43,75,52.1472,204,1109,686
+erdos_renyi_n150_p0_083_seed88.mis,150,935,study+lookahead,relpscost,0,OPTIMAL,1,16849,440510,20.4538,41,41,75,51.31,229,1763,682
+erdos_renyi_n150_p0_083_seed89.mis,150,916,study+lookahead,relpscost,0,OPTIMAL,1,18045,401015,16.8045,41,41,75,50.8243,217,1017,430
+erdos_renyi_n150_p0_083_seed90.mis,150,868,study+lookahead,relpscost,0,OPTIMAL,1,6916,301514,14.6034,43,43,75,52.2218,195,1806,443

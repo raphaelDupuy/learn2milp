@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving
+barabasi_albert_n300_k8_seed81.mis,300,2336,default,relpscost,0,OPTIMAL,1,2641,287078,34.5346,102,102,,,,,
+barabasi_albert_n300_k8_seed82.mis,300,2336,default,relpscost,0,OPTIMAL,1,8393,829057,82.2494,99,99,,,,,
+barabasi_albert_n300_k8_seed83.mis,300,2336,default,relpscost,0,OPTIMAL,1,2886,384935,47.3861,100,100,,,,,
+barabasi_albert_n300_k8_seed84.mis,300,2336,default,relpscost,0,OPTIMAL,1,3395,389127,44.8026,103,103,,,,,
+barabasi_albert_n300_k8_seed85.mis,300,2336,default,relpscost,0,OPTIMAL,1,4418,520597,61.7297,99,99,,,,,
+barabasi_albert_n300_k8_seed86.mis,300,2336,default,relpscost,0,OPTIMAL,1,4274,483960,59.9248,100,100,,,,,
+barabasi_albert_n300_k8_seed87.mis,300,2336,default,relpscost,0,OPTIMAL,1,7753,722689,76.046,100,100,,,,,
+barabasi_albert_n300_k8_seed88.mis,300,2336,default,relpscost,0,OPTIMAL,1,13584,1511139,139.048,98,98,,,,,
+barabasi_albert_n300_k8_seed89.mis,300,2336,default,relpscost,0,OPTIMAL,1,16626,1682644,160.949,96,96,,,,,
+barabasi_albert_n300_k8_seed90.mis,300,2336,default,relpscost,0,OPTIMAL,1,10818,949419,88.5426,98,98,,,,,
