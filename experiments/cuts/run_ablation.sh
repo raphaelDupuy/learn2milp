@@ -19,6 +19,11 @@
 # Runs are made one at a time; a run already made is skipped, so the script
 # resumes where it stopped and later calls can add sets or configurations.
 #
+# A run during which the machine slept is discarded: SCIP measures time on
+# the wall clock, which keeps going while the WSL virtual machine is
+# suspended, whereas /proc/uptime stops. Its table is kept as
+# runs/*.csv.suspended, and the next call makes the run again.
+#
 # Outputs:
 #   experiments/cuts/results/<set>_<config>.csv   one row per run
 #   data/logs/cuts.log                            progress, one line per run
@@ -112,6 +117,7 @@ done
 log "start: $total runs, $done_runs already made (sets $SELECTED_SETS, configurations $SELECTED_CONFIGS, time limit $TIME_LIMIT s)"
 started=$(date +%s)
 made=0
+suspended_runs=0
 
 for entry in "${ALL_SETS[@]}"; do
     read -r name directory model <<< "$entry"
@@ -139,6 +145,8 @@ for entry in "${ALL_SETS[@]}"; do
                 [[ "${selector:--}" != - ]] && options+=(--cut-selector "$selector")
 
                 rm -f "$part.tmp"
+                read -r uptime_before _ < /proc/uptime
+                wall_before=$(date +%s.%N)
 
                 if ! "$BENCHMARK" "${options[@]}" > /dev/null 2> "$part.err"; then
                     log "FAILED $name $base $config_name seed $seed: $(tail -n 1 "$part.err")"
@@ -146,6 +154,19 @@ for entry in "${ALL_SETS[@]}"; do
                 fi
 
                 rm -f "$part.err"
+
+                read -r uptime_after _ < /proc/uptime
+                wall_after=$(date +%s.%N)
+                slept=$(awk -v w0="$wall_before" -v w1="$wall_after" -v u0="$uptime_before" -v u1="$uptime_after" \
+                    'BEGIN { d = (w1 - w0) - (u1 - u0); print (d > 2 ? int(d + 0.5) : 0) }')
+
+                if (( slept > 0 )); then
+                    mv "$part.tmp" "$part.suspended"
+                    suspended_runs=$((suspended_runs + 1))
+                    log "SUSPENDED $name $base $config_name seed $seed: the machine slept about $slept s during the run, which is discarded"
+                    continue
+                fi
+
                 mv "$part.tmp" "$part"
 
                 made=$((made + 1))
@@ -191,5 +212,9 @@ for entry in "${ALL_SETS[@]}"; do
                 exp(nodes / k) - 100, exp(time / k) }' "$table")"
     done
 done
+
+if (( suspended_runs > 0 )); then
+    log "$suspended_runs runs discarded because the machine slept: call the script again to make them"
+fi
 
 log "done"
