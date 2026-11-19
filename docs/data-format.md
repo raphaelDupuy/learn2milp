@@ -74,14 +74,15 @@ samples = candidates.merge(nodes, on=["sample_index", "node_id"])
 
 ## Benchmark results
 
-`mis-benchmark` writes one CSV row per run, with the columns `instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving`. The bounds are those of the size of a maximum independent set:
+`mis-benchmark` writes one CSV row per run, with the columns `instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped`. The bounds are those of the size of a maximum independent set:
 
 - `settings` names the SCIP settings, followed by `+` and the parameter file and cut selector when there are any (`default+no_node_gomory`, `study+lookahead`);
 - `root_first_lp_bound` is the bound of the first LP of the root, before any cut, and `root_dual_bound` the bound at the end of the root, after its cuts (the optimum when the root closes the gap); the share of the gap closed at the root is (`root_first_lp_bound` − `root_dual_bound`) / (`root_first_lp_bound` − optimum);
 - `cuts_applied` counts the cuts added to the LP over the whole solve;
-- `lookahead_scored` and `lookahead_improving`, with `--cut-selector lookahead` only (0 otherwise), count the root cuts scored by the selector and those that raised the LP bound when added alone.
+- `lookahead_scored` and `lookahead_improving`, with `--cut-selector lookahead` only (0 otherwise), count the root cuts scored by the selector and those that raised the LP bound when added alone;
+- `gate_separated` and `gate_skipped`, when a parameter file turns on the separation gate (`separating/misgate/freq = 1`, see [command-line-tools.md](command-line-tools.md)), count the nodes below the root where the gated separators were called and those where they were not (0 otherwise).
 
-Results written before the root columns existed have the first 13 columns only.
+Results written before the root columns existed have the first 13 columns only, and those written before the gate columns the first 18.
 
 ## Node logs
 

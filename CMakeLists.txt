@@ -56,6 +56,7 @@ target_link_libraries(mis_branching
 add_library(mis_cutting STATIC
     src/cuts/MISLookaheadCutsel.c
     src/cuts/MISNodeLog.c
+    src/cuts/MISSeparationGate.c
 )
 
 target_include_directories(mis_cutting

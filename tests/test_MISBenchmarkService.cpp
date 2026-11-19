@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "generators/ErdosRenyiGenerator.hpp"
 #include "learning/MISBranchingFeatures.h"
@@ -741,6 +742,139 @@ int main(int argc, char* argv[])
             !benchmarkMIS(larger, logging, logged, error)
             && error.find("Node log already exists") == 0,
             "An existing node log is not overwritten"
+        );
+    }
+
+    // Separation gate: odd-cycle cuts only at the nodes close to the cutoff.
+    {
+        const MISInstance graph =
+            ErdosRenyiGenerator{}.generate({100, 0.10, 3}).graph;
+        const std::string oddcycle =
+            "separating/gomory/freq = 0\n"
+            "separating/oddcycle/freq = 1\n"
+            "separating/oddcycle/expbackoff = 1\n";
+
+        const auto solve = [&](const std::string& name,
+                               const std::string& parameters,
+                               MISBenchmarkResult& result,
+                               std::string& error)
+        {
+            MISBenchmarkConfig config;
+            config.branchingRule = "relpscost";
+            config.settings = MISBenchmarkSettings::Default;
+            config.parameterFile = workDir / (name + ".set");
+            config.nodeLogPath = workDir / (name + "_gate_nodes.csv");
+            std::ofstream(config.parameterFile) << parameters;
+            return benchmarkMIS(graph, config, result, error);
+        };
+
+        // Nodes below the root where the cut loop ran, from the node log.
+        const auto nodesWithRounds = [&](const std::string& name)
+        {
+            std::ifstream log(workDir / (name + "_gate_nodes.csv"));
+            std::string line;
+            long long count = 0;
+            std::getline(log, line);
+
+            while (std::getline(log, line))
+            {
+                std::vector<std::string> fields;
+                std::size_t start = 0;
+
+                for (std::size_t comma; (comma = line.find(',', start)) != std::string::npos; start = comma + 1)
+                    fields.push_back(line.substr(start, comma - start));
+                fields.push_back(line.substr(start));
+
+                // depth (3) and separation_rounds (14)
+                if (fields.size() > 14 && fields[3] != "0" && fields[14] != "0")
+                    ++count;
+            }
+
+            return count;
+        };
+
+        MISBenchmarkResult everyNode, always, rootOnly, never, gated;
+        std::string error;
+
+        const bool ran =
+            solve("every_node", oddcycle, everyNode, error)
+            && solve("always", oddcycle
+                + "separating/misgate/freq = 1\n"
+                + "separating/misgate/maxgap = 1e20\n", always, error)
+            && solve("root_only",
+                "separating/gomory/freq = 0\n"
+                "separating/oddcycle/freq = 0\n"
+                "separating/oddcycle/expbackoff = 1\n", rootOnly, error)
+            && solve("never", oddcycle
+                + "separating/misgate/freq = 1\n"
+                + "separating/misgate/maxgap = -1e20\n", never, error)
+            && solve("gated", oddcycle
+                + "separating/misgate/freq = 1\n"
+                + "separating/misgate/maxgap = 0.5\n", gated, error);
+
+        check(ran && everyNode.solved && gated.solved, "The gated runs solve " + error);
+
+        check(
+            ran && everyNode.gateSeparated == 0 && everyNode.gateSkipped == 0
+            && always.exploredNodes == everyNode.exploredNodes
+            && always.lpIterations == everyNode.lpIterations
+            && always.gateSkipped == 0 && always.gateSeparated > 0,
+            "A gate that always separates leaves the search unchanged ("
+                + std::to_string(always.exploredNodes) + " and "
+                + std::to_string(everyNode.exploredNodes) + " nodes)"
+        );
+
+        check(
+            ran && never.exploredNodes == rootOnly.exploredNodes
+            && never.lpIterations == rootOnly.lpIterations
+            && never.gateSeparated == 0 && never.gateSkipped > 0,
+            "A gate that never separates is the separator at the root only ("
+                + std::to_string(never.exploredNodes) + " and "
+                + std::to_string(rootOnly.exploredNodes) + " nodes)"
+        );
+
+        // One decision at every node below the root that has a cut loop.
+        const long long looped = ran ? nodesWithRounds("gated") : -1;
+        check(
+            ran && gated.gateSeparated > 0 && gated.gateSkipped > 0
+            && gated.gateSeparated + gated.gateSkipped == looped,
+            "The gate decides at every node below the root with a cut loop ("
+                + std::to_string(gated.gateSeparated) + " separated, "
+                + std::to_string(gated.gateSkipped) + " skipped, "
+                + std::to_string(looped) + " nodes with a cut loop)"
+        );
+
+        MISBenchmarkResult unknown;
+        check(
+            !solve("unknown", oddcycle
+                + "separating/misgate/freq = 1\n"
+                + "separating/misgate/separators = \"oddcycle,nosuchsepa\"\n",
+                unknown, error),
+            "A gated separator that does not exist is an error"
+        );
+
+        // SCIP stops reading a settings file at a malformed value and
+        // reports success: the value is checked after.
+        const auto unquoted = workDir / "unquoted.set";
+        std::ofstream(unquoted)
+            << "separating/misgate/separators = oddcycle\n"
+            << "separating/oddcycle/freq = 1\n";
+        check(
+            !validateMISBenchmarkParameters(unquoted, error)
+            && error.find("did not apply line 1") != std::string::npos,
+            "A string value without its double quotes is an error: " + error
+        );
+
+        // A parameter set twice holds its last value, which is the one checked.
+        const auto twice = workDir / "twice.set";
+        std::ofstream(twice)
+            << "separating/oddcycle/freq = 1\n"
+            << "separating/misgate/separators = \"oddcycle\"  # gated\n"
+            << "separating/oddcycle/freq = 5 fix\n";
+        error.clear();
+        check(
+            validateMISBenchmarkParameters(twice, error),
+            "A parameter set twice, with a comment and fix, is valid: " + error
         );
     }
 

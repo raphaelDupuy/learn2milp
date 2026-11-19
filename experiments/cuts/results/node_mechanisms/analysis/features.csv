@@ -1,0 +1,37 @@
+set,config,feature,auc
+er125,oddcycle_every_node,gap (small),0.9017
+er125,oddcycle_every_node,depth (deep),0.5400
+er125,oddcycle_every_node,bound distance (far from global lower bound),0.9170
+er125,oddcycle_every_node,fractional variables (few),0.8496
+er125,oddcycle_every_node,share of fractional values at 1/2 (high),0.5695
+er125,oddcycle_every_node,first LP iterations (few),0.3830
+er125,zerohalf_every_node,gap (small),0.7243
+er125,zerohalf_every_node,depth (deep),0.5651
+er125,zerohalf_every_node,bound distance (far from global lower bound),0.7306
+er125,zerohalf_every_node,fractional variables (few),0.7149
+er125,zerohalf_every_node,share of fractional values at 1/2 (high),0.6018
+er125,zerohalf_every_node,first LP iterations (few),0.6513
+er125,zerohalf_local_every_node,gap (small),0.8409
+er125,zerohalf_local_every_node,depth (deep),0.5639
+er125,zerohalf_local_every_node,bound distance (far from global lower bound),0.8430
+er125,zerohalf_local_every_node,fractional variables (few),0.7449
+er125,zerohalf_local_every_node,share of fractional values at 1/2 (high),0.5907
+er125,zerohalf_local_every_node,first LP iterations (few),0.5914
+ba200,oddcycle_every_node,gap (small),0.8944
+ba200,oddcycle_every_node,depth (deep),0.5206
+ba200,oddcycle_every_node,bound distance (far from global lower bound),0.8886
+ba200,oddcycle_every_node,fractional variables (few),0.7560
+ba200,oddcycle_every_node,share of fractional values at 1/2 (high),0.5309
+ba200,oddcycle_every_node,first LP iterations (few),0.3549
+ba200,zerohalf_every_node,gap (small),0.7691
+ba200,zerohalf_every_node,depth (deep),0.5848
+ba200,zerohalf_every_node,bound distance (far from global lower bound),0.7658
+ba200,zerohalf_every_node,fractional variables (few),0.7029
+ba200,zerohalf_every_node,share of fractional values at 1/2 (high),0.5855
+ba200,zerohalf_every_node,first LP iterations (few),0.6581
+ba200,zerohalf_local_every_node,gap (small),0.8800
+ba200,zerohalf_local_every_node,depth (deep),0.5666
+ba200,zerohalf_local_every_node,bound distance (far from global lower bound),0.8771
+ba200,zerohalf_local_every_node,fractional variables (few),0.7579
+ba200,zerohalf_local_every_node,share of fractional values at 1/2 (high),0.5942
+ba200,zerohalf_local_every_node,first LP iterations (few),0.5777

@@ -216,4 +216,64 @@ The gap closed is (first LP bound − bound at the end of the root) / (first LP 
 
 The expert closes the same share of the gap as SCIP's selector on every set, within 0.005, with as many cuts in the LP. Candidates are not lacking: 40 to 62% of them raise the bound on their own. The trees are no smaller (node ratios between 0.94 and 1.24, every interval but one containing 1), and the expert's LP solves make the runs 1.3 to 1.9 times slower, except on G(200, 0.0625), where they are a small part of five minutes of solving. With cuts at the nodes (`no_node_gomory`, the expert at the root only), the result is the same: time ratio 1.11 to 1.99, node ratio 0.98 to 1.19.
 
-The reason is the cut loop. At the root, SCIP separates until the bound stalls, with no limit on the number of rounds: which cuts enter at each round changes the path of the bound, not where it ends, which is set by what the separators can find. Paulus et al. measured their expert after 30 rounds of one cut each, where the choice of every cut counts. Here the loop runs to its end, and the root takes 0.4 to 18% of the solving time with the study settings (the larger the graph, the smaller its share), so that even a selection reaching the same bound in fewer rounds would save little. For this problem and this formulation, there is nothing to learn in the selection of the cuts at the root: the decision that matters is where to separate in the tree (previous section).
+The reason is the cut loop. At the root, SCIP separates until the bound stalls, with no limit on the number of rounds: which cuts enter at each round changes the path of the bound, not where it ends, which is set by what the separators can find. Paulus et al. measured their expert after 30 rounds of one cut each, where the choice of every cut counts. Here the loop runs to its end, and the root takes 0.4 to 18% of the solving time with the study settings (the larger the graph, the smaller its share), so that even a selection reaching the same bound in fewer rounds would save little. For this problem and this formulation, there is nothing to learn in the selection of the cuts at the root: the decision that matters is where to separate in the tree ([cutting planes at the nodes](#cutting-planes-at-the-nodes) and next section).
+
+## Where to separate in the tree
+
+At the training sizes, odd-cycle cuts at the nodes take the time of the study settings with three times fewer nodes ([cutting planes at the nodes](#cutting-planes-at-the-nodes)): over a whole instance, what the cuts cost and what they save balance out. Two experiments look at where in the tree they pay off, with the protocol of the cut ablation (SCIP's default settings and a parameter file of `experiments/cuts/settings/`, `relpscost`, SCIP seed 0, the 20 test instances of G(125, 0.1) and BA(200, 8), every run solved). Their runs wrote a log of every node (`--node-log-dir`, [data-format.md](data-format.md#node-logs)); `experiments/cuts/compare_configs.py` computes the ratios of their tables.
+
+### Which mechanism makes the trees smaller
+
+`EXPERIMENT=node_mechanisms` adds four configurations to those of the ablation; like them, they call Gomory and the other separators SCIP uses below the root at the root only:
+
+- `pool_nodes`: no separator at the nodes, only the cut pool (the cuts found so far, separated again; SCIP: every 10 levels); `pool_every_node`: the cut pool at every node;
+- `zerohalf_local_every_node`: zero-half cuts at every node, local cuts allowed at every node (SCIP: only at the nodes of best bound);
+- `oddcycle_every_node`: odd-cycle cuts at every node, zero-half cuts as by default.
+
+Ratios to the study settings, time (unshifted) · nodes (shifted by 100), with 95% paired bootstrap intervals. With the study settings, `relpscost` takes 3.78 s and 3,596 nodes on G(125, 0.1), 7.14 s and 863 nodes on BA(200, 8):
+
+| Configuration | G(125, 0.1), time | nodes | BA(200, 8), time | nodes |
+|---|---|---|---|---|
+| `no_node_gomory` | 0.94 [0.91, 0.99] | 0.42 | 0.98 [0.94, 1.01] | 0.62 |
+| `pool_nodes` | **0.89** [0.86, 0.92] | 0.63 | 1.00 [0.98, 1.02] | 0.90 |
+| `pool_every_node` | 0.95 [0.89, 1.00] | 0.63 | 1.00 [0.93, 1.10] | 0.83 |
+| `zerohalf_every_node` | 1.01 [0.97, 1.04] | 0.34 | 1.02 [0.98, 1.06] | 0.49 |
+| `zerohalf_local_every_node` | 1.21 [1.14, 1.29] | 0.33 | 1.15 [1.03, 1.26] | 0.49 |
+| `oddcycle` | 1.00 [0.95, 1.05] | 0.33 | 1.05 [0.99, 1.12] | 0.43 |
+| `oddcycle_every_node` | 1.56 [1.45, 1.69] | **0.15** | 1.36 [1.18, 1.53] | **0.22** |
+
+The cut pool alone, at depths 10, 20, 30…, is the fastest configuration on Erdős–Rényi graphs, with trees 1.6 times smaller than the study settings'; separating it at every node gives no smaller trees. Odd-cycle cuts at every node give trees 4 to 7 times smaller, at 1.4 to 1.6 times the time. Local zero-half cuts cost time and save no node.
+
+The node logs of the configurations that separate at every node tell what each cut loop below the root did: it pruned the node (the first LP did not reach the cutoff bound, the cut loop did), raised its bound without pruning it, or left it unchanged (`experiments/cuts/analyze_node_logs.py`, outputs in `experiments/cuts/results/node_mechanisms/analysis/`). With odd-cycle cuts at every node, the cut loop takes 49% of the time spent on the nodes on G(125, 0.1) and 27% on BA(200, 8):
+
+| Loops of `oddcycle_every_node` | G(125, 0.1): loops · loop time | BA(200, 8): loops · loop time |
+|---|---|---|
+| pruned the node | 16% · 8% | 14% · 8% |
+| raised the bound (median: 15% and 11% of the gap to the cutoff) | 73% · 89% | 71% · 89% |
+| bound unchanged | 10% · 2% | 16% · 3% |
+
+With zero-half cuts at every node, 85 to 87% of the loops leave the bound unchanged, and take 43 to 44% of the loop time.
+
+**The loops that prune are cheap and can be told apart before separating.** The gap between the cutoff bound and the LP bound after the node's first LP tells them from the others with an AUC of 0.90 on both families; the depth does not (0.52 to 0.54). Separating only where this gap is at most 0.5 (the same threshold on both families) would keep 80% of the pruning loops with 27% of the loops and 13% of the loop time; a logistic regression on six features (gap, depth, distance to the global lower bound, fractional variables, share of them at ½, iterations of the first LP), trained on 10 instances and measured on the 10 others, needs 8.5% (Erdős–Rényi) and 12% (Barabási–Albert) of the loop time for 80%, little more than the gap alone. SCIP's own filter does the opposite: `separating/maxbounddist` separates only at the nodes whose bound is close to the global lower bound, far from the cutoff bound, where the loops seldom prune.
+
+These figures are measured on the tree that separates everywhere: a node whose loop is skipped is branched on, and its cuts do not enter the pool. They tell what a gate could keep, not what it would gain.
+
+### A separation gate
+
+`src/cuts/MISSeparationGate.c` makes that rule a SCIP plugin: a separator that finds no cuts, called first at every node, which lets the odd-cycle separator run at the node only when the gap after the first LP is at most `separating/misgate/maxgap` ([command-line-tools.md](command-line-tools.md#mis-benchmark-evaluating-branching-rules)). `EXPERIMENT=node_gate` compares it, with thresholds 0.25, 0.5 and 1 (`oddcycle_gate025`, `oddcycle_gate050`, `oddcycle_gate100`), to the configurations of the previous experiment, made again in the same session. Ratios to the study settings as above; the last column is the share of the nodes with a cut loop where the gate let the odd-cycle separator run:
+
+| Configuration | G(125, 0.1), time | nodes | BA(200, 8), time | nodes | odd-cycle cuts at |
+|---|---|---|---|---|---|
+| `pool_nodes` | **0.91** [0.87, 0.95] | 0.63 | 0.97 [0.94, 1.01] | 0.90 | no node |
+| `no_node_gomory` | 0.94 [0.89, 0.99] | 0.42 | 0.97 [0.93, 1.00] | 0.62 | no node |
+| `oddcycle` | 1.02 [0.97, 1.07] | 0.33 | 1.03 [0.96, 1.12] | 0.43 | depths 10, 40, 160 |
+| `oddcycle_gate025` | 0.99 [0.93, 1.05] | 0.32 | 1.05 [0.97, 1.13] | 0.45 | 18% · 16% |
+| `oddcycle_gate050` | 1.01 [0.96, 1.07] | 0.27 | 1.06 [0.99, 1.14] | 0.40 | 25% · 23% |
+| `oddcycle_gate100` | 1.09 [1.01, 1.17] | 0.22 | 1.09 [1.00, 1.20] | 0.33 | 42% · 38% |
+| `oddcycle_every_node` | 1.55 [1.41, 1.69] | **0.15** | 1.29 [1.15, 1.43] | **0.22** | every node |
+
+The configurations made again explored the same trees as in the previous experiment, so the gate, when off, changes nothing. The times of this session were about 1.65 times those of the previous one on every instance and configuration (the state of the host machine): the ratios, made within one session with the configurations interleaved on each instance, are comparable; the times in seconds are not.
+
+**The gate does what it is meant to, but the loops it skips were worth half of the tree reduction.** With a threshold of 0.5, the odd-cycle separator runs at a quarter of the nodes, and the gate takes 35% (Erdős–Rényi) and 18% (Barabási–Albert) less time than separating at every node. Its trees are, however, 1.8 times larger (900 nodes against 453 on G(125, 0.1)): the loops that raise the bound without pruning, which the node logs could not value, help the descendants of the node and fill the cut pool. The three thresholds move along the same trade-off between nodes and time as the fixed configurations, and none is faster than the study settings or `oddcycle`; the cut pool alone stays the fastest on Erdős–Rényi graphs, and on Barabási–Albert graphs every configuration but the two that separate the most is within the noise.
+
+At the training sizes, a decision per node that aims at the nodes the cut loop prunes does not pay, and a model trained to recognize them would learn the wrong target. A decision that pays would have to value the bound gained for the descendants of the node, which requires counterfactual runs. Where cuts at the nodes do pay, on the larger sets (G(200, 0.0625), BA(300, 8)), the gate has not been measured.

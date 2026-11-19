@@ -111,6 +111,12 @@ struct MISBenchmarkResult
     long long lookaheadScored = 0;
     long long lookaheadImproving = 0;
 
+    // Separation gate (cuts/MISSeparationGate.h), when a parameter file
+    // turns it on: nodes below the root where it let the gated separators
+    // run, and nodes where it kept them off. Both 0 otherwise.
+    long long gateSeparated = 0;
+    long long gateSkipped = 0;
+
     // Vertices of the best solution found, in increasing order; empty
     // when there is no solution.
     std::vector<int> selectedVertices;

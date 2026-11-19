@@ -1,9 +1,12 @@
 #include "services/MISBenchmarkService.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <climits>
 #include <cmath>
 #include <exception>
 #include <fstream>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -15,11 +18,13 @@
 #include "branching/MISLearnedBranchrule.h"
 #include "cuts/MISLookaheadCutsel.h"
 #include "cuts/MISNodeLog.h"
+#include "cuts/MISSeparationGate.h"
 #include "io/MISBranchingModelIO.hpp"
 #include "io/MISInstanceIO.hpp"
 #include "learning/MISAdjacency.hpp"
 #include "services/MISSolverSettings.hpp"
 #include "services/SCIPStatusName.hpp"
+#include "util/Text.hpp"
 
 namespace
 {
@@ -57,6 +62,29 @@ void require(SCIP_RETCODE retcode, const char* action)
     }
 }
 
+/*
+ * Creates a silent solver with SCIP's default plugins and the separation
+ * gate (off unless a parameter file sets separating/misgate/freq). The
+ * validation of a parameter file and the runs use it alike, so that the
+ * file names the same parameters in both.
+ */
+void createSolver(SCIPHandle& handle)
+{
+    require(SCIPcreate(&handle.scip), "create a solver instance");
+    require(
+        SCIPincludeDefaultPlugins(handle.scip),
+        "include the default plugins"
+    );
+    require(
+        SCIPincludeSepaMISSeparationGate(handle.scip),
+        "include the separation gate"
+    );
+    require(
+        SCIPsetIntParam(handle.scip, "display/verblevel", 0),
+        "disable console output"
+    );
+}
+
 // The expert only branches here: its samples are not recorded.
 void ignoreSample(
     void*,
@@ -67,20 +95,112 @@ void ignoreSample(
 {
 }
 
-std::string trim(const std::string& text)
+/*
+ * Collects SCIP's error messages instead of printing them, until
+ * destroyed, so that they can be reported with the error they explain.
+ */
+class SCIPErrorCapture
 {
-    const auto first = text.find_first_not_of(" \t\r");
+public:
+    SCIPErrorCapture() { SCIPmessageSetErrorPrinting(collect, &text_); }
+    ~SCIPErrorCapture() { SCIPmessageSetErrorPrintingDefault(); }
 
-    if (first == std::string::npos)
-        return "";
+    SCIPErrorCapture(const SCIPErrorCapture&) = delete;
+    SCIPErrorCapture& operator=(const SCIPErrorCapture&) = delete;
 
-    return text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
+    // The first message, without SCIP's "[file:line] ERROR: " prefix;
+    // empty if there was none.
+    std::string first() const
+    {
+        std::string line = text_.substr(0, text_.find('\n'));
+        const std::size_t prefix = line.find("ERROR: ");
+
+        if (prefix != std::string::npos)
+            line.erase(0, prefix + 7);
+
+        return trimWhitespace(line);
+    }
+
+private:
+    static void collect(void* data, FILE*, const char* message)
+    {
+        static_cast<std::string*>(data)->append(message);
+    }
+
+    std::string text_;
+};
+
+/*
+ * True when the parameter holds the value written in a settings file (in
+ * SCIP's format: TRUE or FALSE, a number, one character, or a string in
+ * double quotes, possibly followed by "fix").
+ */
+bool holdsValue(SCIP_PARAM* param, std::string value)
+{
+    value = trimWhitespace(value);
+
+    if (value.size() > 4 && value.compare(value.size() - 3, 3, "fix") == 0
+        && (value[value.size() - 4] == ' ' || value[value.size() - 4] == '\t'))
+    {
+        value = trimWhitespace(value.substr(0, value.size() - 3));
+    }
+
+    try
+    {
+        std::size_t used = 0;
+
+        switch (SCIPparamGetType(param))
+        {
+            case SCIP_PARAMTYPE_BOOL:
+            {
+                std::string upper;
+                for (const char c : value)
+                    upper += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+                return (upper == "TRUE" || upper == "FALSE")
+                    && (upper == "TRUE") == (SCIPparamGetBool(param) == TRUE);
+            }
+            case SCIP_PARAMTYPE_INT:
+            {
+                const long long parsed = std::stoll(value, &used);
+                return used == value.size() && parsed == SCIPparamGetInt(param);
+            }
+            case SCIP_PARAMTYPE_LONGINT:
+            {
+                const long long parsed = std::stoll(value, &used);
+                return used == value.size() && parsed == SCIPparamGetLongint(param);
+            }
+            case SCIP_PARAMTYPE_REAL:
+            {
+                const double parsed = std::stod(value, &used);
+                const double held = SCIPparamGetReal(param);
+                return used == value.size()
+                    && std::fabs(parsed - held)
+                        <= 1e-9 * std::max(1.0, std::fabs(parsed));
+            }
+            case SCIP_PARAMTYPE_CHAR:
+                return value.size() == 1 && value[0] == SCIPparamGetChar(param);
+            case SCIP_PARAMTYPE_STRING:
+                return value.size() >= 2 && value.front() == '"'
+                    && value.back() == '"'
+                    && value.substr(1, value.size() - 2)
+                        == SCIPparamGetString(param);
+        }
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+
+    return false;
 }
 
 /*
  * Applies a SCIP settings file. SCIP itself only warns about a parameter
  * it does not know, which would silently ignore a misspelled name: every
- * name is checked first.
+ * name is checked first. And when a value is malformed (a string without
+ * its double quotes), SCIP stops reading at that line, ignores the rest of
+ * the file and still reports success: every value is checked after.
  */
 void applyParameterFile(SCIP* scip, const std::filesystem::path& file)
 {
@@ -93,20 +213,29 @@ void applyParameterFile(SCIP* scip, const std::filesystem::path& file)
         );
     }
 
+    struct Entry
+    {
+        int line;
+        std::string name;
+        std::string value;
+    };
+
+    std::vector<Entry> entries;
     std::string line;
     int lineNumber = 0;
 
     while (std::getline(input, line))
     {
         ++lineNumber;
-        line = trim(line.substr(0, line.find('#')));
+        line = trimWhitespace(line.substr(0, line.find('#')));
 
         if (line.empty())
             continue;
 
         const auto equals = line.find('=');
         const std::string name =
-            trim(equals == std::string::npos ? line : line.substr(0, equals));
+            trimWhitespace(
+                equals == std::string::npos ? line : line.substr(0, equals));
 
         if (equals == std::string::npos || name.empty())
         {
@@ -123,13 +252,43 @@ void applyParameterFile(SCIP* scip, const std::filesystem::path& file)
                 "Unknown SCIP parameter in " + file.string() + ": " + name
             );
         }
+
+        entries.push_back({lineNumber, name, line.substr(equals + 1)});
     }
+
+    SCIPErrorCapture errors;
 
     if (SCIPreadParams(scip, file.string().c_str()) != SCIP_OKAY)
     {
         throw std::invalid_argument(
-            "SCIP rejected a value of the parameter file: " + file.string()
+            "SCIP rejected a value of the parameter file " + file.string()
+            + ": " + errors.first()
         );
+    }
+
+    // A parameter set on several lines holds the value of the last one;
+    // the first line not applied is reported, the malformed one if any.
+    std::map<std::string, int> lastLine;
+
+    for (const Entry& entry : entries)
+        lastLine[entry.name] = entry.line;
+
+    for (const Entry& entry : entries)
+    {
+        if (lastLine[entry.name] != entry.line)
+            continue;
+
+        if (!holdsValue(SCIPgetParam(scip, entry.name.c_str()), entry.value))
+        {
+            throw std::invalid_argument(
+                "SCIP did not apply line " + std::to_string(entry.line)
+                + " of the parameter file " + file.string() + " ("
+                + entry.name + " = " + trimWhitespace(entry.value) + "): "
+                + (errors.first().empty()
+                    ? "check its value and format (strings in double quotes)"
+                    : errors.first())
+            );
+        }
     }
 }
 
@@ -222,16 +381,7 @@ bool validateMISBenchmarkParameters(
     try
     {
         SCIPHandle handle;
-        require(SCIPcreate(&handle.scip), "create a solver instance");
-        require(
-            SCIPincludeDefaultPlugins(handle.scip),
-            "include the default plugins"
-        );
-        require(
-            SCIPsetIntParam(handle.scip, "display/verblevel", 0),
-            "disable console output"
-        );
-
+        createSolver(handle);
         applyParameterFile(handle.scip, parameterFile);
 
         errorMessage.clear();
@@ -395,13 +545,9 @@ bool benchmarkMIS(
         }
 
         SCIPHandle handle;
-        require(SCIPcreate(&handle.scip), "create a solver instance");
+        createSolver(handle);
 
         SCIP* const scip = handle.scip;
-        require(
-            SCIPincludeDefaultPlugins(scip),
-            "include the default plugins"
-        );
 
         if (lookahead)
         {
@@ -427,11 +573,6 @@ bool benchmarkMIS(
         require(
             buildMISModel(scip, instance, vars),
             "build the MIS model"
-        );
-
-        require(
-            SCIPsetIntParam(scip, "display/verblevel", 0),
-            "disable console output"
         );
 
         if (config.settings == MISBenchmarkSettings::Study)
@@ -574,6 +715,14 @@ bool benchmarkMIS(
             measured.lookaheadScored = statistics.scored;
             measured.lookaheadImproving = statistics.improving;
         }
+
+        MISSeparationGateStatistics gate;
+        require(
+            SCIPgetMISSeparationGateStatistics(scip, &gate),
+            "read the separation gate statistics"
+        );
+        measured.gateSeparated = gate.separated;
+        measured.gateSkipped = gate.skipped;
 
         if (measured.hasSolution)
         {

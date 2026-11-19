@@ -115,6 +115,7 @@ learn2milp/
 ├── experiments/     dataset recipes, trained models and result tables
 ├── include/
 │   ├── branching/   SCIP branching rules (expert, learned)
+│   ├── cuts/        cut selector, separation gate and node logs (SCIP plugins)
 │   ├── features/
 │   ├── generators/  graph families
 │   ├── instances/
@@ -123,7 +124,8 @@ learn2milp/
 │   ├── problems/
 │   ├── services/    generation, collection, featurization, benchmark, ...
 │   ├── tools/       parsing of typed values, shared by the tools and the menu
-│   └── ui/          interactive menu
+│   ├── ui/          interactive menu
+│   └── util/        small helpers shared by every part
 ├── ml/              training (Python)
 ├── pyproject.toml
 ├── src/             implementations, the tools' main files and main.cpp
