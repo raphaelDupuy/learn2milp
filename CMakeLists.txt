@@ -89,6 +89,8 @@ add_executable(learn2milp
     src/services/MISFeaturizationService.cpp
     src/io/CsvReader.cpp
     src/io/MISStrongBranchingSampleIO.cpp
+    src/ui/FileBrowser.cpp
+    src/ui/TerminalInput.cpp
     src/ui/TerminalUI.cpp
     src/io/InstanceMetadataIO.cpp
 )
@@ -580,6 +582,14 @@ if(BUILD_TESTING)
             ${PROJECT_SOURCE_DIR}/tests/test_mis_generator.sh
             $<TARGET_FILE:mis-generator>
             ${PROJECT_BINARY_DIR}/test_mis_generator
+    )
+
+    add_test(
+        NAME TerminalUI
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_terminal_ui.sh
+            $<TARGET_FILE:learn2milp>
+            ${PROJECT_BINARY_DIR}/test_terminal_ui
     )
 
     add_test(

@@ -9,10 +9,14 @@
 #include "services/MISInstanceLoadingService.hpp"
 #include "services/MISSolverLimits.hpp"
 #include "tools/CommandLine.hpp"
+#include "ui/FileBrowser.hpp"
+#include "ui/TerminalInput.hpp"
+#include "util/Text.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -28,6 +32,8 @@
 namespace
 {
 
+using namespace terminal;
+
 const std::filesystem::path SINGLE_DIRECTORY = "data/instances/single";
 const std::filesystem::path BATCH_DIRECTORY = "data/instances/batch";
 const std::filesystem::path GENERATE_AND_SOLVE_DIRECTORY =
@@ -36,532 +42,6 @@ const std::filesystem::path GENERATE_AND_SOLVE_DIRECTORY =
 // A solution is printed in full up to this many vertices; beyond, only
 // its first vertices are.
 const std::size_t MAX_PRINTED_VERTICES = 20;
-
-/*
- * Input. Every reader asks again until the answer is valid, and returns
- * false only when the input ends, the caller then going back to the menu.
- */
-
-std::string trim(const std::string& text)
-{
-    const auto isSpace = [](unsigned char c) { return std::isspace(c); };
-
-    const auto first = std::find_if_not(text.begin(), text.end(), isSpace);
-    const auto last = std::find_if_not(text.rbegin(), text.rend(), isSpace);
-
-    return first < last.base() ? std::string(first, last.base()) : "";
-}
-
-bool readLine(const std::string& prompt, std::string& value)
-{
-    std::cout << prompt;
-
-    std::string line;
-
-    if (!std::getline(std::cin, line))
-    {
-        std::cout << "\nInput interrupted.\n";
-        return false;
-    }
-
-    value = trim(line);
-    return true;
-}
-
-bool readNonEmptyLine(const std::string& prompt, std::string& value)
-{
-    while (true)
-    {
-        if (!readLine(prompt, value))
-            return false;
-
-        if (!value.empty())
-            return true;
-
-        std::cout << "The answer must not be empty.\n";
-    }
-}
-
-/*
- * Reads one value with parser(text, value), one of the value parsers
- * shared with the command line tools (tools/CommandLine.hpp), so that the
- * menu and the tools accept the same values. requirement tells what a
- * valid answer is. An empty answer gives defaultValue when there is one.
- */
-template <typename T, typename Parser>
-bool readValue(
-    const std::string& prompt,
-    T& value,
-    Parser parser,
-    const std::string& requirement,
-    std::optional<T> defaultValue = std::nullopt
-)
-{
-    while (true)
-    {
-        std::string line;
-
-        if (!readLine(prompt, line))
-            return false;
-
-        if (line.empty() && defaultValue.has_value())
-        {
-            value = *defaultValue;
-            return true;
-        }
-
-        T parsed{};
-
-        if (parser(line, parsed))
-        {
-            value = parsed;
-            return true;
-        }
-
-        std::cout << "Invalid value: " << requirement << ".\n";
-    }
-}
-
-/*
- * Reads a comma-separated list of distinct values, each read by parser,
- * as the list options of the tools. An empty answer stands for
- * defaultText when it is not empty.
- */
-template <typename T, typename Parser>
-bool readList(
-    const std::string& prompt,
-    std::vector<T>& values,
-    Parser parser,
-    const std::string& defaultText = ""
-)
-{
-    while (true)
-    {
-        std::string line;
-
-        if (!readLine(prompt, line))
-            return false;
-
-        if (line.empty())
-            line = defaultText;
-
-        try
-        {
-            values = parseCommaSeparated<T>(line, parser, "the list");
-            return true;
-        }
-        catch (const CommandLineError& error)
-        {
-            std::cout << error.what() << ".\n";
-        }
-    }
-}
-
-// Shows numbered options and reads one of them (0-based index).
-bool readChoice(
-    const std::string& title,
-    const std::vector<std::string>& options,
-    std::size_t& choice,
-    std::size_t defaultChoice = 0
-)
-{
-    std::cout << title << '\n';
-
-    for (std::size_t i = 0; i < options.size(); ++i)
-        std::cout << "  " << i + 1 << ". " << options[i] << '\n';
-
-    int number = 0;
-
-    if (!readValue<int>(
-            "Choice [" + std::to_string(defaultChoice + 1) + "]: ",
-            number,
-            [&](const std::string& text, int& value) {
-                return parsePositiveInt(text, value)
-                    && static_cast<std::size_t>(value) <= options.size();
-            },
-            "choose a number from 1 to " + std::to_string(options.size()),
-            static_cast<int>(defaultChoice + 1)))
-    {
-        return false;
-    }
-
-    choice = static_cast<std::size_t>(number - 1);
-    return true;
-}
-
-/*
- * File browser. A file is picked among those of one extension; a
- * directory is picked by moving into it. Each kind of file remembers
- * where it was last browsed.
- */
-
-const std::size_t BROWSER_PAGE_SIZE = 20;
-
-// Extension of the files to pick, or empty to pick a directory.
-using BrowsedKind = std::string;
-
-const BrowsedKind DIRECTORY_KIND;
-const BrowsedKind INSTANCE_KIND = MIS_INSTANCE_EXTENSION;
-const BrowsedKind MODEL_KIND = ".model";
-
-std::map<BrowsedKind, std::filesystem::path>& lastBrowsedDirectories()
-{
-    static std::map<BrowsedKind, std::filesystem::path> directories;
-    return directories;
-}
-
-std::filesystem::path browserStart(const BrowsedKind& kind)
-{
-    const auto& last = lastBrowsedDirectories();
-    const auto found = last.find(kind);
-
-    if (found != last.end() && std::filesystem::is_directory(found->second))
-        return found->second;
-
-    const std::filesystem::path preferred =
-        kind == INSTANCE_KIND ? "data/instances"
-        : kind == MODEL_KIND ? "experiments"
-        : "data";
-
-    std::error_code error;
-
-    return std::filesystem::is_directory(preferred, error)
-        ? preferred : std::filesystem::path(".");
-}
-
-// Absolute path without "." or "..", so that ".." always goes up.
-std::filesystem::path normalized(const std::filesystem::path& path)
-{
-    std::error_code error;
-    const std::filesystem::path canonical =
-        std::filesystem::weakly_canonical(path, error);
-
-    return error ? std::filesystem::absolute(path).lexically_normal()
-                 : canonical;
-}
-
-// Relative to the working directory when inside it, absolute otherwise.
-std::string displayPath(const std::filesystem::path& path)
-{
-    std::error_code error;
-    const std::filesystem::path relative =
-        path.lexically_relative(std::filesystem::current_path(error));
-
-    if (error || relative.empty() || *relative.begin() == "..")
-        return path.string();
-
-    return relative.string();
-}
-
-bool hasExtension(const std::filesystem::path& path, const BrowsedKind& kind)
-{
-    return path.extension() == kind;
-}
-
-struct DirectoryListing
-{
-    std::vector<std::filesystem::path> directories;
-    std::vector<std::filesystem::path> files;
-
-    // Directory mode: instances and collections, to recognize a dataset.
-    std::size_t instances = 0;
-    std::size_t collections = 0;
-};
-
-DirectoryListing listDirectory(
-    const std::filesystem::path& directory,
-    const BrowsedKind& kind
-)
-{
-    DirectoryListing listing;
-
-    for (const auto& entry : std::filesystem::directory_iterator(
-            directory,
-            std::filesystem::directory_options::skip_permission_denied))
-    {
-        const std::filesystem::path& path = entry.path();
-        const std::string name = path.filename().string();
-
-        if (name.empty() || name[0] == '.')
-            continue;
-
-        std::error_code error;
-
-        if (entry.is_directory(error))
-        {
-            listing.directories.push_back(path);
-        }
-        else if (entry.is_regular_file(error))
-        {
-            if (kind == DIRECTORY_KIND)
-            {
-                listing.instances +=
-                    hasExtension(path, INSTANCE_KIND) ? 1 : 0;
-                listing.collections +=
-                    isMISCollectionMetadataFile(path) ? 1 : 0;
-            }
-            else if (hasExtension(path, kind))
-            {
-                listing.files.push_back(path);
-            }
-        }
-    }
-
-    std::sort(listing.directories.begin(), listing.directories.end());
-    std::sort(listing.files.begin(), listing.files.end());
-    return listing;
-}
-
-/*
- * Lets the user move through directories and pick a file of the given
- * kind, or a directory. selected stays empty if the user cancels.
- * Returns false only when the input ends.
- */
-bool browse(
-    const BrowsedKind& kind,
-    std::filesystem::path start,
-    std::filesystem::path& selected
-)
-{
-    const bool pickDirectory = kind == DIRECTORY_KIND;
-    std::filesystem::path directory = normalized(start);
-    std::size_t page = 0;
-
-    // The listing is printed again only after a move, not after a
-    // mistyped answer.
-    bool showListing = true;
-
-    selected.clear();
-
-    while (true)
-    {
-        DirectoryListing listing;
-
-        try
-        {
-            listing = listDirectory(directory, kind);
-        }
-        catch (const std::filesystem::filesystem_error& exception)
-        {
-            std::cout << "Cannot read " << displayPath(directory) << ": "
-                      << exception.code().message() << '\n';
-
-            if (directory == directory.parent_path())
-                return true;
-
-            directory = directory.parent_path();
-            continue;
-        }
-
-        // Entries: subdirectories first, then the files to pick.
-        std::vector<std::filesystem::path> entries = listing.directories;
-        entries.insert(
-            entries.end(), listing.files.begin(), listing.files.end());
-
-        const std::size_t pages = std::max<std::size_t>(
-            1, (entries.size() + BROWSER_PAGE_SIZE - 1) / BROWSER_PAGE_SIZE);
-        page = std::min(page, pages - 1);
-
-        if (showListing)
-        {
-            std::cout << "\n[" << displayPath(directory) << "]";
-
-            if (pickDirectory && (listing.instances > 0 || listing.collections > 0))
-            {
-                std::cout << "  " << listing.instances << " .mis, "
-                          << listing.collections << ' '
-                          << MIS_SB_METADATA_SUFFIX;
-            }
-            else if (!pickDirectory)
-            {
-                std::cout << "  " << listing.files.size() << ' ' << kind
-                          << " file(s)";
-            }
-
-            std::cout << '\n';
-
-            const std::size_t first = page * BROWSER_PAGE_SIZE;
-            const std::size_t last =
-                std::min(entries.size(), first + BROWSER_PAGE_SIZE);
-
-            for (std::size_t i = first; i < last; ++i)
-            {
-                const bool isDirectory = i < listing.directories.size();
-
-                std::cout << std::setw(5) << i + 1 << ". "
-                          << entries[i].filename().string()
-                          << (isDirectory ? "/" : "") << '\n';
-            }
-
-            if (entries.empty())
-            {
-                std::cout << "      (no subdirectory"
-                          << (pickDirectory ? "" : " or " + kind + " file")
-                          << ")\n";
-            }
-
-            std::cout << "Number to open" << (pickDirectory ? "" : " or pick")
-                      << ", .. to go up"
-                      << (pickDirectory ? ", . to pick this directory" : "");
-
-            if (pages > 1)
-            {
-                std::cout << ", n/p: next/previous page (" << page + 1 << '/'
-                          << pages << ")";
-            }
-
-            std::cout << ", a path, q to cancel.\n";
-        }
-
-        showListing = true;
-
-        std::string answer;
-
-        if (!readLine("> ", answer))
-            return false;
-
-        if (answer == "q")
-            return true;
-
-        if (answer == "n" || answer == "p")
-        {
-            page = answer == "n"
-                ? std::min(page + 1, pages - 1)
-                : (page > 0 ? page - 1 : 0);
-            continue;
-        }
-
-        if (answer == "." && pickDirectory)
-        {
-            selected = directory;
-            lastBrowsedDirectories()[kind] = directory;
-            return true;
-        }
-
-        std::filesystem::path target;
-        int number = 0;
-
-        if (answer.empty())
-        {
-            showListing = false;
-            continue;
-        }
-
-        if (parseNonNegativeInt(answer, number))
-        {
-            if (entries.empty())
-            {
-                std::cout << "Nothing to open here: "
-                          << (pickDirectory ? ". picks this directory, " : "")
-                          << ".. goes up, q cancels.\n";
-                showListing = false;
-                continue;
-            }
-
-            if (number < 1 || static_cast<std::size_t>(number) > entries.size())
-            {
-                std::cout << "Choose a number from 1 to " << entries.size()
-                          << ".\n";
-                showListing = false;
-                continue;
-            }
-
-            target = entries[static_cast<std::size_t>(number - 1)];
-        }
-        else
-        {
-            const std::filesystem::path typed(answer);
-            target = normalized(
-                typed.is_absolute() ? typed : directory / typed);
-        }
-
-        std::error_code error;
-
-        if (std::filesystem::is_directory(target, error))
-        {
-            directory = normalized(target);
-            page = 0;
-        }
-        else if (!pickDirectory
-                 && std::filesystem::is_regular_file(target, error)
-                 && hasExtension(target, kind))
-        {
-            selected = target;
-            lastBrowsedDirectories()[kind] = directory;
-            return true;
-        }
-        else
-        {
-            std::cout << "Not " << (pickDirectory ? "a directory" :
-                          "a directory or a " + kind + " file")
-                      << ": " << answer << '\n';
-            showListing = false;
-        }
-    }
-}
-
-/*
- * Asks for a file of the given kind, or a directory: typed, or picked in
- * the browser on an empty answer or "?". A typed directory, where a file
- * is expected, opens the browser there. Returns false when the user
- * cancels with "q" or the input ends.
- */
-bool readPath(
-    const std::string& what,
-    const BrowsedKind& kind,
-    std::filesystem::path& path
-)
-{
-    const bool pickDirectory = kind == DIRECTORY_KIND;
-
-    while (true)
-    {
-        std::string answer;
-
-        if (!readLine(what + " (empty or ? to browse, q to cancel): ", answer))
-            return false;
-
-        if (answer == "q")
-            return false;
-
-        std::error_code error;
-        std::filesystem::path start = browserStart(kind);
-
-        if (!answer.empty() && answer != "?")
-        {
-            const std::filesystem::path typed(answer);
-
-            if (pickDirectory
-                ? std::filesystem::is_directory(typed, error)
-                : std::filesystem::is_regular_file(typed, error))
-            {
-                path = typed;
-                return true;
-            }
-
-            if (pickDirectory || !std::filesystem::is_directory(typed, error))
-            {
-                std::cout << "No such " << (pickDirectory ? "directory" : "file")
-                          << ": " << answer << '\n';
-                continue;
-            }
-
-            start = typed;
-        }
-
-        std::filesystem::path selected;
-
-        if (!browse(kind, start, selected))
-            return false;
-
-        if (!selected.empty())
-        {
-            path = displayPath(selected);
-            std::cout << "Selected: " << path.string() << '\n';
-            return true;
-        }
-    }
-}
 
 // What the shared parsers accept, for the messages.
 const char* const NON_NEGATIVE = "a non-negative integer";
@@ -724,6 +204,32 @@ bool generateInstance(
  * Solving.
  */
 
+/*
+ * A generator parameter as stored in the metadata, where real numbers have
+ * every digit needed to read them back exactly (0.10000000000000001):
+ * numbers are shown with 10 significant digits (0.1), other values as is.
+ */
+std::string displayParameter(const std::string& value)
+{
+    try
+    {
+        std::size_t used = 0;
+        const double number = std::stod(value, &used);
+
+        if (used == value.size())
+        {
+            std::ostringstream stream;
+            stream << std::setprecision(10) << number;
+            return stream.str();
+        }
+    }
+    catch (const std::exception&)
+    {
+    }
+
+    return value;
+}
+
 void printInstanceSummary(const LoadedMISInstance& loaded)
 {
     const InstanceMetadata& metadata = loaded.metadata;
@@ -740,7 +246,8 @@ void printInstanceSummary(const LoadedMISInstance& loaded)
 
         for (const auto& [name, value] : metadata.generatorParameters)
         {
-            std::cout << (first ? "" : ", ") << name << " = " << value;
+            std::cout << (first ? "" : ", ") << name << " = "
+                      << displayParameter(value);
             first = false;
         }
 
@@ -776,7 +283,20 @@ bool readModelPath(std::filesystem::path& modelPath)
     }
 }
 
-// Branching rule and, for the learned rule, its model.
+// Candidates of the learned rule evaluated by strong branching (0: none).
+bool readStrongBranchingCandidates(int& candidates)
+{
+    return readValue(
+        "Strong branching on the model's first K candidates"
+            " (0: branch on its best) [0]: ",
+        candidates,
+        parseNonNegativeInt,
+        NON_NEGATIVE,
+        std::optional<int>(0)
+    );
+}
+
+// Branching rule and, for the learned rule, its model and candidates.
 bool readBranchingRule(MISBenchmarkConfig& config)
 {
     std::size_t choice = 0;
@@ -787,6 +307,8 @@ bool readBranchingRule(MISBenchmarkConfig& config)
                 "SCIP's default (relpscost)",
                 "Learned model (mislearned)",
                 "Full strong branching expert (misfullstrong)",
+                "The expert without its strong branching pruning"
+                " (misfullstrong_nocutoff)",
                 "Another SCIP rule, by name"
             },
             choice))
@@ -802,10 +324,16 @@ bool readBranchingRule(MISBenchmarkConfig& config)
 
         case 1:
             config.branchingRule = "mislearned";
-            return readModelPath(config.learnedModelPath);
+            return readModelPath(config.learnedModelPath)
+                && readStrongBranchingCandidates(
+                    config.learnedStrongBranchingCandidates);
 
         case 2:
             config.branchingRule = "misfullstrong";
+            return true;
+
+        case 3:
+            config.branchingRule = "misfullstrong_nocutoff";
             return true;
 
         default:
@@ -822,7 +350,11 @@ bool readBranchingRule(MISBenchmarkConfig& config)
         config.branchingRule = name;
 
         if (name == "mislearned")
-            return readModelPath(config.learnedModelPath);
+        {
+            return readModelPath(config.learnedModelPath)
+                && readStrongBranchingCandidates(
+                    config.learnedStrongBranchingCandidates);
+        }
 
         std::string errorMessage;
 
@@ -833,10 +365,9 @@ bool readBranchingRule(MISBenchmarkConfig& config)
     }
 }
 
-// Solver settings and time limit.
-bool readSettingsAndTimeLimit(MISBenchmarkConfig& config)
+bool readSettings(MISBenchmarkSettings& settings)
 {
-    std::size_t settings = 0;
+    std::size_t choice = 0;
 
     if (!readChoice(
             "Solver settings:",
@@ -845,19 +376,56 @@ bool readSettingsAndTimeLimit(MISBenchmarkConfig& config)
                 " cuts at the root only)",
                 "default: SCIP as shipped"
             },
-            settings))
+            choice))
     {
         return false;
     }
 
-    config.settings = settings == 0
+    settings = choice == 0
         ? MISBenchmarkSettings::Study
         : MISBenchmarkSettings::Default;
+    return true;
+}
 
+/*
+ * A SCIP settings file, applied after the settings (for instance one of
+ * experiments/cuts/settings/, to choose the separators of the nodes), or
+ * none. Checked here, as by mis-benchmark --parameters.
+ */
+bool readParameterFile(std::filesystem::path& parameterFile)
+{
+    std::cout << "A SCIP settings file can change any parameter after the"
+                 " settings above\n(e.g. experiments/cuts/settings/"
+                 "no_node_gomory.set).\n";
+
+    while (true)
+    {
+        std::filesystem::path path;
+
+        if (!readPath("SCIP settings file (.set)", SETTINGS_KIND, path,
+                PathRequirement::Optional))
+        {
+            return false;
+        }
+
+        std::string errorMessage;
+
+        if (path.empty() || validateMISBenchmarkParameters(path, errorMessage))
+        {
+            parameterFile = path;
+            return true;
+        }
+
+        std::cout << errorMessage << '\n';
+    }
+}
+
+bool readTimeLimit(double& timeLimitSeconds)
+{
     return readValue(
         "Time limit in seconds ["
             + formatNumber(MIS_DEFAULT_TIME_LIMIT_SECONDS) + "]: ",
-        config.timeLimitSeconds,
+        timeLimitSeconds,
         parsePositiveDouble,
         "a positive number",
         std::optional<double>(MIS_DEFAULT_TIME_LIMIT_SECONDS)
@@ -870,11 +438,12 @@ bool readSolveOptions(MISBenchmarkConfig& config)
 
     std::cout << '\n';
 
-    if (!readBranchingRule(config) || !readSettingsAndTimeLimit(config))
-        return false;
-
-    return readValue("SCIP random seed [0]: ", config.scipSeed,
-        parseSCIPSeed, SCIP_SEED, std::optional<unsigned int>(0));
+    return readBranchingRule(config)
+        && readSettings(config.settings)
+        && readParameterFile(config.parameterFile)
+        && readTimeLimit(config.timeLimitSeconds)
+        && readValue("SCIP random seed [0]: ", config.scipSeed,
+            parseSCIPSeed, SCIP_SEED, std::optional<unsigned int>(0));
 }
 
 std::string describeRule(const MISBenchmarkConfig& config)
@@ -882,11 +451,29 @@ std::string describeRule(const MISBenchmarkConfig& config)
     if (config.branchingRule.empty())
         return "SCIP's default";
 
-    if (config.learnedModelPath.empty())
-        return config.branchingRule;
+    std::string description = config.branchingRule;
 
-    return config.branchingRule + " ("
-        + config.learnedModelPath.string() + ")";
+    if (!config.learnedModelPath.empty())
+        description += " (" + config.learnedModelPath.string() + ")";
+
+    if (config.learnedStrongBranchingCandidates > 0)
+    {
+        description += ", strong branching on its first "
+            + std::to_string(config.learnedStrongBranchingCandidates)
+            + " candidate(s)";
+    }
+
+    return description;
+}
+
+std::string describeSettings(const MISBenchmarkConfig& config)
+{
+    std::string description = misBenchmarkSettingsName(config.settings);
+
+    if (!config.parameterFile.empty())
+        description += " + " + config.parameterFile.string();
+
+    return description;
 }
 
 void printSelectedVertices(const std::vector<int>& vertices)
@@ -918,8 +505,7 @@ void printSolveResult(
     std::cout << "========================================\n";
 
     std::cout << "Branching rule:    " << describeRule(config) << '\n';
-    std::cout << "Settings:          "
-              << misBenchmarkSettingsName(config.settings)
+    std::cout << "Settings:          " << describeSettings(config)
               << ", time limit " << config.timeLimitSeconds
               << " s, SCIP seed " << config.scipSeed << '\n';
     std::cout << "Status:            " << result.status << '\n';
@@ -1010,22 +596,23 @@ void loadAndSolve(const std::filesystem::path& instancePath)
 }
 
 /*
- * Comparison of branching rules.
+ * Comparison of branching rules and settings files.
  */
 
 // One of the compared rules: its name in the tables, and the branching
-// rule and model it stands for.
+// rule, model and strong branching candidates it stands for.
 struct ComparedRule
 {
     std::string label;
     std::string branchingRule;
     std::filesystem::path modelPath;
+    int strongBranchingCandidates = 0;
 };
 
 /*
  * A rule of the comparison, as typed: a SCIP rule name, misfullstrong,
- * or a model file for the learned rule (labelled after its file name).
- * Fails, with an explanation, for anything else.
+ * misfullstrong_nocutoff, or a model file for the learned rule (labelled
+ * after its file name). Fails, with an explanation, for anything else.
  */
 bool parseComparedRule(
     const std::string& text,
@@ -1042,71 +629,180 @@ bool parseComparedRule(
     return validateMISBenchmarkRule(rule.branchingRule, rule.modelPath, error);
 }
 
-bool readComparedRules(std::vector<ComparedRule>& rules)
+bool samePath(const std::filesystem::path& a, const std::filesystem::path& b)
 {
-    std::cout << "\nRules to compare: SCIP rules (relpscost, pscost, ...),"
-                 " misfullstrong,\nor model files (.model) for the learned"
-                 " rule; ? picks a model file in the browser.\n";
+    std::error_code error;
+    return a == b || std::filesystem::equivalent(a, b, error);
+}
 
+/*
+ * Reads a comma-separated list, where "?" picks a file of the given kind
+ * in the browser. An empty answer stands for defaultText.
+ */
+bool readItems(
+    const std::string& prompt,
+    const std::string& defaultText,
+    const BrowsedKind& kind,
+    std::vector<std::string>& items
+)
+{
     while (true)
     {
         std::string line;
 
-        if (!readLine("Rules (comma-separated) [relpscost]: ", line))
+        if (!readLine(prompt, line))
             return false;
 
-        if (line.empty())
-            line = "relpscost";
+        try
+        {
+            items = splitCommaSeparated(
+                withoutSpacesAroundItems(line.empty() ? defaultText : line),
+                "the list");
+        }
+        catch (const CommandLineError& error)
+        {
+            std::cout << error.what() << ".\n";
+            continue;
+        }
 
-        std::istringstream stream(line);
-        std::string item;
+        bool picked = true;
+
+        for (std::string& item : items)
+        {
+            if (item != "?")
+                continue;
+
+            std::filesystem::path file;
+
+            if (!browse(kind, browserStart(kind), file))
+                return false;
+
+            if (file.empty())
+            {
+                std::cout << "No " << kind << " file was picked.\n";
+                picked = false;
+                break;
+            }
+
+            item = displayPath(file);
+            std::cout << "Selected: " << item << '\n';
+        }
+
+        if (picked)
+            return true;
+    }
+}
+
+bool readComparedRules(std::vector<ComparedRule>& rules)
+{
+    std::cout << "\nRules to compare: SCIP rules (relpscost, pscost, ...),"
+                 " misfullstrong,\nmisfullstrong_nocutoff, or model files"
+                 " (.model) for the learned rule;\n? picks a model file in"
+                 " the browser.\n";
+
+    while (true)
+    {
+        std::vector<std::string> items;
+
+        if (!readItems("Rules (comma-separated) [relpscost]: ", "relpscost",
+                MODEL_KIND, items))
+        {
+            return false;
+        }
+
         std::vector<ComparedRule> parsed;
         std::string error;
 
-        while (error.empty() && std::getline(stream, item, ','))
+        for (const std::string& item : items)
         {
-            item = trim(item);
-
-            if (item == "?")
-            {
-                std::filesystem::path model;
-
-                if (!browse(MODEL_KIND, browserStart(MODEL_KIND), model))
-                    return false;
-
-                if (model.empty())
-                {
-                    error = "no model file was picked";
-                    break;
-                }
-
-                item = displayPath(model);
-                std::cout << "Selected: " << item << '\n';
-            }
-
             ComparedRule rule;
 
             if (!parseComparedRule(item, rule, error))
                 break;
 
-            const bool repeated = std::any_of(
-                parsed.begin(), parsed.end(),
-                [&](const ComparedRule& other) {
-                    return other.label == rule.label;
-                });
+            for (const ComparedRule& other : parsed)
+            {
+                if (other.branchingRule == rule.branchingRule
+                    && samePath(other.modelPath, rule.modelPath))
+                {
+                    error = "rule given twice: " + item;
+                    break;
+                }
 
-            if (repeated)
-                error = "rule given twice: " + rule.label;
-            else
-                parsed.push_back(rule);
+                // Two models of the same file name, in two directories.
+                if (other.label == rule.label)
+                    rule.label = displayPath(rule.modelPath);
+            }
+
+            if (!error.empty())
+                break;
+
+            parsed.push_back(rule);
         }
-
-        if (error.empty() && parsed.empty())
-            error = "the list must not be empty";
 
         if (error.empty())
         {
             rules = std::move(parsed);
+            return true;
+        }
+
+        std::cout << "Invalid list: " << error
+                  << (error.back() == '.' ? "\n" : ".\n");
+    }
+}
+
+/*
+ * Settings files to compare, each run with every rule: "-" stands for
+ * none, so that "-, oddcycle.set" compares the settings alone with the
+ * settings and that file.
+ */
+bool readParameterFiles(std::vector<std::filesystem::path>& files)
+{
+    std::cout << "\nSCIP settings files to compare, applied after the"
+                 " settings (e.g.\nexperiments/cuts/settings/"
+                 "no_node_gomory.set): - for none, ? picks one in the"
+                 " browser.\n";
+
+    while (true)
+    {
+        std::vector<std::string> items;
+
+        if (!readItems("Settings files (comma-separated) [-]: ", "-",
+                SETTINGS_KIND, items))
+        {
+            return false;
+        }
+
+        std::vector<std::filesystem::path> parsed;
+        std::string error;
+
+        for (const std::string& item : items)
+        {
+            const std::filesystem::path file =
+                item == "-" ? std::filesystem::path() : std::filesystem::path(item);
+
+            if (!file.empty() && !validateMISBenchmarkParameters(file, error))
+                break;
+
+            // Files are told apart by their name in the tables.
+            const bool repeated = std::any_of(
+                parsed.begin(), parsed.end(),
+                [&](const std::filesystem::path& other) {
+                    return other.stem() == file.stem();
+                });
+
+            if (repeated)
+            {
+                error = "given twice, or two files of the same name: " + item;
+                break;
+            }
+
+            parsed.push_back(file);
+        }
+
+        if (error.empty())
+        {
+            files = std::move(parsed);
             return true;
         }
 
@@ -1136,6 +832,13 @@ void printComparisonRow(
               << std::setw(6) << size << '\n';
 }
 
+// One compared configuration: a rule with a settings file.
+struct ComparedConfiguration
+{
+    std::string label;
+    MISBenchmarkConfig config;
+};
+
 void compareRules(const std::filesystem::path& instancePath)
 {
     LoadedMISInstance loaded;
@@ -1145,9 +848,29 @@ void compareRules(const std::filesystem::path& instancePath)
 
     std::vector<ComparedRule> rules;
     MISBenchmarkConfig common;
+    std::vector<std::filesystem::path> parameterFiles;
     std::vector<unsigned int> seeds;
 
-    if (!readComparedRules(rules) || !readSettingsAndTimeLimit(common)
+    if (!readComparedRules(rules))
+        return;
+
+    const bool learned = std::any_of(rules.begin(), rules.end(),
+        [](const ComparedRule& rule) {
+            return rule.branchingRule == "mislearned";
+        });
+    int strongBranching = 0;
+
+    if (learned)
+    {
+        std::cout << "For the learned rule(s):\n";
+
+        if (!readStrongBranchingCandidates(strongBranching))
+            return;
+    }
+
+    if (!readSettings(common.settings)
+        || !readParameterFiles(parameterFiles)
+        || !readTimeLimit(common.timeLimitSeconds)
         || !readList<unsigned int>(
             "SCIP random seeds (comma-separated) [0]: ",
             seeds, parseSCIPSeed, "0"))
@@ -1155,28 +878,54 @@ void compareRules(const std::filesystem::path& instancePath)
         return;
     }
 
+    // Rules vary fastest, so that they are side by side for each file.
+    std::vector<ComparedConfiguration> configurations;
+
+    for (const std::filesystem::path& file : parameterFiles)
+    {
+        for (const ComparedRule& rule : rules)
+        {
+            ComparedConfiguration configuration{rule.label, common};
+            MISBenchmarkConfig& config = configuration.config;
+
+            config.branchingRule = rule.branchingRule;
+            config.learnedModelPath = rule.modelPath;
+            config.parameterFile = file;
+
+            if (rule.branchingRule == "mislearned" && strongBranching > 0)
+            {
+                config.learnedStrongBranchingCandidates = strongBranching;
+                configuration.label += "+sb" + std::to_string(strongBranching);
+            }
+
+            if (!file.empty())
+                configuration.label += "+" + file.stem().string();
+
+            configurations.push_back(configuration);
+        }
+    }
+
     std::size_t labelWidth = 6;
 
-    for (const ComparedRule& rule : rules)
-        labelWidth = std::max(labelWidth, rule.label.size() + 2);
+    for (const ComparedConfiguration& configuration : configurations)
+        labelWidth = std::max(labelWidth, configuration.label.size() + 2);
 
     std::cout << "\nSettings: " << misBenchmarkSettingsName(common.settings)
               << ", time limit " << common.timeLimitSeconds << " s, "
-              << rules.size() * seeds.size() << " run(s), one at a time.\n\n";
+              << configurations.size() * seeds.size()
+              << " run(s), one at a time.\n\n";
 
     printComparisonRow(labelWidth, "rule", "seed", "status", "nodes",
         "LP iter.", "time (s)", "size");
 
-    std::vector<MISRuleSummary> summaries(rules.size());
+    std::vector<MISRuleSummary> summaries(configurations.size());
     std::vector<double> optimalSizes;
 
-    for (std::size_t r = 0; r < rules.size(); ++r)
+    for (std::size_t c = 0; c < configurations.size(); ++c)
     {
         for (const unsigned int seed : seeds)
         {
-            MISBenchmarkConfig config = common;
-            config.branchingRule = rules[r].branchingRule;
-            config.learnedModelPath = rules[r].modelPath;
+            MISBenchmarkConfig config = configurations[c].config;
             config.scipSeed = seed;
 
             MISBenchmarkResult result;
@@ -1184,18 +933,18 @@ void compareRules(const std::filesystem::path& instancePath)
 
             if (!benchmarkMIS(loaded.instance, config, result, errorMessage))
             {
-                std::cout << rules[r].label << ", seed " << seed
+                std::cout << configurations[c].label << ", seed " << seed
                           << ": solving failed: " << errorMessage << '\n';
                 return;
             }
 
-            summaries[r].add(result);
+            summaries[c].add(result);
 
             if (result.solved)
                 optimalSizes.push_back(result.primalBound);
 
             printComparisonRow(
-                labelWidth, rules[r].label, std::to_string(seed),
+                labelWidth, configurations[c].label, std::to_string(seed),
                 result.status, std::to_string(result.exploredNodes),
                 std::to_string(result.lpIterations),
                 formatFixed(result.solvingTimeSeconds, 3),
@@ -1208,23 +957,23 @@ void compareRules(const std::filesystem::path& instancePath)
         std::cout << "\nShifted geometric means over the seeds:"
                      " nodes (shift 100), time (shift 1 s)\n";
 
-        for (std::size_t r = 0; r < rules.size(); ++r)
+        for (std::size_t c = 0; c < configurations.size(); ++c)
         {
             std::cout << std::left
                       << std::setw(static_cast<int>(labelWidth))
-                      << rules[r].label << std::right
-                      << "solved " << summaries[r].solved << '/'
-                      << summaries[r].runs
+                      << configurations[c].label << std::right
+                      << "solved " << summaries[c].solved << '/'
+                      << summaries[c].runs
                       << std::setw(11)
-                      << formatFixed(summaries[r].meanNodes(), 0)
+                      << formatFixed(summaries[c].meanNodes(), 0)
                       << " nodes"
                       << std::setw(10)
-                      << formatFixed(summaries[r].meanTimeSeconds(), 3)
+                      << formatFixed(summaries[c].meanTimeSeconds(), 3)
                       << " s\n";
         }
     }
 
-    // Every rule is exact: two different optima reveal a bug.
+    // Every configuration is exact: two different optima reveal a bug.
     const auto [smallest, largest] =
         std::minmax_element(optimalSizes.begin(), optimalSizes.end());
 
@@ -1232,8 +981,8 @@ void compareRules(const std::filesystem::path& instancePath)
     {
         std::cout << "\nWARNING: the runs proved different optimal sizes ("
                   << formatFixed(*smallest, 0) << " and "
-                  << formatFixed(*largest, 0) << "): one of the rules is"
-                     " not exact.\n";
+                  << formatFixed(*largest, 0) << "): one of the"
+                     " configurations is not exact.\n";
     }
 }
 
@@ -1384,11 +1133,13 @@ void inspectDirectory(const std::filesystem::path& directory)
     std::vector<std::string> subdirectories;
     std::error_code error;
 
-    for (const auto& entry :
-            std::filesystem::directory_iterator(directory, error))
+    for (std::filesystem::directory_iterator entry(directory, error), end;
+            !error && entry != end; entry.increment(error))
     {
-        if (entry.is_directory())
-            subdirectories.push_back(entry.path().filename().string());
+        std::error_code typeError;
+
+        if (entry->is_directory(typeError))
+            subdirectories.push_back(entry->path().filename().string());
     }
 
     std::sort(subdirectories.begin(), subdirectories.end());
@@ -1423,7 +1174,7 @@ void TerminalUI::displayMainMenu()
     std::cout << "  2. Generate a batch of MIS instances\n";
     std::cout << "  3. Solve an existing MIS instance\n";
     std::cout << "  4. Generate and solve an MIS instance\n";
-    std::cout << "  5. Compare branching rules on an instance\n";
+    std::cout << "  5. Compare branching rules and settings on an instance\n";
     std::cout << "  6. Inspect a data directory\n";
     std::cout << "  7. Exit\n\n";
 }
@@ -1590,7 +1341,7 @@ void TerminalUI::handleGenerateAndSolve()
 
 void TerminalUI::handleCompareRules()
 {
-    printTitle("Compare branching rules on an instance");
+    printTitle("Compare branching rules and settings on an instance");
 
     std::filesystem::path instancePath;
 

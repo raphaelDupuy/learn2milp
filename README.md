@@ -124,7 +124,7 @@ learn2milp/
 │   ├── problems/
 │   ├── services/    generation, collection, featurization, benchmark, ...
 │   ├── tools/       parsing of typed values, shared by the tools and the menu
-│   ├── ui/          interactive menu
+│   ├── ui/          interactive menu: input, file browser, screens
 │   └── util/        small helpers shared by every part
 ├── ml/              training (Python)
 ├── pyproject.toml
