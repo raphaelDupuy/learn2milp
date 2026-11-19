@@ -40,3 +40,6 @@ Thumbs.db
 /data/logs/
 /experiments/generalization/results/runs/
 /experiments/cuts/results/runs/
+/experiments/cuts/results/*/runs/
+/experiments/cuts/results/nodes/
+/experiments/cuts/results/*/nodes/

@@ -75,6 +75,35 @@ cmp <(cut -d, -f1-10 "$RESULTS") <(cut -d, -f1-10 "$WORK_DIR/again.csv")
 
 test "$(grep -c ',default,relpscost,0,OPTIMAL,1,' "$WORK_DIR/default.csv")" -eq 2
 
+# Node logs: one file per run, with one line per node after the header.
+"$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --node-log-dir "$WORK_DIR/nodes" \
+    --output "$WORK_DIR/logged.csv" \
+    >/dev/null
+
+for INSTANCE in erdos_renyi_n100_p0_1_seed1 erdos_renyi_n100_p0_1_seed2; do
+    NODE_LOG="$WORK_DIR/nodes/${INSTANCE}__relpscost__s0.nodes.csv"
+    NODES="$(grep "^${INSTANCE}.mis," "$WORK_DIR/logged.csv" | cut -d, -f9)"
+    test "$(($(wc -l <"$NODE_LOG") - 1))" -eq "$NODES"
+done
+
+# An existing node log is never overwritten, and nothing is run.
+if "$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --node-log-dir "$WORK_DIR/nodes" \
+    --output "$WORK_DIR/relogged.csv" \
+    >/dev/null \
+    2>"$WORK_DIR/relogged.stderr"; then
+    echo "ERROR: an existing node log was overwritten" >&2
+    exit 1
+fi
+
+test ! -e "$WORK_DIR/relogged.csv"
+grep -q 'Node log already exists' "$WORK_DIR/relogged.stderr"
+
 # Existing results must not be overwritten.
 cp "$RESULTS" "$WORK_DIR/results.before"
 

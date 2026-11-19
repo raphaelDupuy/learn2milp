@@ -82,3 +82,19 @@ samples = candidates.merge(nodes, on=["sample_index", "node_id"])
 - `lookahead_scored` and `lookahead_improving`, with `--cut-selector lookahead` only (0 otherwise), count the root cuts scored by the selector and those that raised the LP bound when added alone.
 
 Results written before the root columns existed have the first 13 columns only.
+
+## Node logs
+
+With `--node-log-dir DIR`, every run of `mis-benchmark` also writes `DIR/INSTANCE__RULE__sSEED.nodes.csv`, one line per node solved, in the order they were solved (written by `cuts/MISNodeLog.h`). A node's LP is first solved without new cuts (the first LP), then with its cut loop: separation rounds, each followed by a new LP solve. It can be solved again after its cut loop, when the branching rule tightens bounds (strong branching proving a child infeasible). The values are in SCIP's transformed problem, a minimization of −(size of the set): a node is pruned when its lower bound reaches the cutoff bound, `inf` stands for an infeasible LP or one that reached the cutoff bound, and an empty value for one that was not measured.
+
+- `run` (SCIP restarts start a new run), `node`, `parent` (0 for the root), `depth`;
+- `status`: `branched`, `infeasible` (pruned, or infeasible) or `feasible` (its LP solution is a set);
+- `global_lower`: global lower bound when the node is selected; `cutoff_first`, `cutoff_final`: cutoff bound at the first LP and at the end of the node;
+- `lp_first`, `lp_cut_loop`, `lp_final`: LP bound after the first LP, at the end of the cut loop, and after the node's last LP solve; `lower_bound`: the node's lower bound at the end;
+- `fractional`, `half`: fractional variables of the first LP solution, and how many of them are at ½;
+- `separation_rounds`, `cuts`, `pool_cuts` (of which taken from the global cut pool), `zerohalf_cuts`, `oddcycle_cuts`, `clique_cuts` (cuts of these separators, from the pool or not): rounds of the cut loop and cuts applied to the LP;
+- `node_seconds`: time spent on the node; `first_lp_seconds`: until the first LP is solved (propagation included); `cut_loop_seconds`: the cut loop, LP solves included; `separation_seconds` and the times of the three separators: the separators and the cut pool during the cut loop; `node_separation_seconds`: the separators and the cut pool over the whole node;
+- `first_lp_iterations`, `cut_loop_iterations`: simplex iterations of the first LP and of the cut loop;
+- `lp_resolves`: LP solves of the node after its cut loop.
+
+The cut loop raised the bound of the node by `lp_cut_loop` − `lp_first`, and pruned it when `lp_cut_loop` reaches `cutoff_first` while `lp_first` did not.

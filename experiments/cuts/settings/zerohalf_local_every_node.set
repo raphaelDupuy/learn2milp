@@ -1,0 +1,17 @@
+# Zero-half cuts at every node, local cuts allowed at every node (SCIP:
+# only at the node of best bound).
+# Every separator that SCIP calls at the nodes by default, except zero-half,
+# is restricted to the root node.
+separating/aggregation/freq = 0
+separating/cmir/freq = 0
+separating/flowcover/freq = 0
+separating/gomory/freq = 0
+separating/gomorymi/freq = 0
+separating/impliedbounds/freq = 0
+separating/knapsackcover/freq = 0
+separating/minor/freq = 0
+separating/mixing/freq = 0
+separating/strongcg/freq = 0
+separating/zerohalf/freq = 1
+separating/zerohalf/expbackoff = 1
+separating/maxlocalbounddist = 1

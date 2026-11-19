@@ -69,6 +69,13 @@ struct MISBenchmarkConfig
      */
     std::string cutSelector;
 
+    /*
+     * CSV file to write one line per node solved, with the LP bound before
+     * and after the node's cut loop and what the loop cost
+     * (cuts/MISNodeLog.h). Empty for none; the file must not exist.
+     */
+    std::filesystem::path nodeLogPath;
+
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.

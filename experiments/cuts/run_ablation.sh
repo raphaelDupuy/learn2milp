@@ -15,6 +15,12 @@
 #   INSTANCES_PER_SET  first instances of each set (default: all)
 #   TIME_LIMIT         seconds per run (default 600)
 #   SEEDS              SCIP seeds, comma-separated (default 0)
+#   EXPERIMENT         name of a separate experiment: its runs and tables go
+#                      to experiments/cuts/results/EXPERIMENT/, so that
+#                      configurations already run elsewhere are run again
+#                      in the same session (default: none)
+#   NODE_LOGS          1 to write the node log of every run (mis-benchmark
+#                      --node-log-dir) to the nodes/ folder of the results
 #
 # Runs are made one at a time; a run already made is skipped, so the script
 # resumes where it stopped and later calls can add sets or configurations.
@@ -25,8 +31,9 @@
 # runs/*.csv.suspended, and the next call makes the run again.
 #
 # Outputs:
-#   experiments/cuts/results/<set>_<config>.csv   one row per run
-#   data/logs/cuts.log                            progress, one line per run
+#   experiments/cuts/results/[EXPERIMENT/]<set>_<config>.csv   one row per run
+#   experiments/cuts/results/[EXPERIMENT/]nodes/<set>__<config>/   node logs
+#   data/logs/cuts.log                     progress, one line per run
 set -euo pipefail
 
 BUILD_DIR="${1:-cmake-build-release}"
@@ -34,8 +41,9 @@ BUILD_DIR="${1:-cmake-build-release}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-RESULTS="experiments/cuts/results"
+RESULTS="experiments/cuts/results${EXPERIMENT:+/$EXPERIMENT}"
 PARTS="$RESULTS/runs"
+NODES="$RESULTS/nodes"
 SETTINGS="experiments/cuts/settings"
 LOG="data/logs/cuts.log"
 BENCHMARK="$BUILD_DIR/mis-benchmark"
@@ -71,6 +79,9 @@ ALL_CONFIGS=(
     "zerohalf_every_node default zerohalf_every_node relpscost"
     "clique_every_node default clique_every_node relpscost"
     "oddcycle default oddcycle relpscost"
+    "oddcycle_every_node default oddcycle_every_node relpscost"
+    "pool_every_node default pool_every_node relpscost"
+    "zerohalf_local_every_node default zerohalf_local_every_node relpscost"
     "learned_study study - mislearned"
     "learned_no_node_gomory default no_node_gomory mislearned"
     "study_root study root_only relpscost"
@@ -108,7 +119,7 @@ for entry in "${ALL_SETS[@]}"; do
             for seed in ${SEEDS//,/ }; do
                 total=$((total + 1))
                 part="$PARTS/${name}__${config_name}__$(basename "$instance" .mis)__s$seed.csv"
-                [[ -e "$part" ]] && done_runs=$((done_runs + 1))
+                [[ -s "$part" ]] && done_runs=$((done_runs + 1))
             done
         done
     done
@@ -136,13 +147,21 @@ for entry in "${ALL_SETS[@]}"; do
 
             for seed in ${SEEDS//,/ }; do
                 part="$PARTS/${name}__${config_name}__${base}__s$seed.csv"
-                [[ -e "$part" ]] && continue
+                [[ -s "$part" ]] && continue
 
                 options=(--instances "$single" --rules "$rule" --settings "$preset"
                          --seeds "$seed" --time-limit "$TIME_LIMIT" --output "$part.tmp")
                 [[ "$parameters" != - ]] && options+=(--parameters "$SETTINGS/$parameters.set")
                 [[ "$rule" == mislearned ]] && options+=(--model "$model")
                 [[ "${selector:--}" != - ]] && options+=(--cut-selector "$selector")
+
+                # The node log of a run that was not completed is stale.
+                if [[ "${NODE_LOGS:-0}" == 1 ]]; then
+                    node_dir="$NODES/${name}__${config_name}"
+                    mkdir -p "$node_dir"
+                    rm -f "$node_dir/${base}__${rule}__s$seed.nodes.csv"
+                    options+=(--node-log-dir "$node_dir")
+                fi
 
                 rm -f "$part.tmp"
                 read -r uptime_before _ < /proc/uptime
@@ -167,6 +186,10 @@ for entry in "${ALL_SETS[@]}"; do
                     continue
                 fi
 
+                # Written to disk before the rename: after a host crash, the
+                # rename alone can survive with an empty file.
+                sync "$part.tmp"
+                [[ "${NODE_LOGS:-0}" == 1 ]] && sync "$node_dir/${base}__${rule}__s$seed.nodes.csv"
                 mv "$part.tmp" "$part"
 
                 made=$((made + 1))

@@ -14,6 +14,7 @@
 #include "branching/MISFullstrongBranchrule.h"
 #include "branching/MISLearnedBranchrule.h"
 #include "cuts/MISLookaheadCutsel.h"
+#include "cuts/MISNodeLog.h"
 #include "io/MISBranchingModelIO.hpp"
 #include "io/MISInstanceIO.hpp"
 #include "learning/MISAdjacency.hpp"
@@ -363,6 +364,14 @@ bool benchmarkMIS(
 
         const bool lookahead = config.cutSelector == MIS_LOOKAHEAD_CUT_SELECTOR;
 
+        if (!config.nodeLogPath.empty()
+            && std::filesystem::exists(config.nodeLogPath))
+        {
+            throw std::invalid_argument(
+                "Node log already exists: " + config.nodeLogPath.string()
+            );
+        }
+
         requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
         // Declared before the solver: the learned rule points to them,
@@ -399,6 +408,18 @@ bool benchmarkMIS(
             require(
                 SCIPincludeCutselMISLookahead(scip),
                 "include the lookahead cut selector"
+            );
+        }
+
+        if (!config.nodeLogPath.empty())
+        {
+            const std::string action =
+                "create the node log " + config.nodeLogPath.string();
+
+            require(
+                SCIPincludeEventHdlrMISNodeLog(
+                    scip, config.nodeLogPath.string().c_str()),
+                action.c_str()
             );
         }
 

@@ -26,7 +26,7 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "      [--seeds S1,S2] [--settings study|default]"
         << " [--time-limit SECONDS]\n"
         << "      [--parameters FILE] [--cut-selector NAME] [--model PATH]\n"
-        << "      [--strong-branching K]\n\n"
+        << "      [--strong-branching K] [--node-log-dir DIR]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -57,6 +57,11 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "                (default: SCIP's own selector)\n"
         << "  --time-limit  Time limit per run in seconds (default "
         << MIS_DEFAULT_TIME_LIMIT_SECONDS << ")\n"
+        << "  --node-log-dir\n"
+        << "                Directory where each run writes one CSV line per\n"
+        << "                node solved (INSTANCE__RULE__sSEED.nodes.csv,\n"
+        << "                never overwritten): LP bound before and after the\n"
+        << "                node's cut loop, and what the loop cost\n"
         << "  -h, --help    Show this help and exit\n";
 }
 
@@ -79,6 +84,7 @@ int main(int argc, char* argv[])
     std::string modelPath;
     std::string parameterFile;
     std::string cutSelector;
+    std::string nodeLogDirectory;
     int strongBranching = 0;
 
     try
@@ -86,7 +92,7 @@ int main(int argc, char* argv[])
         const CommandLineOptions options(argc, argv, 1, {
             "--instances", "--rules", "--output", "--seeds",
             "--settings", "--parameters", "--cut-selector", "--model",
-            "--time-limit", "--strong-branching"});
+            "--time-limit", "--strong-branching", "--node-log-dir"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -106,6 +112,9 @@ int main(int argc, char* argv[])
 
         if (options.has("--cut-selector"))
             cutSelector = options.text("--cut-selector");
+
+        if (options.has("--node-log-dir"))
+            nodeLogDirectory = options.text("--node-log-dir");
 
         strongBranching = options.get(
             "--strong-branching", parseNonNegativeInt, strongBranching);
@@ -190,6 +199,51 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    // Node log of a run, checked for every run before the first one.
+    const auto nodeLogPath = [&](
+        const std::filesystem::path& instancePath,
+        const std::string& rule,
+        unsigned int seed)
+    {
+        if (nodeLogDirectory.empty())
+            return std::filesystem::path();
+
+        return std::filesystem::path(nodeLogDirectory)
+            / (instancePath.stem().string() + "__" + rule + "__s"
+                + std::to_string(seed) + ".nodes.csv");
+    };
+
+    if (!nodeLogDirectory.empty())
+    {
+        std::error_code error;
+        std::filesystem::create_directories(nodeLogDirectory, error);
+
+        if (error)
+        {
+            std::cerr << "Cannot create node log directory: "
+                      << nodeLogDirectory << '\n';
+            return 1;
+        }
+
+        for (const auto& instancePath : instancePaths)
+        {
+            for (const unsigned int seed : seeds)
+            {
+                for (const std::string& rule : rules)
+                {
+                    const auto path = nodeLogPath(instancePath, rule, seed);
+
+                    if (std::filesystem::exists(path))
+                    {
+                        std::cerr << "Node log already exists: "
+                                  << path.string() << '\n';
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+
     std::ofstream output(outputPath);
 
     if (!output)
@@ -236,6 +290,7 @@ int main(int argc, char* argv[])
                 config.cutSelector = cutSelector;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
+                config.nodeLogPath = nodeLogPath(instancePath, rule, seed);
 
                 if (rule == "mislearned")
                 {

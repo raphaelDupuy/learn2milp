@@ -55,6 +55,7 @@ target_link_libraries(mis_branching
 # SCIP cut selection plugins.
 add_library(mis_cutting STATIC
     src/cuts/MISLookaheadCutsel.c
+    src/cuts/MISNodeLog.c
 )
 
 target_include_directories(mis_cutting

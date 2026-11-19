@@ -571,6 +571,179 @@ int main(int argc, char* argv[])
         );
     }
 
+    // Node log: one line per node solved, without changing the search.
+    {
+        // Rows of a node log, values as text, the header first.
+        const auto readLog = [](const std::filesystem::path& path)
+        {
+            std::vector<std::vector<std::string>> rows;
+            std::ifstream in(path);
+            std::string line;
+
+            while (std::getline(in, line))
+            {
+                std::vector<std::string> fields;
+                std::size_t start = 0;
+
+                for (std::size_t comma; (comma = line.find(',', start)) != std::string::npos;
+                     start = comma + 1)
+                {
+                    fields.push_back(line.substr(start, comma - start));
+                }
+
+                fields.push_back(line.substr(start));
+                rows.push_back(fields);
+            }
+
+            return rows;
+        };
+
+        // Empty for a value that was not measured.
+        const auto value = [](const std::string& text)
+        {
+            return text.empty() ? std::nan("") : std::stod(text);
+        };
+
+        const MISInstance larger =
+            ErdosRenyiGenerator{}.generate({125, 0.10, 3}).graph;
+
+        // Zero-half cuts at every node, on top of SCIP's defaults.
+        MISBenchmarkConfig config;
+        config.branchingRule = "relpscost";
+        config.settings = MISBenchmarkSettings::Default;
+        config.parameterFile = workDir / "zerohalf_every_node.set";
+        std::ofstream(config.parameterFile)
+            << "separating/gomory/freq = 0\n"
+            << "separating/zerohalf/freq = 1\n"
+            << "separating/zerohalf/expbackoff = 1\n";
+
+        MISBenchmarkConfig logging = config;
+        logging.nodeLogPath = workDir / "nodes.csv";
+
+        MISBenchmarkResult plain;
+        MISBenchmarkResult logged;
+        std::string error;
+
+        const bool ran = benchmarkMIS(larger, config, plain, error)
+            && benchmarkMIS(larger, logging, logged, error);
+
+        check(
+            ran && logged.solved
+            && logged.exploredNodes == plain.exploredNodes
+            && logged.lpIterations == plain.lpIterations,
+            "The node log does not change the search ("
+                + std::to_string(logged.exploredNodes) + " and "
+                + std::to_string(plain.exploredNodes) + " nodes) " + error
+        );
+
+        // Columns used below.
+        const std::size_t depth = 3, status = 4, lpFirst = 8, lpCutLoop = 9,
+            lpFinal = 10, rounds = 14, cuts = 15, columns = 31;
+
+        const auto rows = readLog(logging.nodeLogPath);
+        bool wellFormed = !rows.empty() && rows[0].size() == columns
+            && rows[0][0] == "run" && rows[0][lpFirst] == "lp_first"
+            && rows[0][lpCutLoop] == "lp_cut_loop"
+            && rows[0][cuts] == "cuts" && rows[0][16] == "pool_cuts"
+            && rows[0][30] == "lp_resolves";
+        bool boundsRise = true;
+        long long nodeCuts = 0;
+        long long nodesWithCuts = 0;
+        long long pruned = 0;
+
+        for (std::size_t i = 1; i < rows.size(); ++i)
+        {
+            const auto& row = rows[i];
+
+            if (row.size() != columns)
+            {
+                wellFormed = false;
+                break;
+            }
+
+            // Minimization: the cut loop, then the later solves of the node,
+            // can only raise its LP bound.
+            const double first = value(row[lpFirst]);
+            const double afterLoop = value(row[lpCutLoop]);
+            const double last = value(row[lpFinal]);
+
+            if ((std::isfinite(first) && std::isfinite(afterLoop) && afterLoop < first - 1e-6)
+                || (std::isfinite(afterLoop) && std::isfinite(last) && last < afterLoop - 1e-6))
+            {
+                boundsRise = false;
+            }
+
+            if (row[depth] != "0")
+            {
+                nodeCuts += std::stoll(row[cuts]);
+                nodesWithCuts += std::stoll(row[cuts]) > 0 ? 1 : 0;
+                pruned += row[status] == "infeasible" ? 1 : 0;
+            }
+        }
+
+        const bool rootFirst = rows.size() > 1 && rows[1][1] == "1"
+            && rows[1][2] == "0" && rows[1][depth] == "0"
+            && value(rows[1][lpCutLoop]) > value(rows[1][lpFirst]) + 0.5
+            && std::stoll(rows[1][cuts]) > 0;
+
+        check(
+            wellFormed && rootFirst
+            && static_cast<long long>(rows.size()) - 1 == logged.exploredNodes,
+            "The node log has one line per node, the root first ("
+                + std::to_string(rows.size() - 1) + " lines)"
+        );
+
+        check(
+            boundsRise && nodesWithCuts > 0,
+            "The node log shows the cuts at the nodes ("
+                + std::to_string(nodeCuts) + " cuts at "
+                + std::to_string(nodesWithCuts) + " nodes, "
+                + std::to_string(pruned) + " nodes pruned)"
+        );
+
+        // The study settings separate at the root only.
+        MISBenchmarkConfig study;
+        study.branchingRule = "relpscost";
+        study.nodeLogPath = workDir / "study_nodes.csv";
+
+        MISBenchmarkResult studied;
+        bool noNodeCuts = benchmarkMIS(larger, study, studied, error);
+        const auto studyRows = readLog(study.nodeLogPath);
+        long long resolved = 0;
+
+        for (std::size_t i = 1; i < studyRows.size(); ++i)
+        {
+            const auto& row = studyRows[i];
+
+            if (row[depth] == "0")
+                continue;
+
+            // No cut loop at the nodes: its LP bound is the first one, and
+            // only the later solves (after strong branching) can raise it.
+            const double first = value(row[lpFirst]);
+
+            if (row[rounds] != "0" || row[cuts] != "0"
+                || (std::isfinite(first) && value(row[lpCutLoop]) != first))
+            {
+                noNodeCuts = false;
+            }
+
+            resolved += value(row[lpFinal]) > first + 1e-6 ? 1 : 0;
+        }
+
+        check(
+            noNodeCuts && studyRows.size() > 2,
+            "With the study settings, the node log shows no cut loop at the nodes ("
+                + std::to_string(resolved) + " bounds raised by later solves)"
+        );
+
+        check(
+            !benchmarkMIS(larger, logging, logged, error)
+            && error.find("Node log already exists") == 0,
+            "An existing node log is not overwritten"
+        );
+    }
+
     if (failures > 0)
     {
         std::cerr << failures << " test(s) failed.\n";
