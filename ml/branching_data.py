@@ -205,6 +205,10 @@ class BranchingDataset:
         The graph of every feature table is read from the instance file of
         the same name, searched for under instances_root.
         """
+        # Positions within a sample are stored as int16.
+        if self.max_candidates > np.iinfo(np.int16).max:
+            raise ValueError("Too many candidates in a sample for int16 positions")
+
         paths = find_instance_files(instances_root, self.instance_names)
         counts = np.zeros(self.number_of_samples, np.int64)
         parts = []
@@ -229,9 +233,6 @@ class BranchingDataset:
                 first, second = np.nonzero(np.triu(adjacency[np.ix_(vertices, vertices)], 1))
                 parts.append(np.stack([first, second], axis=1).astype(np.int16))
                 counts[sample] = len(first)
-
-        if self.max_candidates > np.iinfo(np.int16).max:
-            raise ValueError("Too many candidates in a sample for int16 positions")
 
         edge_offsets = np.zeros(self.number_of_samples + 1, np.int64)
         edge_offsets[1:] = np.cumsum(counts)
