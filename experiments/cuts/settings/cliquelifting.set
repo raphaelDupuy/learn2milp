@@ -1,0 +1,4 @@
+# Clique lifting in presolve (SCIP: off): the edge constraints, upgraded
+# to set packing constraints, are merged into clique constraints, which
+# turns the edge formulation into a clique formulation.
+constraints/setppc/cliquelifting = TRUE

@@ -1,0 +1,6 @@
+# SCIP's default settings, except that Gomory cuts are only separated at
+# the root node.
+separating/gomory/freq = 0
+
+# Clique lifting in presolve (see cliquelifting.set).
+constraints/setppc/cliquelifting = TRUE

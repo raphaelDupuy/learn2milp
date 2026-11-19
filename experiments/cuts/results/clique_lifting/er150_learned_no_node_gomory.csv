@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+no_node_gomory,mislearned,0,OPTIMAL,1,2116,100733,4.36115,41,41,75,41,2268,0,0,0,0
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+no_node_gomory,mislearned,0,OPTIMAL,1,3569,169729,6.78544,42,42,75,52.3411,4057,0,0,0,0
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+no_node_gomory,mislearned,0,OPTIMAL,1,3889,184372,7.56355,40,40,75,50.4691,4080,0,0,0,0
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+no_node_gomory,mislearned,0,OPTIMAL,1,5220,225837,8.99208,40,40,75,51.1865,4559,0,0,0,0
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+no_node_gomory,mislearned,0,OPTIMAL,1,6461,302362,11.7945,40,40,75,50.6293,6442,0,0,0,0
+erdos_renyi_n150_p0_083_seed86.mis,150,969,default+no_node_gomory,mislearned,0,OPTIMAL,1,9144,349065,13.5318,40,40,75,51.6597,6730,0,0,0,0
+erdos_renyi_n150_p0_083_seed87.mis,150,875,default+no_node_gomory,mislearned,0,OPTIMAL,1,2742,130748,5.15435,43,43,75,52.7195,3459,0,0,0,0
+erdos_renyi_n150_p0_083_seed88.mis,150,935,default+no_node_gomory,mislearned,0,OPTIMAL,1,3790,168893,6.90273,41,41,75,41,3637,0,0,0,0
+erdos_renyi_n150_p0_083_seed89.mis,150,916,default+no_node_gomory,mislearned,0,OPTIMAL,1,5615,236462,9.25301,41,41,75,50.8021,6519,0,0,0,0
+erdos_renyi_n150_p0_083_seed90.mis,150,868,default+no_node_gomory,mislearned,0,OPTIMAL,1,2038,105249,4.30126,43,43,75,52.2068,2434,0,0,0,0

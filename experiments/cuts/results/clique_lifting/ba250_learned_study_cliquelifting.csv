@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped
+barabasi_albert_n250_k8_seed81.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1374,96544,5.19063,83,83,95.5179,92.627,52,0,0,0,0
+barabasi_albert_n250_k8_seed82.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,12057,474147,21.5527,80,80,95.9412,93.4736,57,0,0,0,0
+barabasi_albert_n250_k8_seed83.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1716,119071,6.17755,84,84,95.8824,93.5977,50,0,0,0,0
+barabasi_albert_n250_k8_seed84.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,4021,197329,9.26108,82,82,96,92.8238,59,0,0,0,0
+barabasi_albert_n250_k8_seed85.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,13569,593529,25.9882,80,80,95.0015,92.7898,54,0,0,0,0
+barabasi_albert_n250_k8_seed86.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1630,99587,5.18715,83,83,94.5,92.1807,53,0,0,0,0
+barabasi_albert_n250_k8_seed87.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1378,88659,4.45962,83,83,93.9176,90.9947,64,0,0,0,0
+barabasi_albert_n250_k8_seed88.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,7964,438605,19.9922,81,81,96.25,92.9501,61,0,0,0,0
+barabasi_albert_n250_k8_seed89.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1680,136948,6.69998,82,82,95.125,91.8124,56,0,0,0,0
+barabasi_albert_n250_k8_seed90.mis,250,1936,study+cliquelifting,mislearned,0,OPTIMAL,1,1915,104049,5.40422,83,83,95.9231,92.9387,60,0,0,0,0

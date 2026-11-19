@@ -277,3 +277,35 @@ The configurations made again explored the same trees as in the previous experim
 **The gate does what it is meant to, but the loops it skips were worth half of the tree reduction.** With a threshold of 0.5, the odd-cycle separator runs at a quarter of the nodes, and the gate takes 35% (Erdős–Rényi) and 18% (Barabási–Albert) less time than separating at every node. Its trees are, however, 1.8 times larger (900 nodes against 453 on G(125, 0.1)): the loops that raise the bound without pruning, which the node logs could not value, help the descendants of the node and fill the cut pool. The three thresholds move along the same trade-off between nodes and time as the fixed configurations, and none is faster than the study settings or `oddcycle`; the cut pool alone stays the fastest on Erdős–Rényi graphs, and on Barabási–Albert graphs every configuration but the two that separate the most is within the noise.
 
 At the training sizes, a decision per node that aims at the nodes the cut loop prunes does not pay, and a model trained to recognize them would learn the wrong target. A decision that pays would have to value the bound gained for the descendants of the node, which requires counterfactual runs. Where cuts at the nodes do pay, on the larger sets (G(200, 0.0625), BA(300, 8)), the gate has not been measured.
+
+## Clique formulation
+
+`src/problems/MIS.cpp` writes one constraint x_u + x_v ≤ 1 per edge, whose LP relaxation is weak: x = 1/2 everywhere is feasible, and the first LP bound is n/2 on every instance. The MIS instances of the literature (Gasse et al. 2019, Ecole, and the learning-to-cut papers built on them) use a clique formulation instead: a greedy partition of the edges into cliques, each written x(K) ≤ 1. Their figures are therefore not comparable with ours. SCIP can make that change itself: it upgrades the edge constraints to set packing constraints, and `constraints/setppc/cliquelifting` (off by default) merges them into cliques in presolve.
+
+`EXPERIMENT=clique_lifting` adds that parameter to five configurations of the cut ablation (`cliquelifting.set`, `no_node_gomory_cliquelifting.set`, `oddcycle_cliquelifting.set` in `experiments/cuts/settings/`) and runs them with the unlifted ones in one session, with the protocol above, on G(125, 0.1), BA(200, 8) (20 test instances each), G(150, 0.083) and BA(250, 8) (10 each). Every run is solved, and both formulations find the same optimum on all 60 instances. The unlifted configurations explored the same trees as in the earlier experiments.
+
+The lifting lowers the first LP bound by about a quarter (62.5 → 42.7 on G(125, 0.1), 100 → 74.7 on BA(200, 8)), but the root cut loop, which stops at stagnation, nearly makes up the difference: after the root cuts, the bounds differ by 0.3 to 1.4 only (41.6 against 41.3 on G(125, 0.1), with the study settings). The gain is below the root, where the clique constraints stay in every node LP while root cuts age out of the LP, and where those LPs have fewer rows.
+
+Ratio of each lifted configuration to the same configuration unlifted, time (unshifted) · nodes (shifted by 100), with 95% bootstrap intervals:
+
+| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) |
+|---|---|---|---|---|
+| study | 0.77 [0.73, 0.81] · 0.38 | 0.84 [0.78, 0.89] · 0.81 | 0.62 [0.51, 0.75] · 0.43 | 0.84 [0.78, 0.91] · 0.80 |
+| `no_node_gomory` | 0.94 [0.90, 0.98] · 0.64 | 0.89 [0.82, 0.96] · 0.93 | 0.83 [0.74, 0.91] · 0.67 | 0.84 [0.75, 0.93] · 1.01 |
+| `oddcycle` | 0.89 [0.84, 0.93] · 0.64 | 0.83 [0.77, 0.88] · 0.73 | 0.81 [0.73, 0.90] · 0.72 | 0.81 [0.72, 0.92] · 0.87 |
+| learned, study | 0.69 [0.65, 0.73] · 0.45 | 0.83 [0.77, 0.90] · 0.69 | 0.66 [0.58, 0.75] · 0.46 | 0.81 [0.72, 0.91] · 0.77 |
+| learned, `no_node_gomory` | 0.89 [0.83, 0.96] · 0.67 | 0.88 [0.83, 0.94] · 0.79 | 0.92 [0.79, 1.08] · 0.77 | 0.96 [0.87, 1.05] · 1.06 |
+
+Ratio to the study settings with `relpscost` (unlifted), same notation:
+
+| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) |
+|---|---|---|---|---|
+| study, lifted | 0.77 · 0.38 | 0.84 · 0.81 | 0.62 · 0.43 | 0.84 · 0.80 |
+| `oddcycle`, lifted | 0.90 · 0.21 | 0.88 · **0.31** | 0.77 · **0.18** | 0.71 · **0.16** |
+| learned, `no_node_gomory` | 0.63 · 0.38 | 0.46 · 0.68 | 0.58 · 0.27 | 0.49 · 0.32 |
+| learned, study, lifted | **0.48** · 0.33 | **0.40** · 0.72 | **0.50** · 0.32 | 0.51 · 0.58 |
+| learned, `no_node_gomory`, lifted | 0.56 · **0.26** | **0.40** · 0.53 | 0.54 · 0.21 | **0.46** · 0.34 |
+
+**The lifting speeds up every configuration, the learned branching rule included, and it shifts which one is best.** It saves the most where no separator works at the nodes (study settings: 0.62 to 0.84 of the time), and less where node cuts already strengthen the node LPs (`no_node_gomory`, learned with `no_node_gomory`: 0.84 to 0.96, not significant for the latter on the two larger sets): the clique constraints and the node cuts partly do the same work. The learned rule with the study settings, lifted, becomes as fast as the best configuration so far (learned with `no_node_gomory`) and faster on Erdős–Rényi graphs (0.48 against 0.63 on G(125, 0.1), 0.50 against 0.58 on G(150, 0.083)). The model was trained on the edge formulation and its features were computed on it; it keeps its lead over `relpscost` after the lifting: with the study settings, lifted, it takes 0.63, 0.47, 0.80 and 0.60 of the time of `relpscost`, lifted, on the four sets (0.69, 0.48, 0.75 and 0.63 unlifted).
+
+These are single runs (SCIP seed 0) at the training sizes and the next ones. Before comparing with the figures of the literature, one would also need its density (BA with affinity 4, sparser than ours) and its sizes (500 to 1500 vertices), which the clique formulation should make reachable; the gain on G(200, 0.0625) and BA(300, 8) has not been measured.
