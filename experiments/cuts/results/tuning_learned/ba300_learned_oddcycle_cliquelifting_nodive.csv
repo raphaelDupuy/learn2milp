@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n300_k8_seed81.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,689,126538,7.48585,102,102,116.3,110.398,973,0,0,0,0,0.150869,0.054097
+barabasi_albert_n300_k8_seed82.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,1941,603428,35.375,99,99,117.833,103.335,2647,0,0,0,0,0.748849,0.259513
+barabasi_albert_n300_k8_seed83.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,747,182921,10.4651,100,100,116.061,110.461,2222,0,0,0,0,0.170102,0.062689
+barabasi_albert_n300_k8_seed84.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,687,139154,8.6526,103,103,117.88,112.566,1184,0,0,0,0,0.1676,0.055409
+barabasi_albert_n300_k8_seed85.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,1591,272971,15.1469,99,99,115.746,110.144,2345,0,0,0,0,0.341068,0.123274
+barabasi_albert_n300_k8_seed86.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,1472,224074,12.3035,100,100,115.436,110.039,2162,0,0,0,0,0.271299,0.110874
+barabasi_albert_n300_k8_seed87.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,1304,250852,15.0334,100,100,115.448,109.729,2825,0,0,0,0,0.301472,0.103531
+barabasi_albert_n300_k8_seed88.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,3509,628890,34.7534,98,98,117.257,98,6351,0,0,0,0,0.704597,0.267979
+barabasi_albert_n300_k8_seed89.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,4131,659304,34.9143,96,96,115.029,108.726,7653,0,0,0,0,0.781408,0.306103
+barabasi_albert_n300_k8_seed90.mis,300,2336,default+oddcycle_cliquelifting_nodive,mislearned,0,OPTIMAL,1,2663,439018,23.5963,98,98,116.75,109.556,5248,0,0,0,0,0.502479,0.19866

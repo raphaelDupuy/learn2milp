@@ -491,3 +491,26 @@ Learned rule with `oddcycle`, lifted, before and after the first and third chang
 | G(200, 0.0625) | 2 | 152.2 → 142.6 | 11.22 → 4.78 | 4.87 → 2.14 | 10.6% → 4.9% |
 
 The features cost 2.3 to 3.4 times less and the inference 2.3 times less; the solving time falls by 2 to 11%, the most on the densest sets, where the model cost the most. Counting the triangles over the pairs saves another 16 to 20% of the feature time on one instance of G(150, 0.134) and of BA(250, 12). The time profiles above were measured before these changes: the share of features and inference is now about 2 to 7% instead of 2 to 16%.
+
+### Separator and heuristic settings for the learned rule
+
+The separators and heuristics of `oddcycle`, lifted, were chosen with `relpscost`. With the learned rule, the time profile shows Gomory cuts taking up to half of the time on small, sparse graphs (root only, since node Gomory cuts are off), and distribution diving running more often than with `relpscost`. `EXPERIMENT=tuning_learned` tries three variants of the settings file: without distribution diving (`oddcycle_cliquelifting_nodive.set`), without the `gomory` separator, at the root too (`_nogomory.set`; `gomorymi` and `strongcg` still run at the root), and without both (`_nodive_nogomory.set`). The four learned configurations ran in one session, interleaved on each instance, on G(125, 0.1), BA(200, 8), G(150, 0.083), BA(250, 8), BA(300, 8) and on the sparse points G(150, 0.040), G(150, 0.054) and BA(250, 6); the same settings with `relpscost` (without distribution diving alone, which barely runs with `relpscost`) in a second session the same evening. All 700 runs are solved.
+
+Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100):
+
+| Set | learned, without Gomory / learned | learned, without both / learned | `relpscost`, without Gomory / `relpscost` | learned / `relpscost`, both with Gomory | learned / `relpscost`, both without Gomory and diving |
+|---|---|---|---|---|---|
+| G(150, 0.040) | 0.40 [0.36, 0.46] · 1.03 | 0.40 [0.36, 0.46] · 1.02 | 0.72 [0.59, 0.88] · 1.07 | 0.52 [0.46, 0.60] · 1.29 | 0.29 [0.25, 0.35] · 1.22 |
+| G(150, 0.054) | 0.69 [0.60, 0.78] · 0.98 | 0.70 [0.57, 0.86] · 0.96 | 0.82 [0.76, 0.88] · 0.75 | 0.56 [0.47, 0.67] · 1.03 | 0.48 [0.42, 0.55] · 1.32 |
+| BA(250, 6) | 0.52 [0.43, 0.64] · 0.99 | 0.53 [0.42, 0.66] · 1.04 | 0.69 [0.55, 0.82] · 0.83 | 0.35 [0.28, 0.46] · 0.94 | 0.26 [0.20, 0.38] · 1.18 |
+| G(125, 0.1) | 0.71 [0.66, 0.75] · 0.98 | 0.72 [0.66, 0.78] · 0.97 | 0.88 [0.82, 0.94] · 1.17 | 0.61 [0.56, 0.66] · 1.09 | 0.50 [0.45, 0.54] · 0.91 |
+| BA(200, 8) | 0.72 [0.67, 0.77] · 1.00 | 0.68 [0.62, 0.74] · 0.95 | 0.85 [0.78, 0.93] · 0.94 | 0.41 [0.38, 0.45] · 1.14 | 0.33 [0.30, 0.36] · 1.15 |
+| G(150, 0.083) | 0.88 [0.80, 0.98] · 1.03 | 0.88 [0.78, 0.98] · 1.00 | 0.87 [0.78, 0.97] · 0.95 | 0.62 [0.58, 0.66] · 0.82 | 0.61 [0.54, 0.69] · 0.83 |
+| BA(250, 8) | 0.92 [0.83, 1.02] · 1.04 | 0.84 [0.76, 0.92] · 0.96 | 0.96 [0.87, 1.07] · 1.03 | 0.44 [0.40, 0.49] · 0.85 | 0.39 [0.35, 0.44] · 0.79 |
+| BA(300, 8) | 0.93 [0.85, 1.03] · 1.05 | 0.96 [0.87, 1.06] · 1.03 | 1.04 [0.92, 1.20] · 1.09 | 0.48 [0.44, 0.53] · 0.86 | 0.44 [0.39, 0.50] · 0.82 |
+
+**Without Gomory cuts, both rules are faster on small and sparse graphs, with the same trees.** The learned rule gains the most (0.40 to 0.72 of its time on the five smaller or sparser sets), `relpscost` less (0.69 to 0.88), since strong branching takes 40 to 62% of its time there. The trees and the root bounds barely change: in these settings, Gomory cuts cost much and bring little. The time saved exceeds the time of the separator itself: on G(125, 0.1), with the learned rule, Gomory took 0.15 s and the solving time falls by 0.60 s, of which 0.19 s in the heuristics, 0.12 s in the aggregation separator and the cut pool, and 0.08 s in the node LPs; a likely reason, not checked, is that Gomory cuts are dense rows that make every LP of the solve slower, diving LPs included. The gain shrinks with the size and is not significant on BA(250, 8) and BA(300, 8), for both rules. Removing distribution diving saves 4 to 9% on the smaller sets with the learned rule, nothing beyond, and adds little to the removal of Gomory cuts.
+
+**At equal settings, the learned rule keeps or widens its lead:** without Gomory cuts and distribution diving for both rules, it takes 0.26 to 0.61 of the time of `relpscost`, against 0.35 to 0.62 with Gomory cuts. The learned rule, without both, takes 0.18 to 0.54 of the time of `oddcycle`, lifted, with `relpscost`, the previous best configuration of SCIP.
+
+The two sessions are 40 minutes apart; the settings were chosen on the test instances, like the earlier ones, and should be confirmed on the validation instances.

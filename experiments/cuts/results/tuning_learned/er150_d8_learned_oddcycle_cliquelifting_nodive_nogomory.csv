@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_054_seed81.mis,150,625,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,716,47898,1.93509,50,50,61,57.5761,1430,0,0,0,0,0.035227,0.025672
+erdos_renyi_n150_p0_054_seed82.mis,150,579,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,395,29328,1.17076,53,53,62.5,57.9365,928,0,0,0,0,0.020009,0.015156
+erdos_renyi_n150_p0_054_seed83.mis,150,639,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,730,50755,1.90492,49,49,60.5,56.4774,1286,0,0,0,0,0.038397,0.027122
+erdos_renyi_n150_p0_054_seed84.mis,150,592,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,370,31471,1.11933,52,52,62.5,58.1737,632,0,0,0,0,0.019729,0.014583
+erdos_renyi_n150_p0_054_seed85.mis,150,622,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,396,29684,1.13906,50,50,59.6429,56.213,850,0,0,0,0,0.021172,0.015131
+erdos_renyi_n150_p0_054_seed86.mis,150,614,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,427,33550,1.24892,52,52,63.5,59.2322,819,0,0,0,0,0.021381,0.015962
+erdos_renyi_n150_p0_054_seed87.mis,150,558,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,101,12092,0.454029,57,57,63.5,60.2324,200,0,0,0,0,0.006286,0.004463
+erdos_renyi_n150_p0_054_seed88.mis,150,589,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,363,30079,1.11921,52,52,62.75,58.0973,760,0,0,0,0,0.017982,0.013554
+erdos_renyi_n150_p0_054_seed89.mis,150,602,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,388,31288,1.22162,51,51,61.6,57.4481,873,0,0,0,0,0.020138,0.01479
+erdos_renyi_n150_p0_054_seed90.mis,150,562,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,342,22549,0.763509,53,53,62.5,58.2634,354,0,0,0,0,0.016688,0.012673

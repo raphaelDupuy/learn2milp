@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n300_k8_seed81.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,628,120102,6.55223,102,102,116.3,110.307,994,0,0,0,0,0.134797,0.050689
+barabasi_albert_n300_k8_seed82.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,1716,333159,18.3265,99,99,117.833,110.634,3745,0,0,0,0,0.387194,0.135259
+barabasi_albert_n300_k8_seed83.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,1016,197040,10.7033,100,100,116.061,110.27,1936,0,0,0,0,0.220071,0.080032
+barabasi_albert_n300_k8_seed84.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,855,164661,9.09556,103,103,117.88,112.306,1180,0,0,0,0,0.198347,0.067585
+barabasi_albert_n300_k8_seed85.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,1883,297670,16.2411,99,99,115.746,110.105,2989,0,0,0,0,0.379219,0.143481
+barabasi_albert_n300_k8_seed86.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,1133,179375,9.44021,100,100,115.436,109.746,2033,0,0,0,0,0.221976,0.084956
+barabasi_albert_n300_k8_seed87.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,1211,228747,12.6244,100,100,115.448,109.76,2694,0,0,0,0,0.268923,0.094
+barabasi_albert_n300_k8_seed88.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,4495,776831,41.7702,98,98,117.257,110.913,7604,0,0,0,0,0.925295,0.337077
+barabasi_albert_n300_k8_seed89.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,4241,759577,40.4576,96,96,115.029,109.056,10801,0,0,0,0,0.849339,0.32039
+barabasi_albert_n300_k8_seed90.mis,300,2336,default+oddcycle_cliquelifting_nodive_nogomory,mislearned,0,OPTIMAL,1,2877,456221,23.6274,98,98,116.75,109.749,4807,0,0,0,0,0.524844,0.211688
