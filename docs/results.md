@@ -282,30 +282,34 @@ At the training sizes, a decision per node that aims at the nodes the cut loop p
 
 `src/problems/MIS.cpp` writes one constraint x_u + x_v ≤ 1 per edge, whose LP relaxation is weak: x = 1/2 everywhere is feasible, and the first LP bound is n/2 on every instance. The MIS instances of the literature (Gasse et al. 2019, Ecole, and the learning-to-cut papers built on them) use a clique formulation instead: a greedy partition of the edges into cliques, each written x(K) ≤ 1. Their figures are therefore not comparable with ours. SCIP can make that change itself: it upgrades the edge constraints to set packing constraints, and `constraints/setppc/cliquelifting` (off by default) merges them into cliques in presolve.
 
-`EXPERIMENT=clique_lifting` adds that parameter to five configurations of the cut ablation (`cliquelifting.set`, `no_node_gomory_cliquelifting.set`, `oddcycle_cliquelifting.set` in `experiments/cuts/settings/`) and runs them with the unlifted ones in one session, with the protocol above, on G(125, 0.1), BA(200, 8) (20 test instances each), G(150, 0.083) and BA(250, 8) (10 each). Every run is solved, and both formulations find the same optimum on all 60 instances. The unlifted configurations explored the same trees as in the earlier experiments.
+`EXPERIMENT=clique_lifting` adds that parameter to five configurations of the cut ablation (`cliquelifting.set`, `no_node_gomory_cliquelifting.set`, `oddcycle_cliquelifting.set` in `experiments/cuts/settings/`) and runs them with the unlifted ones, the ten configurations interleaved on each instance, with the protocol above, on G(125, 0.1), BA(200, 8) (20 test instances each), G(150, 0.083), BA(250, 8), G(200, 0.0625) and BA(300, 8) (10 each). The first four sets were made in one session; the last two in two sessions (the first four instances of G(200, 0.0625), then the rest overnight), the ten configurations of an instance always in the same one. Every run is solved, and both formulations find the same optimum on all 80 instances. The unlifted configurations explored the same trees as in the earlier experiments.
 
-The lifting lowers the first LP bound by about a quarter (62.5 → 42.7 on G(125, 0.1), 100 → 74.7 on BA(200, 8)), but the root cut loop, which stops at stagnation, nearly makes up the difference: after the root cuts, the bounds differ by 0.3 to 1.4 only (41.6 against 41.3 on G(125, 0.1), with the study settings). The gain is below the root, where the clique constraints stay in every node LP while root cuts age out of the LP, and where those LPs have fewer rows.
+The lifting lowers the first LP bound by about a quarter (62.5 → 42.7 on G(125, 0.1), 100 → 74.7 on BA(200, 8)), but the root cut loop, which stops at stagnation, nearly makes up the difference: after the root cuts, the bounds differ by 0.3 to 1.4 only (41.6 against 41.3 on G(125, 0.1), 70.1 against 69.7 on G(200, 0.0625), with the study settings). The gain is below the root, where the clique constraints stay in every node LP while root cuts age out of the LP, and where those LPs have fewer rows.
 
 Ratio of each lifted configuration to the same configuration unlifted, time (unshifted) · nodes (shifted by 100), with 95% bootstrap intervals:
 
-| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) |
-|---|---|---|---|---|
-| study | 0.77 [0.73, 0.81] · 0.38 | 0.84 [0.78, 0.89] · 0.81 | 0.62 [0.51, 0.75] · 0.43 | 0.84 [0.78, 0.91] · 0.80 |
-| `no_node_gomory` | 0.94 [0.90, 0.98] · 0.64 | 0.89 [0.82, 0.96] · 0.93 | 0.83 [0.74, 0.91] · 0.67 | 0.84 [0.75, 0.93] · 1.01 |
-| `oddcycle` | 0.89 [0.84, 0.93] · 0.64 | 0.83 [0.77, 0.88] · 0.73 | 0.81 [0.73, 0.90] · 0.72 | 0.81 [0.72, 0.92] · 0.87 |
-| learned, study | 0.69 [0.65, 0.73] · 0.45 | 0.83 [0.77, 0.90] · 0.69 | 0.66 [0.58, 0.75] · 0.46 | 0.81 [0.72, 0.91] · 0.77 |
-| learned, `no_node_gomory` | 0.89 [0.83, 0.96] · 0.67 | 0.88 [0.83, 0.94] · 0.79 | 0.92 [0.79, 1.08] · 0.77 | 0.96 [0.87, 1.05] · 1.06 |
+| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) | G(200, 0.0625) | BA(300, 8) |
+|---|---|---|---|---|---|---|
+| study | 0.77 [0.73, 0.81] · 0.38 | 0.84 [0.78, 0.89] · 0.81 | 0.62 [0.51, 0.75] · 0.43 | 0.84 [0.78, 0.91] · 0.80 | 0.56 [0.50, 0.62] · 0.45 | 0.75 [0.66, 0.85] · 0.70 |
+| `no_node_gomory` | 0.94 [0.90, 0.98] · 0.64 | 0.89 [0.82, 0.96] · 0.93 | 0.83 [0.74, 0.91] · 0.67 | 0.84 [0.75, 0.93] · 1.01 | 0.89 [0.77, 1.03] · 0.93 | 0.78 [0.69, 0.89] · 0.83 |
+| `oddcycle` | 0.89 [0.84, 0.93] · 0.64 | 0.83 [0.77, 0.88] · 0.73 | 0.81 [0.73, 0.90] · 0.72 | 0.81 [0.72, 0.92] · 0.87 | 0.78 [0.75, 0.82] · 0.86 | 0.78 [0.69, 0.88] · 0.75 |
+| learned, study | 0.69 [0.65, 0.73] · 0.45 | 0.83 [0.77, 0.90] · 0.69 | 0.66 [0.58, 0.75] · 0.46 | 0.81 [0.72, 0.91] · 0.77 | 0.51 [0.45, 0.58] · 0.39 | 0.78 [0.67, 0.90] · 0.73 |
+| learned, `no_node_gomory` | 0.89 [0.83, 0.96] · 0.67 | 0.88 [0.83, 0.94] · 0.79 | 0.92 [0.79, 1.08] · 0.77 | 0.96 [0.87, 1.05] · 1.06 | 0.80 [0.74, 0.89] · 0.76 | 0.78 [0.66, 0.90] · 0.94 |
 
 Ratio to the study settings with `relpscost` (unlifted), same notation:
 
-| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) |
-|---|---|---|---|---|
-| study, lifted | 0.77 · 0.38 | 0.84 · 0.81 | 0.62 · 0.43 | 0.84 · 0.80 |
-| `oddcycle`, lifted | 0.90 · 0.21 | 0.88 · **0.31** | 0.77 · **0.18** | 0.71 · **0.16** |
-| learned, `no_node_gomory` | 0.63 · 0.38 | 0.46 · 0.68 | 0.58 · 0.27 | 0.49 · 0.32 |
-| learned, study, lifted | **0.48** · 0.33 | **0.40** · 0.72 | **0.50** · 0.32 | 0.51 · 0.58 |
-| learned, `no_node_gomory`, lifted | 0.56 · **0.26** | **0.40** · 0.53 | 0.54 · 0.21 | **0.46** · 0.34 |
+| Configuration | G(125, 0.1) | BA(200, 8) | G(150, 0.083) | BA(250, 8) | G(200, 0.0625) | BA(300, 8) |
+|---|---|---|---|---|---|---|
+| study, lifted | 0.77 · 0.38 | 0.84 · 0.81 | 0.62 · 0.43 | 0.84 · 0.80 | 0.56 · 0.45 | 0.75 · 0.70 |
+| `oddcycle`, lifted | 0.90 · 0.21 | 0.88 · **0.31** | 0.77 · **0.18** | 0.71 · **0.16** | 0.44 · **0.12** | 0.53 · **0.09** |
+| learned, `no_node_gomory` | 0.63 · 0.38 | 0.46 · 0.68 | 0.58 · 0.27 | 0.49 · 0.32 | 0.49 · 0.20 | 0.49 · 0.22 |
+| learned, study, lifted | **0.48** · 0.33 | **0.40** · 0.72 | **0.50** · 0.32 | 0.51 · 0.58 | 0.49 · 0.32 | 0.65 · 0.65 |
+| learned, `no_node_gomory`, lifted | 0.56 · **0.26** | **0.40** · 0.53 | 0.54 · 0.21 | **0.46** · 0.34 | **0.39** · 0.15 | **0.38** · 0.21 |
 
-**The lifting speeds up every configuration, the learned branching rule included, and it shifts which one is best.** It saves the most where no separator works at the nodes (study settings: 0.62 to 0.84 of the time), and less where node cuts already strengthen the node LPs (`no_node_gomory`, learned with `no_node_gomory`: 0.84 to 0.96, not significant for the latter on the two larger sets): the clique constraints and the node cuts partly do the same work. The learned rule with the study settings, lifted, becomes as fast as the best configuration so far (learned with `no_node_gomory`) and faster on Erdős–Rényi graphs (0.48 against 0.63 on G(125, 0.1), 0.50 against 0.58 on G(150, 0.083)). The model was trained on the edge formulation and its features were computed on it; it keeps its lead over `relpscost` after the lifting: with the study settings, lifted, it takes 0.63, 0.47, 0.80 and 0.60 of the time of `relpscost`, lifted, on the four sets (0.69, 0.48, 0.75 and 0.63 unlifted).
+With the study settings, `relpscost` takes 316 s and 388,752 nodes on G(200, 0.0625), 64.2 s and 22,174 nodes on BA(300, 8), as in the earlier sessions.
 
-These are single runs (SCIP seed 0) at the training sizes and the next ones. Before comparing with the figures of the literature, one would also need its density (BA with affinity 4, sparser than ours) and its sizes (500 to 1500 vertices), which the clique formulation should make reachable; the gain on G(200, 0.0625) and BA(300, 8) has not been measured.
+**The lifting speeds up every configuration, the learned branching rule included, at every size.** It saves the most where no separator works at the nodes (study settings: 0.56 to 0.84 of the time, the most on G(200, 0.0625)), and less where node cuts already strengthen the node LPs (`no_node_gomory`, learned with `no_node_gomory`: 0.78 to 0.96, not significant in three cases out of twelve): the clique constraints and the node cuts partly do the same work.
+
+**The learned rule with `no_node_gomory`, lifted, is the fastest configuration measured so far.** It takes 0.39 and 0.38 of the time of the study settings on the two largest sets, against 0.49 unlifted, and 0.40 to 0.56 at the smaller sizes. At the training sizes, the learned rule with the study settings, lifted, is as fast or faster (0.48 against 0.56 on G(125, 0.1)), but it falls behind as the instances grow (0.65 against 0.38 on BA(300, 8)), where cuts at the nodes pay the most. The model was trained on the edge formulation and its features were computed on it; it keeps its lead over `relpscost` after the lifting: with the study settings, lifted, it takes 0.63, 0.47, 0.80, 0.60, 0.88 and 0.87 of the time of `relpscost`, lifted, on the six sets (0.69, 0.48, 0.75, 0.63, 0.97 and 0.83 unlifted).
+
+These are single runs (SCIP seed 0). Before comparing with the figures of the literature, one would also need its density and sizes: BA with affinity 4, sparser than ours, on 500 to 1500 vertices. A test on three BA(500, 4) instances (default settings, `relpscost`) solved them in 2 to 14 s and 1 to 265 nodes with either formulation, as easy as reported there: at equal size, density makes the instances hard more than the number of vertices.

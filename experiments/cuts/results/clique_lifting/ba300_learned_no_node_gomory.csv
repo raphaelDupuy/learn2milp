@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped
+barabasi_albert_n300_k8_seed81.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,1708,182748,10.7959,102,102,150,113.843,1533,0,0,0,0
+barabasi_albert_n300_k8_seed82.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,6341,727105,41.9461,99,99,150,114.767,7251,0,0,0,0
+barabasi_albert_n300_k8_seed83.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,3317,712063,40.6014,100,100,150,105.611,2022,0,0,0,0
+barabasi_albert_n300_k8_seed84.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,2409,291798,16.8508,103,103,150,115.407,2617,0,0,0,0
+barabasi_albert_n300_k8_seed85.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,5568,589757,33.9494,99,99,150,113.109,5084,0,0,0,0
+barabasi_albert_n300_k8_seed86.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,3098,317726,19.3496,100,100,150,113.307,2352,0,0,0,0
+barabasi_albert_n300_k8_seed87.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,3796,365343,21.6418,100,100,150,100,2443,0,0,0,0
+barabasi_albert_n300_k8_seed88.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,12345,1354061,76.6434,98,98,150,114.152,9672,0,0,0,0
+barabasi_albert_n300_k8_seed89.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,14169,1468928,82.0599,96,96,150,113.318,12758,0,0,0,0
+barabasi_albert_n300_k8_seed90.mis,300,2336,default+no_node_gomory,mislearned,0,OPTIMAL,1,6800,672640,36.9265,98,98,150,113.353,5923,0,0,0,0
