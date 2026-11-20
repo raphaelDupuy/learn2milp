@@ -105,14 +105,24 @@ done
 # Total and remaining runs, for the progress lines.
 total=0
 done_runs=0
+# Column widths of the progress lines and of the summary, so that every
+# line is aligned whatever the names of the sets and configurations.
+name_width=0
+base_width=0
+config_width=0
 
 for entry in "${SETS[@]}"; do
     read -r name _ _ _ models <<< "$entry"
+    name_width=$(( ${#name} > name_width ? ${#name} : name_width ))
 
     for instance in "$INSTANCES/$name"/*.mis; do
+        base="$(basename "$instance" .mis)"
+        base_width=$(( ${#base} > base_width ? ${#base} : base_width ))
+
         for config in "${CONFIGS[@]}"; do
             read -r config_name _ _ _ kind <<< "$config"
             applies "$kind" "$models" || continue
+            config_width=$(( ${#config_name} > config_width ? ${#config_name} : config_width ))
 
             for seed in ${SEEDS//,/ }; do
                 total=$((total + 1))
@@ -170,12 +180,18 @@ for entry in "${SETS[@]}"; do
                 elapsed=$(( $(date +%s) - started ))
                 remaining=$(( elapsed * (total - done_runs) / made ))
 
-                # status, nodes and time of the run (columns 7, 9 and 11)
-                result=$(tail -n 1 "$part" | awk -F, '{printf "%-8s %9d nodes %9.1f s", $7, $9, $11}')
-                log "$(printf '[%3d/%d] %-10s %-36s %-12s %s | elapsed %dh%02d, about %dh%02d left' \
-                    "$done_runs" "$total" "$name" "$base" "$config_name" "$result" \
+                # nodes and time of the run (columns 9 and 11), and its
+                # status (column 7) at the end of the line unless optimal
+                last=$(tail -n 1 "$part")
+                result=$(awk -F, '{printf "%7d nodes %7.1f s", $9, $11}' <<< "$last")
+                status=$(cut -d, -f7 <<< "$last")
+                note=""
+                [[ "$status" != OPTIMAL ]] && note="  $status"
+                log "$(printf '[%*d/%d] %-*s %-*s %-*s %s | elapsed %dh%02d, about %dh%02d left%s' \
+                    "${#total}" "$done_runs" "$total" "$name_width" "$name" "$base_width" "$base" \
+                    "$config_width" "$config_name" "$result" \
                     $((elapsed / 3600)) $((elapsed % 3600 / 60)) \
-                    $((remaining / 3600)) $((remaining % 3600 / 60)))"
+                    $((remaining / 3600)) $((remaining % 3600 / 60)) "$note")"
             done
         done
 
@@ -210,9 +226,9 @@ for entry in "${SETS[@]}"; do
             tail -n +2 "$file" >> "$table"
         done
 
-        log "$(awk -F, -v s="$name" -v c="$config_name" 'NR > 1 {
+        log "$(awk -F, -v s="$name" -v c="$config_name" -v sw="$name_width" -v cw="$config_width" 'NR > 1 {
                 nodes += log($9 + 100); time += log($11 + 1); solved += $8; k++ }
-            END { printf "  %-10s %-12s %2d/%d solved %10.0f nodes %9.1f s", s, c, solved, k,
+            END { printf "  %-" sw "s %-" cw "s %2d/%d solved %10.0f nodes %9.1f s", s, c, solved, k,
                 exp(nodes / k) - 100, exp(time / k) - 1 }' "$table")"
     done
 done
