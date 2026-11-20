@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "generators/BarabasiAlbertGenerator.hpp"
 #include "generators/ErdosRenyiGenerator.hpp"
 #include "learning/MISBranchingFeatures.h"
 #include "services/MISCollectionService.hpp"
@@ -288,6 +289,28 @@ int main(int argc, char* argv[])
             check(
                 !benchmarkMIS(instance, wrong, threeCandidates, error),
                 "Strong branching candidates given to another rule are rejected"
+            );
+        }
+
+        // With clique lifting, presolve turns one vertex of this sparse
+        // graph into a multi-aggregation over no variable, that is a
+        // fixing; the rule must read it as fixed, not as unknown.
+        {
+            const MISInstance sparse =
+                BarabasiAlbertGenerator{}.generate({250, 4, 88}).graph;
+
+            MISBenchmarkConfig lifted = config;
+            lifted.parameterFile = workDir / "cliquelifting.set";
+            std::ofstream(lifted.parameterFile)
+                << "constraints/setppc/cliquelifting = TRUE\n";
+
+            MISBenchmarkResult result;
+            std::string liftedError;
+
+            check(
+                benchmarkMIS(sparse, lifted, result, liftedError) && result.solved,
+                "Learned rule reads a vertex fixed by multi-aggregation "
+                    + result.status + liftedError
             );
         }
 

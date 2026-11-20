@@ -396,6 +396,7 @@ if(BUILD_TESTING)
     add_executable(test_MISBenchmarkService
         tests/test_MISBenchmarkService.cpp
         src/problems/MIS.cpp
+        src/generators/BarabasiAlbertGenerator.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISInstanceIO.cpp
         src/io/MISStrongBranchingSampleIO.cpp

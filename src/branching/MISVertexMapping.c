@@ -382,7 +382,8 @@ int MISvertexMappingFind(
  * Classifies every MIS vertex at the current node from the local bounds
  * and the LP value of its transformed variable. Fixed, aggregated and
  * negated variables are handled by SCIP; multi-aggregated ones, whose
- * local bounds are not maintained, are reported as unknown.
+ * local bounds are not maintained, are reported as unknown, except a
+ * multi-aggregation over no variable, which is a fixing.
  */
 void MISvertexMappingFillStates(
     SCIP* scip,
@@ -401,7 +402,13 @@ void MISvertexMappingFillStates(
 
         if( SCIPvarGetStatus(var) == SCIP_VARSTATUS_MULTAGGR )
         {
-            states[v] = MIS_VERTEX_UNKNOWN;
+            /* A multi-aggregation over no variable fixes the vertex to
+             * its constant: presolve with clique lifting can make one. */
+            if( SCIPvarGetMultaggrNVars(var) == 0 )
+                states[v] = (SCIPvarGetMultaggrConstant(var) < 0.5)
+                    ? MIS_VERTEX_FIXED_ZERO : MIS_VERTEX_FIXED_ONE;
+            else
+                states[v] = MIS_VERTEX_UNKNOWN;
             continue;
         }
 
