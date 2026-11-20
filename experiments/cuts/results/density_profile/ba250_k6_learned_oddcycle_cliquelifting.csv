@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n250_k6_seed81.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,72,15903,1.42028,95,95,104.5,98.9136,198,0,0,0,0,0.029181,0.011971
+barabasi_albert_n250_k6_seed82.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,52,17059,1.67213,94,94,101.789,97.4951,273,0,0,0,0,0.025289,0.009497
+barabasi_albert_n250_k6_seed83.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,21,9237,1.16936,97,97,104.417,99.9533,140,0,0,0,0,0.015667,0.005064
+barabasi_albert_n250_k6_seed84.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,57,14467,1.48186,95,95,104.042,99.2133,171,0,0,0,0,0.031994,0.010719
+barabasi_albert_n250_k6_seed85.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,14,4790,1.07659,100,100,104.16,100,107,0,0,0,0,0.008278,0.002533
+barabasi_albert_n250_k6_seed86.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,70,10240,1.35997,94,94,102.25,97.9165,161,0,0,0,0,0.029251,0.011087
+barabasi_albert_n250_k6_seed87.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,51,20340,1.60971,94,94,102.958,98.4268,181,0,0,0,0,0.029826,0.009524
+barabasi_albert_n250_k6_seed88.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,135,23371,1.96995,94,94,104.583,98.659,188,0,0,0,0,0.054263,0.02113
+barabasi_albert_n250_k6_seed89.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,86,16151,1.52522,94,94,102.818,98.5271,228,0,0,0,0,0.034856,0.014125
+barabasi_albert_n250_k6_seed90.mis,250,1464,default+oddcycle_cliquelifting,mislearned,0,OPTIMAL,1,121,22584,1.85508,91,91,100.921,96.4088,182,0,0,0,0,0.057265,0.020432

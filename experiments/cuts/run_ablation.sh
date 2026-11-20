@@ -70,6 +70,19 @@ ALL_SETS=(
     "ba250 data/instances/generalization/ba250_k8 $BA_MLP"
     "er200 data/instances/generalization/er200_p00625 $ER_MLP"
     "ba300 data/instances/generalization/ba300_k8 $BA_MLP"
+    # Density sweep at fixed size (seeds 81-90, mis-generator batch): mean
+    # degree 6 to 20 for G(150, p), with er150 at 12.4; k = 4 to 12 for
+    # BA(250, k), with ba250 at k = 8.
+    "er150_d6 data/instances/density/er150_p0040 $ER_MLP"
+    "er150_d8 data/instances/density/er150_p0054 $ER_MLP"
+    "er150_d10 data/instances/density/er150_p0067 $ER_MLP"
+    "er150_d14 data/instances/density/er150_p0094 $ER_MLP"
+    "er150_d17 data/instances/density/er150_p0114 $ER_MLP"
+    "er150_d20 data/instances/density/er150_p0134 $ER_MLP"
+    "ba250_k4 data/instances/density/ba250_k4 $BA_MLP"
+    "ba250_k6 data/instances/density/ba250_k6 $BA_MLP"
+    "ba250_k10 data/instances/density/ba250_k10 $BA_MLP"
+    "ba250_k12 data/instances/density/ba250_k12 $BA_MLP"
 )
 
 # Configurations: name, preset, parameter file (- for none), rule, cut

@@ -407,4 +407,67 @@ Mean per instance, with `relpscost` → with the learned rule (both `oddcycle`, 
 
 At the training sizes and on every Barabási–Albert set, the gain is the strong branching that the model replaces, for a tenth of its cost. On G(200, 0.0625), the model costs more than the strong branching it replaces (15.3 against 13.9 s): the whole gain comes from the smaller tree, 29% fewer nodes and 39 s less of node LPs. Replacing the same part by a learned one is therefore not worth the same everywhere: on the largest Erdős–Rényi graphs, the part to work on is the node LPs, or the cost of the inference, not the cost of the branching decisions.
 
-These are single runs (SCIP seed 0). The three Erdős–Rényi sets have the same mean degree (about 12.4) and the three Barabási–Albert sets the same k = 8: only the size and the family change here, not the density.
+These are single runs (SCIP seed 0). The three Erdős–Rényi sets have the same mean degree (about 12.4) and the three Barabási–Albert sets the same k = 8: only the size and the family change here; the density changes below.
+
+### Along the density
+
+`EXPERIMENT=density_profile` runs the same three configurations, with the same protocol, on graphs of fixed size and growing density: G(150, p) with a mean degree of 6 to 20 (p = 0.040 to 0.134), and BA(250, k) with k = 4 to 12, 10 instances per point (seeds 81–90, `data/instances/density/`, sets `er150_d*` and `ba250_k*` of `run_ablation.sh`), in one session. G(150, 0.083) and BA(250, 8) are the sets of the size experiment, made again: their times moved by less than 1%. All 360 runs are solved. One of them first failed: on a BA(250, 4) instance, presolve with clique lifting replaced a vertex variable by a multi-aggregation over no variable, that is a fixing, which the learned rule took for an unknown state; the rule now reads it as fixed, and the run was made again.
+
+Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100):
+
+| Set | Mean degree | SCIP default (s) | `oddcycle`, lifted / default | learned / default | learned / `oddcycle`, lifted |
+|---|---|---|---|---|---|
+| G(150, 0.040) | 6 | 1.0 | 0.98 [0.81, 1.23] · 0.77 | 0.52 [0.43, 0.64] · 1.00 | 0.53 [0.46, 0.61] · 1.29 |
+| G(150, 0.054) | 8 | 6.7 | 0.43 [0.36, 0.51] · 0.59 | 0.25 [0.21, 0.29] · 0.61 | 0.57 [0.48, 0.68] · 1.03 |
+| G(150, 0.067) | 10 | 14.7 | 0.35 [0.30, 0.41] · 0.49 | 0.20 [0.19, 0.23] · 0.45 | 0.58 [0.53, 0.64] · 0.92 |
+| G(150, 0.083) | 12.4 | 28.3 | 0.35 [0.31, 0.39] · 0.57 | 0.23 [0.20, 0.26] · 0.46 | 0.65 [0.62, 0.69] · 0.82 |
+| G(150, 0.094) | 14 | 36.2 | 0.35 [0.32, 0.38] · 0.52 | 0.25 [0.22, 0.28] · 0.46 | 0.72 [0.67, 0.78] · 0.88 |
+| G(150, 0.114) | 17 | 66.2 | 0.31 [0.28, 0.34] · 0.41 | 0.21 [0.18, 0.24] · 0.30 | 0.68 [0.63, 0.73] · 0.74 |
+| G(150, 0.134) | 20 | 81.6 | 0.29 [0.26, 0.31] · 0.40 | 0.18 [0.17, 0.19] · 0.27 | 0.63 [0.59, 0.68] · 0.67 |
+| BA(250, 4) | 7.9 | 0.8 | 0.78 [0.52, 1.05] · 0.98 | 0.77 [0.53, 1.04] · 0.99 | 0.99 [0.96, 1.04] · 1.02 |
+| BA(250, 6) | 11.7 | 5.6 | 0.76 [0.65, 0.88] · 0.71 | 0.27 [0.20, 0.37] · 0.66 | 0.35 [0.29, 0.47] · 0.94 |
+| BA(250, 8) | 15.7 | 28.3 | 0.44 [0.39, 0.50] · 0.38 | 0.21 [0.19, 0.22] · 0.32 | 0.47 [0.42, 0.53] · 0.85 |
+| BA(250, 10) | 19.2 | 94.9 | 0.46 [0.41, 0.52] · 0.46 | 0.24 [0.23, 0.25] · 0.31 | 0.52 [0.46, 0.57] · 0.67 |
+| BA(250, 12) | 22.8 | 148.4 | 0.43 [0.38, 0.49] · 0.44 | 0.25 [0.21, 0.29] · 0.31 | 0.58 [0.52, 0.64] · 0.71 |
+
+Share of the main parts, in % (as above):
+
+| Set | default: Gomory | default: LP | `oddcycle`, lifted: SB | `oddcycle`, lifted: LP | learned: LP | learned: ML | learned: heuristics |
+|---|---|---|---|---|---|---|---|
+| G(150, 0.040) | 30 | 6 | 50 | 5 | 13 | 2 | 17 |
+| G(150, 0.054) | 55 | 12 | 45 | 19 | 31 | 5 | 20 |
+| G(150, 0.067) | 57 | 17 | 34 | 29 | 39 | 7 | 17 |
+| G(150, 0.083) | 56 | 21 | 21 | 40 | 46 | 9 | 14 |
+| G(150, 0.094) | 54 | 24 | 19 | 45 | 51 | 11 | 12 |
+| G(150, 0.114) | 47 | 31 | 14 | 51 | 54 | 14 | 11 |
+| G(150, 0.134) | 48 | 31 | 15 | 52 | 55 | 16 | 11 |
+| BA(250, 4) | 63 | 4 | 1 | 4 | 4 | 0 | 6 |
+| BA(250, 6) | 35 | 9 | 61 | 9 | 23 | 3 | 18 |
+| BA(250, 8) | 39 | 27 | 45 | 33 | 52 | 7 | 15 |
+| BA(250, 10) | 33 | 39 | 25 | 53 | 66 | 9 | 9 |
+| BA(250, 12) | 30 | 43 | 21 | 55 | 67 | 12 | 7 |
+
+Change of the mean solving time, in seconds, from `oddcycle`, lifted, with `relpscost` to the same with the learned rule (as above):
+
+| Set | Total | Branching rule | Features and inference | Node LPs | Heuristics | Other parts |
+|---|---|---|---|---|---|---|
+| G(150, 0.040) | −0.52 (0.51) | −0.62 | +0.01 | +0.02 | +0.06 | +0.00 |
+| G(150, 0.054) | −1.20 (0.60) | −1.45 | +0.09 | −0.03 | +0.22 | −0.03 |
+| G(150, 0.067) | −2.30 (0.57) | −1.87 | +0.21 | −0.45 | +0.16 | −0.34 |
+| G(150, 0.083) | −3.68 (0.64) | −2.28 | +0.60 | −1.16 | −0.08 | −0.76 |
+| G(150, 0.094) | −3.46 (0.73) | −2.59 | +1.05 | −1.07 | −0.25 | −0.59 |
+| G(150, 0.114) | −6.38 (0.69) | −3.21 | +2.03 | −2.87 | −1.09 | −1.24 |
+| G(150, 0.134) | −8.85 (0.65) | −3.91 | +2.66 | −4.35 | −1.80 | −1.46 |
+| BA(250, 4) | −0.01 (0.98) | −0.02 | +0.00 | +0.00 | 0.00 | +0.00 |
+| BA(250, 6) | −3.17 (0.32) | −3.25 | +0.04 | −0.07 | +0.18 | −0.08 |
+| BA(250, 8) | −6.80 (0.49) | −5.78 | +0.48 | −1.24 | +0.46 | −0.72 |
+| BA(250, 10) | −23.9 (0.52) | −11.3 | +2.50 | −11.0 | −1.48 | −2.64 |
+| BA(250, 12) | −31.3 (0.57) | −14.3 | +4.97 | −14.6 | −3.72 | −3.62 |
+
+**The density moves the parts as the size does.** Instances get harder with the density on both families, steadily (SCIP default: 1.0 to 81.6 s on G(150, p), 0.8 to 148 s on BA(250, k)). In the best configuration of SCIP, strong branching dominates the sparse graphs (50% at degree 6, 61% at k = 6) and gives way to the node LPs as the density grows (strong branching 15 and 21%, node LPs 52 and 55% at the densest points). In SCIP default, Gomory cuts at the nodes dominate on Erdős–Rényi graphs at every density from degree 8 (47 to 57%); on Barabási–Albert graphs, the node LPs overtake them from k = 10.
+
+**The cost of the model grows with the density**: features and inference take 2 to 16% of the time of the learned rule on Erdős–Rényi graphs and 0 to 12% on Barabási–Albert graphs. At degree 20, they take back 2.66 of the 3.91 s that the branching rule of SCIP cost.
+
+**The gain of the learned rule changes in nature.** On sparse graphs, it is the branching rule it replaces, nearly alone: 0.35 of the time of the best configuration of SCIP on BA(250, 6), whose node LPs barely move. On dense graphs, its trees are smaller (0.67 to 0.74 of the nodes of `relpscost` at the densest points, against 1.29 at degree 6), and half of the gain comes from the node LPs: on BA(250, 12), −14.3 s of branching rule and −14.6 s of node LPs. Between the two, the ratio to the best configuration of SCIP stays between 0.47 and 0.73. On BA(250, 4), every configuration solves the instances at the root or nearly (1 to 3 nodes, under 1 s): there is nothing to learn there, and the best configuration of SCIP brings nothing over SCIP default at degree 6 either (0.98).
+
+The density and the size thus lead to the same place: the denser or larger the graph, the less the time is in the branching decisions and the more it is in the node LPs, while the model costs more. Replacing the branching rule pays the most on sparse and small graphs; on dense and large ones, the next part to work on is the node LP, or the cost of the inference.
