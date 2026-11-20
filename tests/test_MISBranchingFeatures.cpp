@@ -2,7 +2,9 @@
 #include "learning/MISBranchingFeatures.h"
 
 #include <cmath>
+#include <cstring>
 #include <iostream>
+#include <random>
 #include <set>
 #include <string>
 #include <vector>
@@ -373,6 +375,89 @@ void testNoCandidate()
 
 } // namespace
 
+void testAdjacencyMatrix()
+{
+    // A dense random graph, with many triangles and cliques among the
+    // fractional vertices: the features are the same, to the bit, with
+    // the bit matrix and with the sorted lists.
+    std::mt19937 generator(7);
+    std::uniform_real_distribution<double> uniform(0.0, 1.0);
+
+    MISInstance instance{60, {}};
+
+    for (int u = 0; u < instance.n; ++u)
+        for (int v = u + 1; v < instance.n; ++v)
+            if (uniform(generator) < 0.3)
+                instance.edges.push_back({u, v});
+
+    const MISAdjacency adjacency = buildMISAdjacency(instance);
+    const MISFeatureGraph withMatrix = adjacency.view();
+    MISFeatureGraph withoutMatrix = withMatrix;
+    withoutMatrix.adjacency_matrix = nullptr;
+
+    bool matrixMatches = withMatrix.adjacency_matrix != nullptr;
+    const int row = MIS_ADJACENCY_MATRIX_ROW_BYTES(instance.n);
+
+    for (int u = 0; matrixMatches && u < instance.n; ++u)
+    {
+        std::set<int> neighbours(
+            adjacency.neighbours.begin() + adjacency.offsets[u],
+            adjacency.neighbours.begin() + adjacency.offsets[u + 1]);
+
+        for (int w = 0; w < instance.n; ++w)
+        {
+            const bool bit =
+                (withMatrix.adjacency_matrix[u * row + w / 8] >> (w % 8)) & 1;
+            matrixMatches = matrixMatches && bit == (neighbours.count(w) > 0);
+        }
+    }
+
+    check(matrixMatches, "Adjacency bit matrix holds exactly the edges");
+
+    std::vector<MISVertexState> states(instance.n);
+    std::vector<int> vertices;
+    std::vector<double> values;
+
+    for (int v = 0; v < instance.n; ++v)
+    {
+        const double draw = uniform(generator);
+
+        if (draw < 0.6)
+        {
+            states[v] = MIS_VERTEX_FRACTIONAL;
+            vertices.push_back(v);
+            values.push_back(0.05 + 0.9 * uniform(generator));
+        }
+        else
+        {
+            states[v] = (draw < 0.8) ? MIS_VERTEX_FREE_LP_ZERO : MIS_VERTEX_FIXED_ZERO;
+        }
+    }
+
+    const std::vector<MISCandidateHistory> histories(vertices.size());
+
+    MISBranchingNode node;
+    node.vertex_states = states.data();
+    node.node_depth = 4;
+    node.number_of_candidates = static_cast<int>(vertices.size());
+    node.candidate_vertices = vertices.data();
+    node.candidate_lp_values = values.data();
+    node.candidate_histories = histories.data();
+    node.objective_gap = 2.0;
+
+    std::vector<double> work(MISbranchingFeatureWorkSize(instance.n));
+    std::vector<double> fast(vertices.size() * MIS_BRANCHING_FEATURE_COUNT);
+    std::vector<double> slow(fast.size());
+
+    check(
+        MIScomputeBranchingFeatures(&withMatrix, &node, work.data(), fast.data()) == 0
+        && MIScomputeBranchingFeatures(&withoutMatrix, &node, work.data(), slow.data()) == 0
+        && std::memcmp(fast.data(), slow.data(), fast.size() * sizeof(double)) == 0,
+        "Features are the same with and without the bit matrix ("
+            + std::to_string(vertices.size()) + " candidates)"
+    );
+}
+
 int main()
 {
     testAdjacency();
@@ -381,6 +466,7 @@ int main()
     testNames();
     testRejections();
     testNoCandidate();
+    testAdjacencyMatrix();
 
     if (failures > 0)
     {

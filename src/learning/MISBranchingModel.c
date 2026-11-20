@@ -269,7 +269,12 @@ void standardize(
     }
 }
 
-/* output = activation(W input + b) for one candidate. */
+/*
+ * output = activation(W input + b) for one candidate. Four outputs at a
+ * time, each summed in the same order as alone (bias first, then inputs
+ * in order): the same values to the bit, with every input read once for
+ * the four rows.
+ */
 static
 void applyDense(
     const MISBranchingModelLayer* layer,
@@ -277,10 +282,38 @@ void applyDense(
     double* output
 )
 {
+    const int inputs = layer->number_of_inputs;
     int i;
     int o;
 
-    for( o = 0; o < layer->number_of_outputs; ++o )
+    for( o = 0; o + 4 <= layer->number_of_outputs; o += 4 )
+    {
+        const double* row0 = layer->weights + (size_t)o * inputs;
+        const double* row1 = row0 + inputs;
+        const double* row2 = row1 + inputs;
+        const double* row3 = row2 + inputs;
+        double sum0 = layer->biases[o];
+        double sum1 = layer->biases[o + 1];
+        double sum2 = layer->biases[o + 2];
+        double sum3 = layer->biases[o + 3];
+
+        for( i = 0; i < inputs; ++i )
+        {
+            const double x = input[i];
+
+            sum0 += row0[i] * x;
+            sum1 += row1[i] * x;
+            sum2 += row2[i] * x;
+            sum3 += row3[i] * x;
+        }
+
+        output[o] = (layer->relu && sum0 < 0.0) ? 0.0 : sum0;
+        output[o + 1] = (layer->relu && sum1 < 0.0) ? 0.0 : sum1;
+        output[o + 2] = (layer->relu && sum2 < 0.0) ? 0.0 : sum2;
+        output[o + 3] = (layer->relu && sum3 < 0.0) ? 0.0 : sum3;
+    }
+
+    for( ; o < layer->number_of_outputs; ++o )
     {
         const double* row = layer->weights + (size_t)o * layer->number_of_inputs;
         double sum = layer->biases[o];

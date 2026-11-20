@@ -117,13 +117,22 @@ extern "C" {
  * Graph in compressed adjacency form: the neighbours of vertex v are
  * adjacency[adjacency_offsets[v]] ... adjacency[adjacency_offsets[v + 1] - 1],
  * sorted by increasing vertex id, without v itself and without duplicates.
+ *
+ * adjacency_matrix is optional (NULL for none): the same edges as a bit
+ * matrix, MIS_ADJACENCY_MATRIX_ROW_BYTES(number_of_vertices) bytes per
+ * vertex, bit (w % 8) of byte (w / 8) of row u set when u and w are
+ * adjacent. The features test adjacency in it in constant time instead
+ * of searching the lists, with the same results.
  */
 typedef struct
 {
     int number_of_vertices;
     const int* adjacency_offsets; /* number_of_vertices + 1 entries */
     const int* adjacency;
+    const unsigned char* adjacency_matrix;
 } MISFeatureGraph;
+
+#define MIS_ADJACENCY_MATRIX_ROW_BYTES(n) (((n) + 7) / 8)
 
 /*
  * One node, as the features see it.

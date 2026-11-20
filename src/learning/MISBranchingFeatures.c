@@ -128,7 +128,8 @@ int MISbranchingFeatureWorkSize(int number_of_vertices)
     return number_of_vertices > 0 ? 7 * number_of_vertices : 0;
 }
 
-/* Whether u and w are adjacent, by binary search in the sorted list of u. */
+/* Whether u and w are adjacent: in the bit matrix when the graph has one,
+ * else by binary search in the sorted list of u. */
 static
 int areAdjacent(
     const MISFeatureGraph* graph,
@@ -136,8 +137,19 @@ int areAdjacent(
     int w
 )
 {
-    int low = graph->adjacency_offsets[u];
-    int high = graph->adjacency_offsets[u + 1] - 1;
+    int low;
+    int high;
+
+    if( graph->adjacency_matrix != NULL )
+    {
+        const unsigned char* row = graph->adjacency_matrix
+            + (size_t)u * MIS_ADJACENCY_MATRIX_ROW_BYTES(graph->number_of_vertices);
+
+        return (row[w >> 3] >> (w & 7)) & 1;
+    }
+
+    low = graph->adjacency_offsets[u];
+    high = graph->adjacency_offsets[u + 1] - 1;
 
     while( low <= high )
     {
@@ -466,16 +478,20 @@ int MIScomputeBranchingFeatures(
 
                 neighbour_fractional_degree_sum +=
                     fractional_degrees[neighbour];
+            }
+        }
 
-                /* Count each edge between two fractional neighbours once. */
-                for( f = e + 1; f < last; ++f )
-                {
-                    const int other = graph->adjacency[f];
+        /* Edges between two fractional neighbours, each counted once:
+         * every pair of the list is tested, f^2 / 2 tests instead of one
+         * per fractional neighbour and neighbour. */
+        for( f = 0; f < number_of_ordered; ++f )
+        {
+            int g;
 
-                    if( vertex_states[other] == MIS_VERTEX_FRACTIONAL
-                        && areAdjacent(graph, neighbour, other) )
-                        ++triangles;
-                }
+            for( g = f + 1; g < number_of_ordered; ++g )
+            {
+                if( areAdjacent(graph, (int)ordered[f], (int)ordered[g]) )
+                    ++triangles;
             }
         }
 

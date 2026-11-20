@@ -1,6 +1,7 @@
 #include "learning/MISAdjacency.hpp"
 
 #include <algorithm>
+#include <cstddef>
 
 MISFeatureGraph MISAdjacency::view() const
 {
@@ -9,6 +10,7 @@ MISFeatureGraph MISAdjacency::view() const
     graph.number_of_vertices = numberOfVertices;
     graph.adjacency_offsets = offsets.data();
     graph.adjacency = neighbours.data();
+    graph.adjacency_matrix = matrix.empty() ? nullptr : matrix.data();
 
     return graph;
 }
@@ -51,6 +53,19 @@ MISAdjacency buildMISAdjacency(const MISInstance& instance)
             adjacency.neighbours.begin() + adjacency.offsets[v],
             adjacency.neighbours.begin() + adjacency.offsets[v + 1]
         );
+    }
+
+    if (instance.n > 0 && instance.n <= MIS_ADJACENCY_MATRIX_MAX_VERTICES)
+    {
+        const std::size_t row = MIS_ADJACENCY_MATRIX_ROW_BYTES(instance.n);
+
+        adjacency.matrix.assign(row * instance.n, 0);
+
+        for (const auto& [u, v] : instance.edges)
+        {
+            adjacency.matrix[u * row + v / 8] |= static_cast<unsigned char>(1u << (v % 8));
+            adjacency.matrix[v * row + u / 8] |= static_cast<unsigned char>(1u << (u % 8));
+        }
     }
 
     return adjacency;
