@@ -92,6 +92,7 @@ ALL_CONFIGS=(
     "oddcycle_cliquelifting default oddcycle_cliquelifting relpscost"
     "learned_study_cliquelifting study cliquelifting mislearned"
     "learned_no_node_gomory_cliquelifting default no_node_gomory_cliquelifting mislearned"
+    "learned_oddcycle_cliquelifting default oddcycle_cliquelifting mislearned"
     "study_root study root_only relpscost"
     "study_lookahead study - relpscost lookahead"
     "no_node_gomory_lookahead default no_node_gomory relpscost lookahead"

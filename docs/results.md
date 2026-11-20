@@ -313,3 +313,22 @@ With the study settings, `relpscost` takes 316 s and 388,752 nodes on G(200, 0.0
 **The learned rule with `no_node_gomory`, lifted, is the fastest configuration measured so far.** It takes 0.39 and 0.38 of the time of the study settings on the two largest sets, against 0.49 unlifted, and 0.40 to 0.56 at the smaller sizes. At the training sizes, the learned rule with the study settings, lifted, is as fast or faster (0.48 against 0.56 on G(125, 0.1)), but it falls behind as the instances grow (0.65 against 0.38 on BA(300, 8)), where cuts at the nodes pay the most. The model was trained on the edge formulation and its features were computed on it; it keeps its lead over `relpscost` after the lifting: with the study settings, lifted, it takes 0.63, 0.47, 0.80, 0.60, 0.88 and 0.87 of the time of `relpscost`, lifted, on the six sets (0.69, 0.48, 0.75, 0.63, 0.97 and 0.83 unlifted).
 
 These are single runs (SCIP seed 0). Before comparing with the figures of the literature, one would also need its density and sizes: BA with affinity 4, sparser than ours, on 500 to 1500 vertices. A test on three BA(500, 4) instances (default settings, `relpscost`) solved them in 2 to 14 s and 1 to 265 nodes with either formulation, as easy as reported there: at equal size, density makes the instances hard more than the number of vertices.
+
+### The learned rule with odd-cycle cuts
+
+On the largest sets, the fastest configuration without a learned part is `oddcycle`, lifted, which had not been run with the learned rule. `EXPERIMENT=learned_oddcycle` adds `learned_oddcycle_cliquelifting` and runs it in one session with `oddcycle_cliquelifting` and `learned_no_node_gomory_cliquelifting`, interleaved on each instance, on the six sets. Every run is solved; the two configurations made again explored the same trees as before, and their times moved by less than 1%.
+
+Ratio of the learned rule with `oddcycle`, lifted, to three configurations, time (unshifted, 95% bootstrap interval) · nodes (shifted by 100). The first column changes only the branching rule; the last one comes from other sessions:
+
+| Set | `oddcycle`, lifted (`relpscost`) | learned, `no_node_gomory`, lifted | SCIP default |
+|---|---|---|---|
+| G(125, 0.1) | 0.64 [0.59, 0.70] · 1.09 | 1.02 [0.94, 1.12] · 0.90 | 0.19 · 0.51 |
+| BA(200, 8) | 0.43 [0.39, 0.47] · 1.14 | 0.93 [0.87, 0.99] · 0.66 | 0.23 · 0.58 |
+| G(150, 0.083) | 0.66 [0.62, 0.70] · 0.82 | 0.94 [0.84, 1.07] · 0.72 | 0.22 · 0.46 |
+| BA(250, 8) | 0.47 [0.42, 0.52] · 0.85 | 0.72 [0.64, 0.80] · 0.40 | 0.20 · 0.32 |
+| G(200, 0.0625) | 0.74 [0.69, 0.81] · 0.79 | 0.83 [0.73, 0.93] · 0.61 | 0.33 · 0.38 |
+| BA(300, 8) | 0.50 [0.46, 0.56] · 0.86 | 0.69 [0.62, 0.76] · 0.37 | 0.24 · 0.27 |
+
+**In the best configuration of SCIP, replacing the branching rule alone by the learned one saves 26 to 57% of the time on every set**, about half on Barabási–Albert graphs. Its trees are slightly larger at the training sizes and smaller beyond; the gain comes mostly from cheaper nodes (no strong branching). The learned rule with `oddcycle`, lifted, is the fastest configuration measured: as fast as the learned rule with `no_node_gomory`, lifted, on the two smaller Erdős–Rényi sets, faster on the four others. With the learned rule, odd-cycle cuts at the nodes pay at every size. It takes 0.19 to 0.33 of the time of SCIP with its default settings, of which the learned branching rule accounts for a factor of 1.35 to 2.3 and the separator settings and the lifting for the rest.
+
+The configuration was chosen on the test instances; before publication, the configurations should be chosen on the validation instances (seeds 61–80) and measured once on the test instances.
