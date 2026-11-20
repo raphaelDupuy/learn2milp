@@ -21,6 +21,9 @@
 #                      in the same session (default: none)
 #   NODE_LOGS          1 to write the node log of every run (mis-benchmark
 #                      --node-log-dir) to the nodes/ folder of the results
+#   STATISTICS         1 to write SCIP's statistics of every run as JSON
+#                      (mis-benchmark --statistics-dir) to the stats/ folder
+#                      of the results, for experiments/profile/time_breakdown.py
 #
 # Runs are made one at a time; a run already made is skipped, so the script
 # resumes where it stopped and later calls can add sets or configurations.
@@ -33,6 +36,7 @@
 # Outputs:
 #   experiments/cuts/results/[EXPERIMENT/]<set>_<config>.csv   one row per run
 #   experiments/cuts/results/[EXPERIMENT/]nodes/<set>__<config>/   node logs
+#   experiments/cuts/results/[EXPERIMENT/]stats/<set>__<config>/   statistics
 #   data/logs/cuts.log                     progress, one line per run
 set -euo pipefail
 
@@ -44,6 +48,7 @@ cd "$ROOT"
 RESULTS="experiments/cuts/results${EXPERIMENT:+/$EXPERIMENT}"
 PARTS="$RESULTS/runs"
 NODES="$RESULTS/nodes"
+STATS="$RESULTS/stats"
 SETTINGS="experiments/cuts/settings"
 LOG="data/logs/cuts.log"
 BENCHMARK="$BUILD_DIR/mis-benchmark"
@@ -172,6 +177,14 @@ for entry in "${ALL_SETS[@]}"; do
                     options+=(--node-log-dir "$node_dir")
                 fi
 
+                # Likewise for the statistics, written at the end of a run.
+                if [[ "${STATISTICS:-0}" == 1 ]]; then
+                    stats_dir="$STATS/${name}__${config_name}"
+                    mkdir -p "$stats_dir"
+                    rm -f "$stats_dir/${base}__${rule}__s$seed.stats.json"
+                    options+=(--statistics-dir "$stats_dir")
+                fi
+
                 rm -f "$part.tmp"
                 read -r uptime_before _ < /proc/uptime
                 wall_before=$(date +%s.%N)
@@ -199,6 +212,7 @@ for entry in "${ALL_SETS[@]}"; do
                 # rename alone can survive with an empty file.
                 sync "$part.tmp"
                 [[ "${NODE_LOGS:-0}" == 1 ]] && sync "$node_dir/${base}__${rule}__s$seed.nodes.csv"
+                [[ "${STATISTICS:-0}" == 1 ]] && sync "$stats_dir/${base}__${rule}__s$seed.stats.json"
                 mv "$part.tmp" "$part"
 
                 made=$((made + 1))

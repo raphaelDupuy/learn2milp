@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cstdio>
 #include <cmath>
 #include <exception>
 #include <fstream>
@@ -310,6 +311,29 @@ void requireModelOfRule(
     }
 }
 
+// SCIP's statistics of the solve, as JSON (SCIPprintStatisticsJson).
+void writeStatistics(SCIP* scip, const std::filesystem::path& path)
+{
+    std::FILE* const file = std::fopen(path.string().c_str(), "w");
+
+    if (file == nullptr)
+    {
+        throw std::runtime_error(
+            "Cannot create the statistics file " + path.string() + ".");
+    }
+
+    const SCIP_RETCODE retcode = SCIPprintStatisticsJson(scip, file);
+    const bool closed = std::fclose(file) == 0;
+
+    require(retcode, "write the statistics");
+
+    if (!closed)
+    {
+        throw std::runtime_error(
+            "Cannot write the statistics file " + path.string() + ".");
+    }
+}
+
 } // namespace
 
 const char* misBenchmarkSettingsName(MISBenchmarkSettings settings)
@@ -522,6 +546,15 @@ bool benchmarkMIS(
             );
         }
 
+        if (!config.statisticsPath.empty()
+            && std::filesystem::exists(config.statisticsPath))
+        {
+            throw std::invalid_argument(
+                "Statistics file already exists: "
+                + config.statisticsPath.string()
+            );
+        }
+
         requireModelOfRule(config.branchingRule, config.learnedModelPath);
 
         // Declared before the solver: the learned rule points to them,
@@ -723,6 +756,22 @@ bool benchmarkMIS(
         );
         measured.gateSeparated = gate.separated;
         measured.gateSkipped = gate.skipped;
+
+        // The rule is not included on a graph without vertices.
+        if (learned && SCIPfindBranchrule(scip, MIS_LEARNED_RULE) != nullptr)
+        {
+            SCIP_Real featureSeconds = 0.0;
+            SCIP_Real modelSeconds = 0.0;
+            require(
+                SCIPgetMISLearnedTimes(scip, &featureSeconds, &modelSeconds),
+                "read the time of the learned rule"
+            );
+            measured.learnedFeatureSeconds = featureSeconds;
+            measured.learnedModelSeconds = modelSeconds;
+        }
+
+        if (!config.statisticsPath.empty())
+            writeStatistics(scip, config.statisticsPath);
 
         if (measured.hasSolution)
         {

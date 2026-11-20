@@ -43,3 +43,4 @@ Thumbs.db
 /experiments/cuts/results/*/runs/
 /experiments/cuts/results/nodes/
 /experiments/cuts/results/*/nodes/
+/experiments/cuts/results/*/stats/

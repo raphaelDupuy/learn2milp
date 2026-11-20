@@ -94,6 +94,20 @@ SCIP_RETCODE SCIPsetMISLearnedStrongBranching(
     int candidates
 );
 
+/*
+ * Time the learned rule spent in the current or last solve computing the
+ * features of the candidates (gathering their data included) and
+ * evaluating the model, in seconds, measured with SCIP's clocks
+ * (timing/clocktype). Strong branching on the model's first candidates is
+ * not included: SCIP counts it as strong branching. The rule must have
+ * been included.
+ */
+SCIP_RETCODE SCIPgetMISLearnedTimes(
+    SCIP* scip,
+    SCIP_Real* featureseconds,
+    SCIP_Real* modelseconds
+);
+
 #ifdef __cplusplus
 }
 #endif

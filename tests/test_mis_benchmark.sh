@@ -28,7 +28,7 @@ RESULTS="$WORK_DIR/results.csv"
 
 # One row per (instance, seed, rule), plus the header.
 head -n 1 "$RESULTS" |
-    grep -qx 'instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped'
+    grep -qx 'instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds'
 
 test "$(wc -l <"$RESULTS")" -eq 9
 test "$(grep -c ',study,relpscost,' "$RESULTS")" -eq 4
@@ -102,7 +102,34 @@ if "$BENCHMARK" \
 fi
 
 test ! -e "$WORK_DIR/relogged.csv"
-grep -q 'Node log already exists' "$WORK_DIR/relogged.stderr"
+grep -q 'File already exists' "$WORK_DIR/relogged.stderr"
+
+# SCIP's statistics of every run, as JSON, never overwritten.
+"$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --statistics-dir "$WORK_DIR/stats" \
+    --output "$WORK_DIR/stats.csv" \
+    >/dev/null
+
+for INSTANCE in erdos_renyi_n100_p0_1_seed1 erdos_renyi_n100_p0_1_seed2; do
+    python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["timing"]["solving_time"] > 0' \
+        "$WORK_DIR/stats/${INSTANCE}__relpscost__s0.stats.json"
+done
+
+if "$BENCHMARK" \
+    --instances "$WORK_DIR/instances" \
+    --rules relpscost \
+    --statistics-dir "$WORK_DIR/stats" \
+    --output "$WORK_DIR/restats.csv" \
+    >/dev/null \
+    2>"$WORK_DIR/restats.stderr"; then
+    echo "ERROR: existing statistics were overwritten" >&2
+    exit 1
+fi
+
+test ! -e "$WORK_DIR/restats.csv"
+grep -q 'File already exists' "$WORK_DIR/restats.stderr"
 
 # Existing results must not be overwritten.
 cp "$RESULTS" "$WORK_DIR/results.before"

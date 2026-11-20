@@ -26,6 +26,16 @@ typedef struct
     /* Candidates evaluated by strong branching (0: none). */
     int sbcandidates;
 
+    /*
+     * Time spent computing the features and evaluating the model: clocks
+     * of the current solve (NULL outside of it), and their totals, kept
+     * when the solve ends.
+     */
+    SCIP_CLOCK* featureclock;
+    SCIP_CLOCK* modelclock;
+    SCIP_Real featureseconds;
+    SCIP_Real modelseconds;
+
 } MISLearnedBranchruleData;
 
 /*
@@ -164,6 +174,9 @@ SCIP_RETCODE scoreCandidates(
     SCIP_Real upperbound;
     int c;
 
+    /* The feature time includes gathering the candidates' data. */
+    SCIP_CALL( SCIPstartClock(scip, data->featureclock) );
+
     /* Candidates in MIS-vertex space (x_v rather than LP column). */
     for( c = 0; c < ncands; ++c )
     {
@@ -204,10 +217,15 @@ SCIP_RETCODE scoreCandidates(
             data->graph, &node, featurework, features) != 0 )
         return SCIP_INVALIDDATA;
 
+    SCIP_CALL( SCIPstopClock(scip, data->featureclock) );
+    SCIP_CALL( SCIPstartClock(scip, data->modelclock) );
+
     if( MISevaluateBranchingModelOnNode(
             data->model, data->graph, states, ncands, vertices, features,
             modelwork, positions, scores) != 0 )
         return SCIP_INVALIDDATA;
+
+    SCIP_CALL( SCIPstopClock(scip, data->modelclock) );
 
     /* First candidate with the highest score. */
     *best = 0;
@@ -378,6 +396,11 @@ SCIP_DECL_BRANCHEXIT(branchExitMISLearned)
 
     SCIP_CALL( MISvertexMappingExit(scip, &data->mapping) );
 
+    data->featureseconds = SCIPgetClockTime(scip, data->featureclock);
+    data->modelseconds = SCIPgetClockTime(scip, data->modelclock);
+    SCIP_CALL( SCIPfreeClock(scip, &data->featureclock) );
+    SCIP_CALL( SCIPfreeClock(scip, &data->modelclock) );
+
     return SCIP_OKAY;
 }
 
@@ -390,6 +413,11 @@ SCIP_DECL_BRANCHINIT(branchInitMISLearned)
     assert(data != NULL);
 
     SCIP_CALL( MISvertexMappingInit(scip, &data->mapping) );
+
+    SCIP_CALL( SCIPcreateClock(scip, &data->featureclock) );
+    SCIP_CALL( SCIPcreateClock(scip, &data->modelclock) );
+    data->featureseconds = 0.0;
+    data->modelseconds = 0.0;
 
     return SCIP_OKAY;
 }
@@ -459,6 +487,10 @@ SCIP_RETCODE SCIPincludeBranchruleMISLearned(
     data->callback = callback;
     data->userdata = userdata;
     data->sbcandidates = 0;
+    data->featureclock = NULL;
+    data->modelclock = NULL;
+    data->featureseconds = 0.0;
+    data->modelseconds = 0.0;
 
     retcode = MISvertexMappingCreate(
         scip, &data->mapping, vertexvars, nvertices
@@ -523,6 +555,35 @@ SCIP_RETCODE SCIPsetMISLearnedStrongBranching(
     assert(data != NULL);
 
     data->sbcandidates = candidates;
+
+    return SCIP_OKAY;
+}
+
+SCIP_RETCODE SCIPgetMISLearnedTimes(
+    SCIP* scip,
+    SCIP_Real* featureseconds,
+    SCIP_Real* modelseconds
+)
+{
+    SCIP_BRANCHRULE* branchrule;
+    MISLearnedBranchruleData* data;
+
+    if( scip == NULL || featureseconds == NULL || modelseconds == NULL )
+        return SCIP_INVALIDDATA;
+
+    branchrule = SCIPfindBranchrule(scip, "mislearned");
+
+    if( branchrule == NULL )
+        return SCIP_INVALIDDATA;
+
+    data = (MISLearnedBranchruleData*)SCIPbranchruleGetData(branchrule);
+    assert(data != NULL);
+
+    /* During or right after a solve, the clocks; once it ended, the totals. */
+    *featureseconds = data->featureclock != NULL
+        ? SCIPgetClockTime(scip, data->featureclock) : data->featureseconds;
+    *modelseconds = data->modelclock != NULL
+        ? SCIPgetClockTime(scip, data->modelclock) : data->modelseconds;
 
     return SCIP_OKAY;
 }

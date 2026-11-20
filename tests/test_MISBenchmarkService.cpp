@@ -231,6 +231,18 @@ int main(int argc, char* argv[])
                 + std::to_string(learned.exploredNodes) + " nodes) " + error
         );
 
+        // Its features and model take time, within the solving time;
+        // the other rules report none.
+        check(
+            learned.learnedFeatureSeconds > 0.0
+            && learned.learnedModelSeconds > 0.0
+            && learned.learnedFeatureSeconds + learned.learnedModelSeconds
+                <= learned.solvingTimeSeconds
+            && reference.learnedFeatureSeconds == 0.0
+            && reference.learnedModelSeconds == 0.0,
+            "Learned rule reports the time of its features and model"
+        );
+
         // Strong branching on the candidates the model ranks first: on all
         // of them, the rule makes the expert's decisions.
         {

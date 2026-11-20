@@ -13,6 +13,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -26,7 +27,8 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "      [--seeds S1,S2] [--settings study|default]"
         << " [--time-limit SECONDS]\n"
         << "      [--parameters FILE] [--cut-selector NAME] [--model PATH]\n"
-        << "      [--strong-branching K] [--node-log-dir DIR]\n\n"
+        << "      [--strong-branching K] [--node-log-dir DIR]"
+        << " [--statistics-dir DIR]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -62,6 +64,11 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "                node solved (INSTANCE__RULE__sSEED.nodes.csv,\n"
         << "                never overwritten): LP bound before and after the\n"
         << "                node's cut loop, and what the loop cost\n"
+        << "  --statistics-dir\n"
+        << "                Directory where each run writes SCIP's\n"
+        << "                statistics as JSON (INSTANCE__RULE__sSEED\n"
+        << "                .stats.json, never overwritten): the time of\n"
+        << "                every part of the solver, among others\n"
         << "  -h, --help    Show this help and exit\n";
 }
 
@@ -85,6 +92,7 @@ int main(int argc, char* argv[])
     std::string parameterFile;
     std::string cutSelector;
     std::string nodeLogDirectory;
+    std::string statisticsDirectory;
     int strongBranching = 0;
 
     try
@@ -92,7 +100,8 @@ int main(int argc, char* argv[])
         const CommandLineOptions options(argc, argv, 1, {
             "--instances", "--rules", "--output", "--seeds",
             "--settings", "--parameters", "--cut-selector", "--model",
-            "--time-limit", "--strong-branching", "--node-log-dir"});
+            "--time-limit", "--strong-branching", "--node-log-dir",
+            "--statistics-dir"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -115,6 +124,9 @@ int main(int argc, char* argv[])
 
         if (options.has("--node-log-dir"))
             nodeLogDirectory = options.text("--node-log-dir");
+
+        if (options.has("--statistics-dir"))
+            statisticsDirectory = options.text("--statistics-dir");
 
         strongBranching = options.get(
             "--strong-branching", parseNonNegativeInt, strongBranching);
@@ -199,29 +211,38 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // Node log of a run, checked for every run before the first one.
-    const auto nodeLogPath = [&](
+    // Files written by every run (node logs, statistics), named after the
+    // instance, the rule and the seed, and checked before the first run.
+    const auto runFilePath = [&](
+        const std::string& directory,
+        const std::string& suffix,
         const std::filesystem::path& instancePath,
         const std::string& rule,
         unsigned int seed)
     {
-        if (nodeLogDirectory.empty())
+        if (directory.empty())
             return std::filesystem::path();
 
-        return std::filesystem::path(nodeLogDirectory)
+        return std::filesystem::path(directory)
             / (instancePath.stem().string() + "__" + rule + "__s"
-                + std::to_string(seed) + ".nodes.csv");
+                + std::to_string(seed) + suffix);
     };
 
-    if (!nodeLogDirectory.empty())
+    const std::vector<std::pair<std::string, std::string>> runFiles{
+        {nodeLogDirectory, ".nodes.csv"},
+        {statisticsDirectory, ".stats.json"}};
+
+    for (const auto& [directory, suffix] : runFiles)
     {
+        if (directory.empty())
+            continue;
+
         std::error_code error;
-        std::filesystem::create_directories(nodeLogDirectory, error);
+        std::filesystem::create_directories(directory, error);
 
         if (error)
         {
-            std::cerr << "Cannot create node log directory: "
-                      << nodeLogDirectory << '\n';
+            std::cerr << "Cannot create directory: " << directory << '\n';
             return 1;
         }
 
@@ -231,11 +252,12 @@ int main(int argc, char* argv[])
             {
                 for (const std::string& rule : rules)
                 {
-                    const auto path = nodeLogPath(instancePath, rule, seed);
+                    const auto path = runFilePath(
+                        directory, suffix, instancePath, rule, seed);
 
                     if (std::filesystem::exists(path))
                     {
-                        std::cerr << "Node log already exists: "
+                        std::cerr << "File already exists: "
                                   << path.string() << '\n';
                         return 1;
                     }
@@ -256,7 +278,8 @@ int main(int argc, char* argv[])
         << "instance,n,m,settings,rule,seed,status,solved,nodes,"
         << "lp_iterations,time_seconds,primal_bound,dual_bound,"
         << "root_first_lp_bound,root_dual_bound,cuts_applied,"
-        << "lookahead_scored,lookahead_improving,gate_separated,gate_skipped\n";
+        << "lookahead_scored,lookahead_improving,gate_separated,gate_skipped,"
+        << "features_seconds,inference_seconds\n";
 
     const std::size_t totalRuns =
         instancePaths.size() * seeds.size() * rules.size();
@@ -290,7 +313,11 @@ int main(int argc, char* argv[])
                 config.cutSelector = cutSelector;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
-                config.nodeLogPath = nodeLogPath(instancePath, rule, seed);
+                config.nodeLogPath = runFilePath(
+                    nodeLogDirectory, ".nodes.csv", instancePath, rule, seed);
+                config.statisticsPath = runFilePath(
+                    statisticsDirectory, ".stats.json", instancePath, rule,
+                    seed);
 
                 if (rule == "mislearned")
                 {
@@ -337,7 +364,9 @@ int main(int argc, char* argv[])
                     << ',' << result.lookaheadScored
                     << ',' << result.lookaheadImproving
                     << ',' << result.gateSeparated
-                    << ',' << result.gateSkipped << '\n';
+                    << ',' << result.gateSkipped
+                    << ',' << result.learnedFeatureSeconds
+                    << ',' << result.learnedModelSeconds << '\n';
                 output.flush();
 
                 if (!output)

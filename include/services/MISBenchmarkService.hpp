@@ -76,6 +76,13 @@ struct MISBenchmarkConfig
      */
     std::filesystem::path nodeLogPath;
 
+    /*
+     * JSON file to write SCIP's statistics of the run to
+     * (SCIPprintStatisticsJson): time of every part of the solver, among
+     * others. Empty for none; the file must not exist.
+     */
+    std::filesystem::path statisticsPath;
+
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.
@@ -116,6 +123,11 @@ struct MISBenchmarkResult
     // run, and nodes where it kept them off. Both 0 otherwise.
     long long gateSeparated = 0;
     long long gateSkipped = 0;
+
+    // Learned rule only: time spent computing the features and evaluating
+    // the model, in seconds (SCIPgetMISLearnedTimes()). 0 otherwise.
+    double learnedFeatureSeconds = 0.0;
+    double learnedModelSeconds = 0.0;
 
     // Vertices of the best solution found, in increasing order; empty
     // when there is no solution.
