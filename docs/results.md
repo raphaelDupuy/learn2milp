@@ -471,3 +471,23 @@ Change of the mean solving time, in seconds, from `oddcycle`, lifted, with `relp
 **The gain of the learned rule changes in nature.** On sparse graphs, it is the branching rule it replaces, nearly alone: 0.35 of the time of the best configuration of SCIP on BA(250, 6), whose node LPs barely move. On dense graphs, its trees are smaller (0.67 to 0.74 of the nodes of `relpscost` at the densest points, against 1.29 at degree 6), and half of the gain comes from the node LPs: on BA(250, 12), −14.3 s of branching rule and −14.6 s of node LPs. Between the two, the ratio to the best configuration of SCIP stays between 0.47 and 0.73. On BA(250, 4), every configuration solves the instances at the root or nearly (1 to 3 nodes, under 1 s): there is nothing to learn there, and the best configuration of SCIP brings nothing over SCIP default at degree 6 either (0.98).
 
 The density and the size thus lead to the same place: the denser or larger the graph, the less the time is in the branching decisions and the more it is in the node LPs, while the model costs more. Replacing the branching rule pays the most on sparse and small graphs; on dense and large ones, the next part to work on is the node LP, or the cost of the inference.
+
+### Cheaper features and inference
+
+A profile of the learned rule (gprof, G(150, 0.134)) put half of the time of its features and model in the adjacency tests of the triangle and clique features: a binary search in the sorted neighbour list, about 19,000 per node. Three changes, which leave every feature and every score the same to the bit:
+
+- the feature graph carries an optional adjacency bit matrix (`MISFeatureGraph::adjacency_matrix`, built by `buildMISAdjacency` up to 8,192 vertices), tested in constant time;
+- the triangles are counted over the pairs of fractional neighbours, f² / 2 tests, instead of scanning the whole neighbour list for each of them;
+- the dense layers of the model compute four outputs at a time, each summed in the same order as before.
+
+Learned rule with `oddcycle`, lifted, before and after the first and third changes, interleaved on each instance, on the first instances of five sets; the trees are the same on all 18 instances:
+
+| Set | Instances | Time (sum, s) | Features (s) | Inference (s) | Features and inference, share of the time |
+|---|---|---|---|---|---|
+| G(125, 0.1) | 5 | 12.6 → 11.9 | 0.73 → 0.30 | 0.32 → 0.14 | 8.3% → 3.7% |
+| BA(200, 8) | 5 | 9.7 → 9.5 | 0.38 → 0.14 | 0.12 → 0.05 | 5.1% → 2.0% |
+| G(150, 0.134) | 3 | 53.0 → 47.2 | 6.80 → 2.41 | 1.71 → 0.75 | 16.1% → 6.7% |
+| BA(250, 12) | 3 | 75.0 → 68.7 | 7.43 → 2.16 | 1.18 → 0.52 | 11.5% → 3.9% |
+| G(200, 0.0625) | 2 | 152.2 → 142.6 | 11.22 → 4.78 | 4.87 → 2.14 | 10.6% → 4.9% |
+
+The features cost 2.3 to 3.4 times less and the inference 2.3 times less; the solving time falls by 2 to 11%, the most on the densest sets, where the model cost the most. Counting the triangles over the pairs saves another 16 to 20% of the feature time on one instance of G(150, 0.134) and of BA(250, 12). The time profiles above were measured before these changes: the share of features and inference is now about 2 to 7% instead of 2 to 16%.
