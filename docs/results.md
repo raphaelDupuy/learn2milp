@@ -329,6 +329,82 @@ Ratio of the learned rule with `oddcycle`, lifted, to three configurations, time
 | G(200, 0.0625) | 0.74 [0.69, 0.81] · 0.79 | 0.83 [0.73, 0.93] · 0.61 | 0.33 · 0.38 |
 | BA(300, 8) | 0.50 [0.46, 0.56] · 0.86 | 0.69 [0.62, 0.76] · 0.37 | 0.24 · 0.27 |
 
-**In the best configuration of SCIP, replacing the branching rule alone by the learned one saves 26 to 57% of the time on every set**, about half on Barabási–Albert graphs. Its trees are slightly larger at the training sizes and smaller beyond; the gain comes mostly from cheaper nodes (no strong branching). The learned rule with `oddcycle`, lifted, is the fastest configuration measured: as fast as the learned rule with `no_node_gomory`, lifted, on the two smaller Erdős–Rényi sets, faster on the four others. With the learned rule, odd-cycle cuts at the nodes pay at every size. It takes 0.19 to 0.33 of the time of SCIP with its default settings, of which the learned branching rule accounts for a factor of 1.35 to 2.3 and the separator settings and the lifting for the rest.
+**In the best configuration of SCIP, replacing the branching rule alone by the learned one saves 26 to 57% of the time on every set**, about half on Barabási–Albert graphs. Its trees are slightly larger at the training sizes and smaller beyond. The gain comes from cheaper nodes (no strong branching) on Barabási–Albert graphs and at the training sizes, but from the smaller tree on G(200, 0.0625) (see [Where the time goes](#where-the-time-goes)). The learned rule with `oddcycle`, lifted, is the fastest configuration measured: as fast as the learned rule with `no_node_gomory`, lifted, on the two smaller Erdős–Rényi sets, faster on the four others. With the learned rule, odd-cycle cuts at the nodes pay at every size. It takes 0.19 to 0.33 of the time of SCIP with its default settings, of which the learned branching rule accounts for a factor of 1.35 to 2.3 and the separator settings and the lifting for the rest.
 
 The configuration was chosen on the test instances; before publication, the configurations should be chosen on the validation instances (seeds 61–80) and measured once on the test instances.
+
+## Where the time goes
+
+The ratios above say how much faster a configuration is, not where its time goes. `mis-benchmark --statistics-dir DIR` writes SCIP's statistics of every run as JSON (`SCIPprintStatisticsJson`), and the learned rule measures the time it spends computing features and evaluating its model (columns `features_seconds` and `inference_seconds`). The experiment runs three configurations, interleaved on each instance, in one session with nothing else running on the machine, on the six sets:
+
+    EXPERIMENT=time_profile STATISTICS=1 TIME_LIMIT=3600 \
+    SETS=er125,ba200,er150,ba250,er200,ba300 \
+    CONFIGS=default,oddcycle_cliquelifting,learned_oddcycle_cliquelifting \
+        bash experiments/cuts/run_ablation.sh
+
+The three configurations are SCIP default, `oddcycle`, lifted (the fastest configuration of SCIP) and the learned rule with `oddcycle`, lifted (the same, with the learned branching rule). All 240 runs are solved. `experiments/profile/time_breakdown.py` splits the solving time of each run into parts that do not overlap and writes them to `time_breakdown.csv`:
+
+- **LP**: LP solves of the nodes (first LP and resolves of the cut loop);
+- **SB**: LP solves of strong branching, and the check of the solutions it finds;
+- **branching**: the rest of the branching rule (scores, pseudo-costs);
+- **ML**: features and inference of the learned rule;
+- **Gomory**, **other cuts**: the separators (odd-cycle, zero-half, aggregation, clique, cut pool), the separation of the constraint handlers and the cut selector;
+- **heuristics**: primal heuristics, their diving LPs included;
+- **rest**: presolve (the lifting included), propagation, conflict analysis and the time no part accounts for, at most 5.2%.
+
+Share of each part in the solving time, in % (mean over the instances of the per-instance shares), and mean solving time:
+
+| Set | Configuration | Time (s) | LP | SB | Gomory | other cuts | ML | heuristics | branching | rest |
+|---|---|---|---|---|---|---|---|---|---|---|
+| G(125, 0.1) | SCIP default | 9.9 | 15 | 11 | 58 | 7 | – | 4 | 2 | 3 |
+|  | `oddcycle`, lifted | 3.5 | 24 | 41 | 5 | 17 | – | 5 | 4 | 5 |
+|  | learned, `oddcycle`, lifted | 2.3 | 34 | – | 7 | 24 | 8 | 21 | 0.1 | 6 |
+| BA(200, 8) | SCIP default | 10.8 | 14 | 33 | 39 | 5 | – | 3 | 4 | 2 |
+|  | `oddcycle`, lifted | 5.4 | 14 | 62 | 6 | 9 | – | 2 | 3 | 3 |
+|  | learned, `oddcycle`, lifted | 2.4 | 34 | – | 14 | 20 | 6 | 19 | – | 7 |
+| G(150, 0.083) | SCIP default | 30.1 | 21 | 6 | 56 | 7 | – | 5 | 1 | 3 |
+|  | `oddcycle`, lifted | 10.3 | 40 | 21 | 2 | 19 | – | 9 | 3 | 5 |
+|  | learned, `oddcycle`, lifted | 6.6 | 46 | – | 3 | 22 | 9 | 14 | 0.1 | 6 |
+| BA(250, 8) | SCIP default | 31.4 | 27 | 20 | 39 | 6 | – | 3 | 3 | 3 |
+|  | `oddcycle`, lifted | 13.4 | 33 | 45 | 3 | 11 | – | 3 | 2 | 3 |
+|  | learned, `oddcycle`, lifted | 6.6 | 52 | – | 7 | 14 | 7 | 15 | – | 5 |
+| G(200, 0.0625) | SCIP default | 394.2 | 48 | 4 | 31 | 5 | – | 4 | 2 | 6 |
+|  | `oddcycle`, lifted | 180.0 | 69 | 8 | 0.2 | 9 | – | 6 | 2 | 6 |
+|  | learned, `oddcycle`, lifted | 130.4 | 69 | – | 0.2 | 9 | 11 | 5 | 0.1 | 6 |
+| BA(300, 8) | SCIP default | 79.5 | 41 | 16 | 28 | 6 | – | 4 | 2 | 3 |
+|  | `oddcycle`, lifted | 39.9 | 45 | 36 | 1 | 11 | – | 3 | 2 | 2 |
+|  | learned, `oddcycle`, lifted | 20.1 | 65 | – | 3 | 11 | 7 | 11 | – | 4 |
+
+**The part that dominates the time is not the same in every configuration and at every size.** In SCIP default, it is Gomory cuts at the nodes (56 to 58% on the two smaller Erdős–Rényi sets), whose share falls as the instances grow while the node LPs take over (15 → 48% on Erdős–Rényi graphs). Once node Gomory cuts are off, strong branching dominates at the training sizes (41% on G(125, 0.1), 62% on BA(200, 8)); its share falls quickly with the size on Erdős–Rényi graphs (8% on G(200, 0.0625), where the node LPs take 69%) and slowly on Barabási–Albert graphs (36% on BA(300, 8)). The learned rule removes strong branching and the rest of the branching rule, for 6 to 11% of its time in features and inference.
+
+**The parts the learned rule does not touch have different shares in the two lifted `oddcycle` configurations, for three reasons.**
+
+1. *The shares are taken over a smaller total.* Removing strong branching shrinks the solving time, so the same seconds weigh more. On BA(200, 8), the node LPs take 1.00 and 0.94 s, Gomory 0.27 s in both, the other cuts 0.54 and 0.48 s: nearly the same seconds, but shares that double (14 → 34%, 6 → 14%, 9 → 20%) because the mean time falls from 5.4 to 2.4 s.
+2. *The tree is not the same.* The learned rule branches on other variables and explores another number of nodes. An LP costs nearly the same per node with either rule (1 to 13% less with the learned rule), so the time of the node LPs follows the number of nodes.
+3. *One heuristic runs more often.* On the five sets other than G(200, 0.0625), distribution diving runs 1.9 to 6.6 times per instance with the learned rule against 0 to 3.9 with `relpscost`, and its dives last longer: 0.13 to 0.29 s per instance against at most 0.02 s. That is most of the increase of the heuristics' time on the smaller sets (0.15 of 0.26 s on G(125, 0.1)); their share rises to 15 to 21% mostly because the total is smaller. On G(200, 0.0625), it runs as often with both rules. SCIP calls it at the end of a plunge, at some depths only (frequency 10, offset 3), which depends on the shape of the tree; this cause is not checked. In the runs looked at, its dives found solutions but never the best one.
+
+Mean per instance, with `relpscost` → with the learned rule (both `oddcycle`, lifted):
+
+| Set | Nodes | LP time per node (ms) | Node LPs (s) | Distribution diving calls | Distribution diving (s) |
+|---|---|---|---|---|---|
+| G(125, 0.1) | 826 → 821 | 1.06 → 0.96 | 0.9 → 0.8 | 0.5 → 4.3 | 0.00 → 0.15 |
+| BA(200, 8) | 338 → 323 | 2.95 → 2.90 | 1.0 → 0.9 | 0.0 → 1.9 | 0.00 → 0.13 |
+| G(150, 0.083) | 2,972 → 2,290 | 1.44 → 1.36 | 4.3 → 3.1 | 3.9 → 6.6 | 0.02 → 0.23 |
+| BA(250, 8) | 1,041 → 834 | 4.72 → 4.43 | 4.9 → 3.7 | 0.2 → 2.4 | 0.00 → 0.21 |
+| G(200, 0.0625) | 72,372 → 51,436 | 1.80 → 1.78 | 130.5 → 91.4 | 21.3 → 21.1 | 0.27 → 0.57 |
+| BA(300, 8) | 2,509 → 1,967 | 7.97 → 6.93 | 20.0 → 13.6 | 0.7 → 3.1 | 0.02 → 0.29 |
+
+**Where the learned rule saves time.** Change of the mean solving time, in seconds, from `oddcycle`, lifted, with `relpscost` to the same with the learned rule (ratio of the means in parentheses); the branching rule column is strong branching and the rest of `relpscost` against the rest of the learned rule:
+
+| Set | Total | Branching rule | Features and inference | Node LPs | Heuristics | Other parts |
+|---|---|---|---|---|---|---|
+| G(125, 0.1) | −1.23 (0.65) | −1.49 | +0.18 | −0.09 | +0.26 | −0.09 |
+| BA(200, 8) | −2.96 (0.45) | −3.25 | +0.16 | −0.06 | +0.28 | −0.09 |
+| G(150, 0.083) | −3.65 (0.64) | −2.27 | +0.60 | −1.15 | −0.08 | −0.75 |
+| BA(250, 8) | −6.74 (0.50) | −5.78 | +0.48 | −1.22 | +0.47 | −0.70 |
+| G(200, 0.0625) | −49.6 (0.72) | −13.9 | +15.3 | −39.1 | −5.09 | −6.88 |
+| BA(300, 8) | −19.8 (0.50) | −12.9 | +1.49 | −6.37 | +0.46 | −2.54 |
+
+At the training sizes and on every Barabási–Albert set, the gain is the strong branching that the model replaces, for a tenth of its cost. On G(200, 0.0625), the model costs more than the strong branching it replaces (15.3 against 13.9 s): the whole gain comes from the smaller tree, 29% fewer nodes and 39 s less of node LPs. Replacing the same part by a learned one is therefore not worth the same everywhere: on the largest Erdős–Rényi graphs, the part to work on is the node LPs, or the cost of the inference, not the cost of the branching decisions.
+
+These are single runs (SCIP seed 0). The three Erdős–Rényi sets have the same mean degree (about 12.4) and the three Barabási–Albert sets the same k = 8: only the size and the family change here, not the density.
