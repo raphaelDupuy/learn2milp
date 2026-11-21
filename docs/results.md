@@ -548,3 +548,22 @@ Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100)
 
 **A better imitation would gain little here.** The expert without its pruning, the tree of a perfect imitation, has 0 to 16% fewer nodes than the learned rule, against 42% on Erdős–Rényi in the study settings: the cuts at the nodes and the lifted formulation shrink what separates the two rules. Retraining the model in the deployed settings, which needs a new collection, would gain at most about 10% of the nodes, less in time. The expert's lead now lies in its pruning (25 to 40% of the nodes), which only strong branching can recover.
 
+### Strong branching on the model's first candidates, in the deployed settings
+
+[Strong branching on the model's first candidates](#strong-branching-on-the-models-first-candidates) did not pay in the study settings. In the deployed settings, where the expert's lead lies in its pruning, `EXPERIMENT=strong_branching` tries it again: the learned rule with strong branching on its first K = 1 and K = 2 candidates (`learned_sb1_…`, `learned_sb2_oddcycle_cliquelifting_nogomory`; `run_ablation.sh` takes K as the sixth field of a configuration), against the learned rule alone and `relpscost`, all with `oddcycle`, lifted, without Gomory cuts, in one session, interleaved on each instance, test instances, SCIP seed 0. All 400 runs are solved.
+
+Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100):
+
+| Set | K = 1 / learned | K = 2 / learned | K = 1 / `relpscost` | learned / `relpscost` |
+|---|---|---|---|---|
+| G(150, 0.040) | 1.22 [1.11, 1.34] · 0.91 | 1.52 [1.42, 1.66] · 0.94 | 0.36 [0.31, 0.41] · 1.13 | 0.29 [0.25, 0.35] · 1.24 |
+| G(150, 0.054) | 1.32 [1.15, 1.49] · 0.83 | 1.65 [1.41, 1.90] · 0.77 | 0.62 [0.49, 0.73] · 1.11 | 0.47 [0.42, 0.53] · 1.35 |
+| BA(250, 6) | 1.38 [1.24, 1.57] · 0.94 | 1.54 [1.31, 1.86] · 0.88 | 0.36 [0.28, 0.50] · 1.06 | 0.26 [0.20, 0.38] · 1.13 |
+| G(125, 0.1) | 1.28 [1.23, 1.35] · 0.73 | 1.58 [1.45, 1.71] · 0.65 | 0.62 [0.57, 0.68] · 0.67 | 0.48 [0.45, 0.52] · 0.91 |
+| BA(200, 8) | 1.39 [1.23, 1.58] · 0.85 | 1.55 [1.40, 1.71] · 0.71 | 0.48 [0.44, 0.53] · 1.03 | 0.35 [0.32, 0.38] · 1.22 |
+| G(150, 0.083) | 1.37 [1.24, 1.54] · 0.71 | 1.69 [1.55, 1.86] · 0.60 | 0.86 [0.75, 0.97] · 0.63 | 0.63 [0.56, 0.71] · 0.89 |
+| BA(250, 8) | 1.50 [1.37, 1.63] · 0.76 | 1.97 [1.69, 2.25] · 0.66 | 0.64 [0.54, 0.75] · 0.65 | 0.42 [0.37, 0.49] · 0.86 |
+| BA(300, 8) | 1.65 [1.49, 1.85] · 0.73 | 2.34 [2.08, 2.64] · 0.68 | 0.70 [0.63, 0.79] · 0.61 | 0.43 [0.39, 0.47] · 0.84 |
+
+**Strong branching recovers the expert's pruning, but costs more than it saves.** With K = 2, the trees come down to those of the expert (shifted geometric means of 443, 141, 1,321 and 433 nodes on G(125, 0.1), BA(200, 8), G(150, 0.083) and BA(250, 8), against 430, 168, 1,280 and 407 for the expert in the [headroom](#headroom-of-imitation-in-the-deployed-settings) runs), yet the time rises by 1.5 to 2.3 times; with K = 1, the trees are 6 to 29% smaller and the time 1.2 to 1.7 times longer, the more so on the larger sets. The learned rule alone stays the fastest configuration everywhere, as in the study settings. With the expert's tree within reach of an imitation (0 to 16% of the nodes) and its pruning too dear, the branching decisions are no longer what limits the solving time in these settings: the node LPs are.
+

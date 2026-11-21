@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,984,72734,2.86014,41,41,51.1789,49.3499,1562,0,0,0,0,0.067515,0.035695
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1755,121531,4.42358,42,42,53.2857,51.9108,2833,0,0,0,0,0.11058,0.061727
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,4158,217480,7.50834,40,40,51.0906,49.6624,4620,0,0,0,0,0.236369,0.133386
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2922,188691,6.81458,40,40,51.9496,50.5212,4068,0,0,0,0,0.184564,0.099634
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,3774,232591,8.54271,40,40,51.6466,50.2624,5489,0,0,0,0,0.235148,0.12547
+erdos_renyi_n150_p0_083_seed86.mis,150,969,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2985,188941,6.63763,40,40,52.739,51.2864,4284,0,0,0,0,0.191311,0.102231
+erdos_renyi_n150_p0_083_seed87.mis,150,875,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1390,110426,3.89824,43,43,53.8308,50.9065,2368,0,0,0,0,0.090427,0.051811
+erdos_renyi_n150_p0_083_seed88.mis,150,935,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2554,153871,5.39186,41,41,52.304,51.2766,3735,0,0,0,0,0.159855,0.085854
+erdos_renyi_n150_p0_083_seed89.mis,150,916,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2893,166171,5.83838,41,41,51.938,50.7274,4086,0,0,0,0,0.170019,0.095375
+erdos_renyi_n150_p0_083_seed90.mis,150,868,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1297,108607,4.29103,43,43,53.6718,51.547,3006,0,0,0,0,0.084837,0.046243

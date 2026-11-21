@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,691,68935,4.84627,41,41,51.1789,49.3499,1416,0,0,0,0,0.070848,0.037408
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1051,97934,7.13994,42,42,53.2857,51.9108,2578,0,0,0,0,0.100125,0.055895
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1438,140390,9.72486,40,40,51.0906,49.6624,3427,0,0,0,0,0.139737,0.0756
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2248,218170,15.7262,40,40,51.9496,50.5212,6385,0,0,0,0,0.205991,0.11241
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1764,183648,12.9443,40,40,51.6466,50.2624,4347,0,0,0,0,0.17465,0.090922
+erdos_renyi_n150_p0_083_seed86.mis,150,969,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1911,176814,12.3155,40,40,52.739,51.2864,4545,0,0,0,0,0.179942,0.096822
+erdos_renyi_n150_p0_083_seed87.mis,150,875,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,817,95294,6.41209,43,43,53.8308,50.9065,2715,0,0,0,0,0.079227,0.043897
+erdos_renyi_n150_p0_083_seed88.mis,150,935,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1451,138090,9.60582,41,41,52.304,51.2766,3997,0,0,0,0,0.13783,0.075252
+erdos_renyi_n150_p0_083_seed89.mis,150,916,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1911,153185,10.7873,41,41,51.938,50.7274,4177,0,0,0,0,0.162378,0.092306
+erdos_renyi_n150_p0_083_seed90.mis,150,868,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,851,95396,6.62465,43,43,53.6718,51.547,2142,0,0,0,0,0.081727,0.046328

@@ -98,7 +98,8 @@ ALL_SETS=(
 )
 
 # Configurations: name, preset, parameter file (- for none), rule, cut
-# selector (- or omitted: SCIP's own).
+# selector (- or omitted: SCIP's own), candidates of the learned rule
+# evaluated by strong branching (omitted: none).
 ALL_CONFIGS=(
     "study study - relpscost"
     "default default - relpscost"
@@ -130,6 +131,10 @@ ALL_CONFIGS=(
     "learned_oddcycle_cliquelifting_nodive default oddcycle_cliquelifting_nodive mislearned"
     "learned_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned"
     "learned_oddcycle_cliquelifting_nodive_nogomory default oddcycle_cliquelifting_nodive_nogomory mislearned"
+    # Strong branching on the first K candidates of the model, which can
+    # prune like the expert.
+    "learned_sb1_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned - 1"
+    "learned_sb2_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned - 2"
     # The expert in the deployed settings, for the headroom of the learned
     # rule: with and without its strong branching pruning.
     "fullstrong_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory misfullstrong"
@@ -202,7 +207,7 @@ for entry in "${ALL_SETS[@]}"; do
         [[ -e "$instance.meta" ]] && ln -sf "$ROOT/$instance.meta" "$single/"
 
         for config in "${ALL_CONFIGS[@]}"; do
-            read -r config_name preset parameters rule selector <<< "$config"
+            read -r config_name preset parameters rule selector strong <<< "$config"
             selected "$config_name" "$SELECTED_CONFIGS" || continue
 
             for seed in ${SEEDS//,/ }; do
@@ -214,6 +219,7 @@ for entry in "${ALL_SETS[@]}"; do
                 [[ "$parameters" != - ]] && options+=(--parameters "$SETTINGS/$parameters.set")
                 [[ "$rule" == mislearned ]] && options+=(--model "$model")
                 [[ "${selector:--}" != - ]] && options+=(--cut-selector "$selector")
+                [[ -n "${strong:-}" ]] && options+=(--strong-branching "$strong")
 
                 # The node log of a run that was not completed is stale.
                 if [[ "${NODE_LOGS:-0}" == 1 ]]; then

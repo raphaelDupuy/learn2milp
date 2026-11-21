@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_04_seed81.mis,150,458,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,30,3167,0.222494,60,60,66.5,62.7361,75,0,0,0,0,0.001775,0.001484
+erdos_renyi_n150_p0_04_seed82.mis,150,422,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,51,4910,0.293671,61,61,68,64.6667,81,0,0,0,0,0.003194,0.002801
+erdos_renyi_n150_p0_04_seed83.mis,150,472,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,143,9298,0.612971,57,57,65.5,61.9364,231,0,0,0,0,0.007992,0.006879
+erdos_renyi_n150_p0_04_seed84.mis,150,436,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,86,7552,0.44708,60,60,69.5,60,111,0,0,0,0,0.005963,0.005235
+erdos_renyi_n150_p0_04_seed85.mis,150,454,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,92,6638,0.450874,58,58,65.25,61.3645,158,0,0,0,0,0.004602,0.004226
+erdos_renyi_n150_p0_04_seed86.mis,150,451,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,87,8386,0.487134,60,60,70,64.5388,173,0,0,0,0,0.005109,0.004436
+erdos_renyi_n150_p0_04_seed87.mis,150,412,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,20,2793,0.218505,64,64,70,65.328,99,0,0,0,0,0.001195,0.001
+erdos_renyi_n150_p0_04_seed88.mis,150,429,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,36,2910,0.218909,62,62,67.5,64.1055,86,0,0,0,0,0.002032,0.001847
+erdos_renyi_n150_p0_04_seed89.mis,150,433,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,40,2770,0.236155,62,62,68.5,64.4054,86,0,0,0,0,0.002216,0.001877
+erdos_renyi_n150_p0_04_seed90.mis,150,418,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,43,3033,0.247964,62,62,68.5,63.9457,94,0,0,0,0,0.00257,0.002418
