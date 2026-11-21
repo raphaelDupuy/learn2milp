@@ -513,4 +513,38 @@ Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100)
 
 **At equal settings, the learned rule keeps or widens its lead:** without Gomory cuts and distribution diving for both rules, it takes 0.26 to 0.61 of the time of `relpscost`, against 0.35 to 0.62 with Gomory cuts. The learned rule, without both, takes 0.18 to 0.54 of the time of `oddcycle`, lifted, with `relpscost`, the previous best configuration of SCIP.
 
-The two sessions are 40 minutes apart; the settings were chosen on the test instances, like the earlier ones, and should be confirmed on the validation instances.
+The two sessions are 40 minutes apart; the settings were chosen on the test instances, like the earlier ones; the validation instances below confirm them.
+
+### On the validation instances
+
+Every setting of the last sections (lifting, `oddcycle`, Gomory cuts off) was chosen on the test instances. `EXPERIMENT=validation` runs them again on instances never used for a choice: the validation instances of the training sizes (seeds 61 to 80) and, for the other sets, ten new instances of seeds 61 to 70 (`mis-generator batch`, in `data/instances/validation/`), with `oddcycle`, lifted, lifted without Gomory cuts, each with `relpscost` and with the learned rule (`learned_oddcycle` is new), in one session, interleaved on each instance, SCIP seed 0, time limit 3,600 s. All 600 runs are solved.
+
+Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100); "learned, tuned" is the learned rule with `oddcycle`, lifted, without Gomory cuts:
+
+| Set | `relpscost`, lifted / not lifted | learned, lifted / not lifted | learned, without Gomory / with | learned / `relpscost`, both without Gomory | learned, tuned / `relpscost` with `oddcycle`, lifted |
+|---|---|---|---|---|---|
+| G(125, 0.1) | 0.91 [0.85, 0.97] · 0.70 | 0.79 [0.72, 0.85] · 0.72 | 0.84 [0.76, 0.93] · 1.26 | 0.50 [0.42, 0.59] · 1.10 | 0.44 [0.37, 0.52] · 1.15 |
+| BA(200, 8) | 0.76 [0.70, 0.81] · 0.69 | 0.76 [0.72, 0.82] · 0.86 | 0.69 [0.60, 0.77] · 0.98 | 0.29 [0.26, 0.33] · 1.05 | 0.28 [0.24, 0.32] · 1.24 |
+| G(150, 0.054) | 0.95 [0.89, 1.01] · 0.89 | 0.93 [0.85, 1.01] · 0.82 | 0.66 [0.53, 0.79] · 1.09 | 0.38 [0.30, 0.47] · 1.14 | 0.33 [0.25, 0.41] · 1.14 |
+| BA(250, 6) | 0.83 [0.72, 0.94] · 0.89 | 0.86 [0.75, 0.98] · 0.81 | 0.54 [0.43, 0.65] · 1.01 | 0.27 [0.24, 0.34] · 1.01 | 0.22 [0.18, 0.27] · 0.99 |
+| G(150, 0.083) | 0.84 [0.73, 0.95] · 0.77 | 0.75 [0.67, 0.83] · 0.82 | 0.86 [0.81, 0.90] · 0.95 | 0.55 [0.51, 0.60] · 0.83 | 0.52 [0.48, 0.56] · 0.85 |
+| BA(250, 8) | 0.80 [0.74, 0.87] · 0.79 | 0.77 [0.72, 0.83] · 0.81 | 0.78 [0.67, 0.89] · 1.00 | 0.34 [0.29, 0.40] · 0.90 | 0.34 [0.27, 0.42] · 1.00 |
+| BA(300, 8) | 0.88 [0.77, 1.02] · 0.87 | 0.80 [0.70, 0.91] · 1.02 | 0.95 [0.85, 1.06] · 0.98 | 0.49 [0.40, 0.62] · 0.85 | 0.45 [0.35, 0.64] · 0.82 |
+| G(200, 0.0625) | 0.90 [0.81, 0.99] · 0.99 | 0.78 [0.71, 0.87] · 0.84 | 1.04 [0.98, 1.12] · 1.07 | 0.74 [0.66, 0.83] · 0.83 | 0.61 [0.55, 0.69] · 0.69 |
+
+**The choices hold on fresh instances.** Lifting speeds up both rules on every set (0.75 to 0.95 of the time, significant on 13 of 16 pairs). Without Gomory cuts, the learned rule is faster on six sets of eight (0.54 to 0.86), and no slower on BA(300, 8) and G(200, 0.0625), where the test showed no gain either; the trees change more than on the test (26% more nodes on G(125, 0.1), still 16% less time). At equal settings, the learned rule takes 0.27 to 0.74 of the time of `relpscost`; tuned, it takes 0.22 to 0.61 of the time of the best configuration of SCIP, with a lead that shrinks with the size as on the test. The selection on the test instances did not inflate the gains.
+
+### Headroom of imitation in the deployed settings
+
+[How far imitation can go](#how-far-imitation-can-go) measured the expert in the study settings. In the deployed settings (`oddcycle`, lifted, without Gomory cuts), `EXPERIMENT=headroom` runs the expert with and without its pruning against the learned rule (configurations `fullstrong_oddcycle_cliquelifting_nogomory`, `fullstrong_nocutoff_oddcycle_cliquelifting_nogomory`), on the test instances, SCIP seed 0. All 210 runs are solved; only the nodes count here (the expert takes 40 to 120 s per instance).
+
+| Test set, nodes (shifted geometric mean) | learned | expert | expert without pruning | without pruning / learned |
+|---|---|---|---|---|
+| G(125, 0.1) | 735 | 430 | 649 | 0.90 [0.82, 0.98] |
+| BA(200, 8) | 241 | 168 | 244 | 1.01 [0.91, 1.12] |
+| G(150, 0.054) | 401 | 231 | 343 | 0.88 [0.76, 1.05] |
+| G(150, 0.083) | 2,249 | 1,280 | 1,998 | 0.89 [0.77, 1.04] |
+| BA(250, 8) | 710 | 407 | 582 | 0.84 [0.77, 0.91] |
+
+**A better imitation would gain little here.** The expert without its pruning, the tree of a perfect imitation, has 0 to 16% fewer nodes than the learned rule, against 42% on Erdős–Rényi in the study settings: the cuts at the nodes and the lifted formulation shrink what separates the two rules. Retraining the model in the deployed settings, which needs a new collection, would gain at most about 10% of the nodes, less in time. The expert's lead now lies in its pruning (25 to 40% of the nodes), which only strong branching can recover.
+

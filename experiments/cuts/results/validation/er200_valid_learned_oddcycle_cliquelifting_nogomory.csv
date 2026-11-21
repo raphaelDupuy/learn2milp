@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n200_p0_0625_seed61.mis,200,1281,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,73617,4611779,156.189,53,53,70.1154,68.2719,44778,0,0,0,0,5.59355,3.06173
+erdos_renyi_n200_p0_0625_seed62.mis,200,1224,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,59624,3840040,133.671,54,54,70.8412,68.7373,39835,0,0,0,0,4.55969,2.53516
+erdos_renyi_n200_p0_0625_seed63.mis,200,1240,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,29862,2133476,76.3614,55,55,71.6354,69.3506,25489,0,0,0,0,2.38005,1.30761
+erdos_renyi_n200_p0_0625_seed64.mis,200,1211,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,8040,850484,34.2487,58,58,74.0294,70.7129,17701,0,0,0,0,0.756382,0.39115
+erdos_renyi_n200_p0_0625_seed65.mis,200,1275,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,51347,3343994,118.647,54,54,70.9413,68.653,32870,0,0,0,0,4.01115,2.18359
+erdos_renyi_n200_p0_0625_seed66.mis,200,1247,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,13505,1234378,46.4595,56,56,71.3383,69.1062,20677,0,0,0,0,1.20096,0.62719
+erdos_renyi_n200_p0_0625_seed67.mis,200,1230,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,38053,2974477,104.649,55,55,72.2936,69.6159,34103,0,0,0,0,3.0904,1.68436
+erdos_renyi_n200_p0_0625_seed68.mis,200,1257,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,13885,1192010,44.0381,56,56,71.1119,69.555,17604,0,0,0,0,1.23911,0.634156
+erdos_renyi_n200_p0_0625_seed69.mis,200,1220,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,39466,2734071,96.0406,56,56,72.3837,69.5118,25712,0,0,0,0,3.04836,1.69056
+erdos_renyi_n200_p0_0625_seed70.mis,200,1227,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,56087,4152268,143.552,55,55,73.1958,70.4355,40019,0,0,0,0,4.34625,2.42085

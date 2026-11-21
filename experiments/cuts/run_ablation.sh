@@ -83,6 +83,18 @@ ALL_SETS=(
     "ba250_k6 data/instances/density/ba250_k6 $BA_MLP"
     "ba250_k10 data/instances/density/ba250_k10 $BA_MLP"
     "ba250_k12 data/instances/density/ba250_k12 $BA_MLP"
+    # Validation instances, to check on fresh instances the settings chosen
+    # on the test sets: seeds 61-80 of the training sizes, and seeds 61-70
+    # (mis-generator batch) of the other sets. G(200) comes last, as it
+    # takes most of the time.
+    "er125_valid data/instances/er125_p01/valid $ER_MLP"
+    "ba200_valid data/instances/ba200_k8/valid $BA_MLP"
+    "er150_d8_valid data/instances/validation/er150_p0054 $ER_MLP"
+    "ba250_k6_valid data/instances/validation/ba250_k6 $BA_MLP"
+    "er150_valid data/instances/validation/er150_p0083 $ER_MLP"
+    "ba250_valid data/instances/validation/ba250_k8 $BA_MLP"
+    "ba300_valid data/instances/validation/ba300_k8 $BA_MLP"
+    "er200_valid data/instances/validation/er200_p00625 $ER_MLP"
 )
 
 # Configurations: name, preset, parameter file (- for none), rule, cut
@@ -105,6 +117,7 @@ ALL_CONFIGS=(
     "zerohalf_local_every_node default zerohalf_local_every_node relpscost"
     "learned_study study - mislearned"
     "learned_no_node_gomory default no_node_gomory mislearned"
+    "learned_oddcycle default oddcycle mislearned"
     "study_cliquelifting study cliquelifting relpscost"
     "no_node_gomory_cliquelifting default no_node_gomory_cliquelifting relpscost"
     "oddcycle_cliquelifting default oddcycle_cliquelifting relpscost"
@@ -117,6 +130,10 @@ ALL_CONFIGS=(
     "learned_oddcycle_cliquelifting_nodive default oddcycle_cliquelifting_nodive mislearned"
     "learned_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned"
     "learned_oddcycle_cliquelifting_nodive_nogomory default oddcycle_cliquelifting_nodive_nogomory mislearned"
+    # The expert in the deployed settings, for the headroom of the learned
+    # rule: with and without its strong branching pruning.
+    "fullstrong_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory misfullstrong"
+    "fullstrong_nocutoff_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory misfullstrong_nocutoff"
     "study_root study root_only relpscost"
     "study_lookahead study - relpscost lookahead"
     "no_node_gomory_lookahead default no_node_gomory relpscost lookahead"

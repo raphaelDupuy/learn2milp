@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n300_k8_seed61.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1628,320548,18.0984,100,100,118,110.944,4221,0,0,0,0,0.364009,0.127205
+barabasi_albert_n300_k8_seed62.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,893,171142,9.31766,100,100,114.71,109.531,1633,0,0,0,0,0.196403,0.072165
+barabasi_albert_n300_k8_seed63.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1149,225333,12.4178,101,101,116.852,110.553,2491,0,0,0,0,0.259081,0.091134
+barabasi_albert_n300_k8_seed64.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,110157,12030220,599.214,91,91,113.127,91,116263,0,0,0,0,16.4973,7.48512
+barabasi_albert_n300_k8_seed65.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2710,557677,29.51,96,96,114.169,108.514,7584,0,0,0,0,0.607157,0.206104
+barabasi_albert_n300_k8_seed66.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1889,299338,15.1769,99,99,114.912,99,3195,0,0,0,0,0.391598,0.144722
+barabasi_albert_n300_k8_seed67.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1061,174361,9.39819,103,103,117.81,111.754,1554,0,0,0,0,0.223215,0.082096
+barabasi_albert_n300_k8_seed68.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,2690,494963,24.7794,97,97,115.25,109.392,5395,0,0,0,0,0.52967,0.201201
+barabasi_albert_n300_k8_seed69.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,616,136235,7.41259,102,102,117.771,110.558,1467,0,0,0,0,0.141278,0.049527
+barabasi_albert_n300_k8_seed70.mis,300,2336,default+oddcycle_cliquelifting_nogomory,mislearned,0,OPTIMAL,1,1903,335133,18.0225,99,99,116.848,110.839,3433,0,0,0,0,0.396008,0.145799
