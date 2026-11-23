@@ -35,7 +35,7 @@ A later direction is to compare policies trained to imitate local solver decisio
 | [Data formats](docs/data-format.md) | instances, strong branching samples, training tables, benchmark results |
 | [Learning a branching rule](docs/learning-to-branch.md) | features, training, the `mislearned` rule, on-policy samples |
 | [Results](docs/results.md) | learned rules against SCIP's default on Erdős–Rényi and Barabási–Albert graphs |
-| [Project notes](docs/project-notes.md) | working notes on the research questions |
+| [Project notes](docs/project-notes.md) | research questions, status on MIS, next steps |
 
 ## Quick start
 
