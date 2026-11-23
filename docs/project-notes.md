@@ -4,7 +4,7 @@ Main question: can some Branch-and-Cut decisions be learned so as to reduce the 
 
 ## Research questions and status
 
-The experiments on the Maximum Independent Set are closed (November 2026). The answers below are short, and the figures are in [results.md](results.md).
+The detailed results are in [results.md](results.md).
 
 | Question | Status on MIS |
 |---|---|
