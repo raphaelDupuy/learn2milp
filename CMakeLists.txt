@@ -127,6 +127,26 @@ target_link_libraries(mis-generator
     command_line
 )
 
+# Job-shop instances (Taillard's generator); no SCIP needed.
+add_executable(jssp-generator
+    src/tools/jssp_generator_main.cpp
+    src/services/JSSPGenerationService.cpp
+    src/generators/TaillardGenerator.cpp
+    src/problems/JSSP.cpp
+    src/io/JSSPInstanceIO.cpp
+    src/io/InstanceMetadataIO.cpp
+)
+
+target_include_directories(jssp-generator
+    PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(jssp-generator
+    PRIVATE
+    command_line
+)
+
 add_executable(mis-collector
     src/tools/mis_collector_main.cpp
     src/problems/MIS.cpp
@@ -604,6 +624,70 @@ if(BUILD_TESTING)
     target_include_directories(test_MISInstanceIO
         PRIVATE
         ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_executable(test_JSSPInstanceIO
+        tests/test_JSSPInstanceIO.cpp
+        src/problems/JSSP.cpp
+        src/io/JSSPInstanceIO.cpp
+    )
+
+    target_include_directories(test_JSSPInstanceIO
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME JSSPInstanceIO
+        COMMAND test_JSSPInstanceIO
+    )
+
+    add_executable(test_TaillardGenerator
+        tests/test_TaillardGenerator.cpp
+        src/generators/TaillardGenerator.cpp
+        src/problems/JSSP.cpp
+        src/io/JSSPInstanceIO.cpp
+    )
+
+    target_include_directories(test_TaillardGenerator
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME TaillardGenerator
+        COMMAND test_TaillardGenerator
+    )
+
+    add_executable(test_JSSPModel
+        tests/test_JSSPModel.cpp
+        src/generators/TaillardGenerator.cpp
+        src/problems/JSSP.cpp
+        src/problems/JSSPModel.cpp
+        src/io/JSSPInstanceIO.cpp
+    )
+
+    target_include_directories(test_JSSPModel
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(test_JSSPModel
+        PRIVATE
+        scip
+    )
+
+    add_test(
+        NAME JSSPModel
+        COMMAND test_JSSPModel
+    )
+
+    add_test(
+        NAME JSSPGenerator
+        COMMAND bash
+            ${PROJECT_SOURCE_DIR}/tests/test_jssp_generator.sh
+            $<TARGET_FILE:jssp-generator>
+            ${PROJECT_BINARY_DIR}/test_jssp_generator
     )
 
     add_test(

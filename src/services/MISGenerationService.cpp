@@ -10,52 +10,10 @@
 
 #include "io/InstanceMetadataIO.hpp"
 #include "io/MISInstanceIO.hpp"
+#include "util/FileOutput.hpp"
 
 namespace
 {
-
-// Removes every tracked file, newest first, unless committed.
-class FileCleanup
-{
-public:
-    void track(const std::filesystem::path& path)
-    {
-        paths_.push_back(path);
-    }
-
-    void commit()
-    {
-        committed_ = true;
-    }
-
-    ~FileCleanup()
-    {
-        if (committed_)
-            return;
-
-        for (auto it = paths_.rbegin(); it != paths_.rend(); ++it)
-        {
-            std::error_code ignored;
-            std::filesystem::remove(*it, ignored);
-        }
-    }
-
-private:
-    std::vector<std::filesystem::path> paths_;
-    bool committed_ = false;
-};
-
-void closeOutput(std::ofstream& file, const std::filesystem::path& path)
-{
-    file.close();
-
-    if (!file)
-    {
-        throw std::runtime_error(
-            "Failed to finish writing: " + path.string()
-        );
-    }
-}
 
 // Writes the graph and metadata files of one instance; both are tracked
 // by cleanup before they are created.
@@ -112,16 +70,6 @@ void writeInstanceFiles(
         }
 
         closeOutput(metadataFile, metadataPath);
-    }
-}
-
-void requireAbsent(const std::filesystem::path& path)
-{
-    if (std::filesystem::exists(path))
-    {
-        throw std::runtime_error(
-            "Output file already exists: " + path.string()
-        );
     }
 }
 

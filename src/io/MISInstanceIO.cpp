@@ -1,5 +1,7 @@
 #include "io/MISInstanceIO.hpp"
 
+#include "io/InstanceMetadataIO.hpp"
+
 #include <algorithm>
 #include <istream>
 #include <ostream>
@@ -13,7 +15,7 @@ std::filesystem::path misInstanceMetadataPath(
     const std::filesystem::path& instancePath
 )
 {
-    return std::filesystem::path(instancePath.string() + ".meta");
+    return instanceMetadataPath(instancePath);
 }
 
 std::vector<std::filesystem::path> listMISInstances(

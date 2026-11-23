@@ -1,6 +1,6 @@
 # Command line tools
 
-The build produces four tools, used by the scripts of `scripts/` and `experiments/`. Every tool prints its options with `--help`. A malformed argument is reported with what is wrong (unknown, repeated or missing option, invalid value) and exit code 2. Existing output files are never overwritten.
+The build produces five tools, used by the scripts of `scripts/` and `experiments/`. Every tool prints its options with `--help`. A malformed argument is reported with what is wrong (unknown, repeated or missing option, invalid value) and exit code 2. Existing output files are never overwritten.
 
 The files they read and write are described in [data-format.md](data-format.md).
 
@@ -21,6 +21,21 @@ The files they read and write are described in [data-format.md](data-format.md).
 ```
 
 A batch generates every combination of the parameter lists and names each instance after its family and parameters (`erdos_renyi_n125_p0_1_seed81`, `barabasi_albert_n200_k8_seed81`). Its `manifest.csv` lists the instances with their parameters and number of edges `m`; it is written last, so its presence means the batch is complete. A graph only depends on its parameters and seed, on every platform.
+
+## `jssp-generator`: job-shop instances
+
+`jssp-generator` writes job-shop instances as in Taillard (1993): every job visits every machine once, in a random order, with durations uniform in [1, 99]. Both are drawn with Taillard's own generator from a time seed and a machine seed, so the published seeds give the benchmark instances ta01 to ta80 exactly. With `--seed`, the two seeds are derived from one seed, which keeps consecutive seeds unrelated.
+
+```bash
+./build/jssp-generator single --jobs 10 --machines 10 --seed 1 --output data/instances/j10x10.jsp
+./build/jssp-generator single --jobs 15 --machines 15 \
+    --time-seed 840612802 --machine-seed 398197754 --output data/instances/ta01.jsp
+
+./build/jssp-generator batch --jobs-values 10 --machines-values 10 --seeds 81,82,83 \
+    --output-dir data/instances/jssp_test
+```
+
+Batch instances are named after their size and seed (`taillard_j10_m10_seed81`). The manifest adds to the seeds the one-machine lower bound and the makespan of a greedy dispatching rule, the two bounds of the MILP formulation (`include/problems/JSSPModel.hpp`).
 
 ## `mis-collector`: strong branching samples
 

@@ -9,6 +9,8 @@ An instance is a pair of text files:
 
 A batch of instances comes with a `manifest.csv`, one row per instance with its parameters and number of edges `m`. The formats are documented in `include/io/MISInstanceIO.hpp` and `include/io/InstanceMetadataIO.hpp`.
 
+A job-shop instance is `NAME.jsp`, in the format of the OR-Library and of the published benchmarks: the numbers of jobs and machines, then one line per job with the machine (from 0) and the duration of each operation, in processing order. A `#` starts a comment that runs to the end of the line, so the files of JSPLIB can be read as they are. A generated instance has a `NAME.jsp.meta` with its seeds (`parameter.time_seed`, `parameter.machine_seed`), and a batch a `manifest.csv` with the seeds and the two bounds of each instance (`include/io/JSSPInstanceIO.hpp`).
+
 ## Strong branching samples
 
 For an instance `NAME.mis`, `mis-collector` writes three files to the output directory:
