@@ -27,7 +27,7 @@ Across all these models, neither the score ratio nor the accuracy measured on th
 
 ## Generalization to Barabási–Albert graphs
 
-Another graph family tells the two kinds of features apart. On 20 Barabási–Albert graphs with 200 vertices and \(k = 8\) (`data/instances/ba200_k8/test`, seeds 81 to 100, never seen during training; 3 seeds, all solved), relpscost explores 846 nodes in 6.1 s, `mlp32_v2` 1,033 nodes in 3.1 s and `mlp32_h2` 861 nodes in 2.8 s. Both learned rules stay about twice as fast as relpscost on every instance, and the model with the search history explores 15% fewer nodes than the one without (on 17 of the 20 instances), as many as relpscost: the history generalizes across families where the static features do not. Results are in `experiments/ba200_k8/results/`; the instances are generated with
+Another graph family tells the two kinds of features apart. On 20 Barabási–Albert graphs with 200 vertices and $`k = 8`$ (`data/instances/ba200_k8/test`, seeds 81 to 100, never seen during training; 3 seeds, all solved), relpscost explores 846 nodes in 6.1 s, `mlp32_v2` 1,033 nodes in 3.1 s and `mlp32_h2` 861 nodes in 2.8 s. Both learned rules stay about twice as fast as relpscost on every instance, and the model with the search history explores 15% fewer nodes than the one without (on 17 of the 20 instances), as many as relpscost: the history generalizes across families where the static features do not. Results are in `experiments/ba200_k8/results/`; the instances are generated with
 
 ```bash
 ./build/mis-generator batch --family barabasi_albert --n-values 200 --k-values 8 \
@@ -94,7 +94,7 @@ The pruning accounts for about 30% of the expert's tree (47% more nodes without 
 
 ## Lookback
 
-The lookback options (`--smoothing`, `--lookback-weight`, see [learning-to-branch.md](learning-to-branch.md#lookback)) were tried on the perceptron, with the recipes of `mlp32_h2` and `mlp32_ba1`: smoothing \(\varepsilon = 0.1\) alone (`_z`), smoothing and the Parent-as-Target term with \(\lambda = 0.2\), the choice of Gupta et al. (2022) for independent sets (`_zpat`), and the term alone (`_ypat`). Test nodes, training seed 0 (reference: two seeds):
+The lookback options (`--smoothing`, `--lookback-weight`, see [learning-to-branch.md](learning-to-branch.md#lookback)) were tried on the perceptron, with the recipes of `mlp32_h2` and `mlp32_ba1`: smoothing $`\varepsilon = 0.1`$ alone (`_z`), smoothing and the Parent-as-Target term with $`\lambda = 0.2`$, the choice of Gupta et al. (2022) for independent sets (`_zpat`), and the term alone (`_ypat`). Test nodes, training seed 0 (reference: two seeds):
 
 | Variant | Erdős–Rényi test | Barabási–Albert test |
 |---|---|---|
@@ -128,7 +128,7 @@ Against SCIP with its default settings, every rule run with the study settings i
 
 ## Larger instances
 
-`experiments/generalization/run_benchmark.sh` evaluates the models trained on G(125, 0.1) and BA(200, 8), without retraining, on larger graphs of the same families (same mean degree for Erdős–Rényi graphs, same \(k\) for Barabási–Albert graphs), 10 instances per size, SCIP seed 0, one run at a time on an idle machine (12 h in all, every run solved; `scripts/watch_progress.sh` follows its progress log). The learned rule uses the perceptron (`mlp32_h2`, `mlp32_ba1`), alone or with strong branching on its K first candidates, the candidate graph model (`gnn32x2_h2`, `gnn32x2_ba1`) or the bipartite model (`gcnn32x1_ba1`, Barabási–Albert only). Shifted geometric means of nodes and seconds; tables in `experiments/generalization/results/`:
+`experiments/generalization/run_benchmark.sh` evaluates the models trained on G(125, 0.1) and BA(200, 8), without retraining, on larger graphs of the same families (same mean degree for Erdős–Rényi graphs, same $`k`$ for Barabási–Albert graphs), 10 instances per size, SCIP seed 0, one run at a time on an idle machine (12 h in all, every run solved; `scripts/watch_progress.sh` follows its progress log). The learned rule uses the perceptron (`mlp32_h2`, `mlp32_ba1`), alone or with strong branching on its K first candidates, the candidate graph model (`gnn32x2_h2`, `gnn32x2_ba1`) or the bipartite model (`gcnn32x1_ba1`, Barabási–Albert only). Shifted geometric means of nodes and seconds; tables in `experiments/generalization/results/`:
 
 | Instances | SCIP, default settings | `relpscost` | MLP | MLP, K = 1 | MLP, K = 2 | GNN | GCNN |
 |---|---|---|---|---|---|---|---|
@@ -212,7 +212,7 @@ At each round of the root's cut loop, the separators find more cuts than SCIP ad
 | BA(250, 8) | 0.747 · 0.749 | 278 · 281 | 62% of 1,327 | 1.57 [1.47, 1.67] | 1.15 [0.97, 1.36] |
 | BA(300, 8) | 0.726 · 0.725 | 323 · 325 | 52% of 1,418 | 1.46 [1.22, 1.69] | 1.24 [1.04, 1.42] |
 
-The gap closed is (first LP bound − bound at the end of the root) / (first LP bound − optimum); the first LP bound is \(n/2\), reached by \(x = ½\) everywhere.
+The gap closed is (first LP bound − bound at the end of the root) / (first LP bound − optimum); the first LP bound is $`n/2`$, reached by $`x = ½`$ everywhere.
 
 The expert closes the same share of the gap as SCIP's selector on every set, within 0.005, with as many cuts in the LP. Candidates are not lacking: 40 to 62% of them raise the bound on their own. The trees are no smaller (node ratios between 0.94 and 1.24, every interval but one containing 1), and the expert's LP solves make the runs 1.3 to 1.9 times slower, except on G(200, 0.0625), where they are a small part of five minutes of solving. With cuts at the nodes (`no_node_gomory`, the expert at the root only), the result is the same: time ratio 1.11 to 1.99, node ratio 0.98 to 1.19.
 

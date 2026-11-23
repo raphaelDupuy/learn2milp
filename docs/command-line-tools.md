@@ -8,8 +8,8 @@ The files they read and write are described in [data-format.md](data-format.md).
 
 `mis-generator` writes MIS instances, one graph per `.mis` file with its generator and parameters in a `.mis.meta` file next to it. Two graph families are available (`--family`):
 
-- `erdos_renyi` (the default): \(G(n, p)\), every edge present with probability \(p\);
-- `barabasi_albert`: preferential attachment. The graph starts with \(k\) isolated vertices; every new vertex is joined to \(k\) distinct existing vertices, drawn with probability proportional to their degree, until there are \(n\) vertices. The graph has \(k(n-k)\) edges, is connected and has a few vertices of high degree, unlike \(G(n, p)\). (\(k\) is often written \(m\) in the literature; here \(m\) is the number of edges, as in the instance files.)
+- `erdos_renyi` (the default): $`G(n, p)`$, every edge present with probability $`p`$;
+- `barabasi_albert`: preferential attachment. The graph starts with $`k`$ isolated vertices; every new vertex is joined to $`k`$ distinct existing vertices, drawn with probability proportional to their degree, until there are $`n`$ vertices. The graph has $`k(n-k)`$ edges, is connected and has a few vertices of high degree, unlike $`G(n, p)`$. ($`k`$ is often written $`m`$ in the literature; here $`m`$ is the number of edges, as in the instance files.)
 
 ```bash
 ./build/mis-generator single --n 125 --p 0.1 --seed 1 --output data/instances/g125.mis
@@ -63,7 +63,7 @@ Two more optional arguments give the time limit per instance and a policy model.
 experiments/er125_p01/build_dataset.sh build 4
 ```
 
-`experiments/ba200_k8/build_dataset.sh` does the same with Barabási–Albert graphs (200 vertices, \(k = 8\)), with the same splits and seeds. `scripts/collect_on_policy.sh` adds [on-policy samples](learning-to-branch.md#4-on-policy-samples) to either dataset.
+`experiments/ba200_k8/build_dataset.sh` does the same with Barabási–Albert graphs (200 vertices, $`k = 8`$), with the same splits and seeds. `scripts/collect_on_policy.sh` adds [on-policy samples](learning-to-branch.md#4-on-policy-samples) to either dataset.
 
 ## `mis-featurizer`: training tables
 

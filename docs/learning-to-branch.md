@@ -44,11 +44,11 @@ The script reports, on the validation set, how the decisions of the model compar
 
 By default every candidate is scored on its own (a multilayer perceptron). With `--graph-layers K`, the network is a graph neural network over the candidates of the node, linked by the edges of the graph between them: the `--hidden` layers transform each candidate, then each of the K graph layers computes
 
-\[
+```math
 h'_v = \mathrm{ReLU}\big(W h_v + W_N\, \overline{h}_{N(v)} + W_G\, \overline{h} + b\big),
-\]
+```
 
-where \(\overline{h}_{N(v)}\) is the mean state of the candidate neighbours of \(v\) (0 if it has none) and \(\overline{h}\) the mean state of all the candidates of the node; a linear layer gives the score. Means rather than sums keep the scale independent of the degree, which varies widely on Barabási–Albert graphs.
+where $`\overline{h}_{N(v)}`$ is the mean state of the candidate neighbours of $`v`$ (0 if it has none) and $`\overline{h}`$ the mean state of all the candidates of the node; a linear layer gives the score. Means rather than sums keep the scale independent of the degree, which varies widely on Barabási–Albert graphs.
 
 ```bash
 uv run python ml/train_branching_model.py \
@@ -62,11 +62,11 @@ uv run python ml/train_branching_model.py \
 
 The samples need no new collection: the feature tables keep the vertex of every candidate, and the edges between candidates are read from the instance files, found by name under `--instances` (`data/instances` by default). A graph model is written in version 2 of the model format (`graph_layer` entries, see `ml/branching_model_file.py`); a model without graph layer is still written in version 1, byte for byte as before.
 
-With `--bipartite-rounds K`, the network follows Gasse et al. (2019) instead: a bipartite graph of variables and constraints. For MIS, the constraints are the edges \(x_u + x_v \le 1\); the graph of a node keeps the free vertices and the edges between two free vertices (an edge with a fixed end constrains nothing). A vertex starts from its candidate features (zero for a free vertex that is not a candidate) and from six vertex inputs: its state (free at 0, free at 1, fractional), LP value, degree and number of free neighbours; a constraint starts from its slack \(1 - x_u - x_v\), whether it is tight, and how many of its ends are fractional. The `--hidden` layers embed the vertices, one layer embeds the constraints, then each round updates the constraints from their two vertices and the vertices from their constraints,
+With `--bipartite-rounds K`, the network follows Gasse et al. (2019) instead: a bipartite graph of variables and constraints. For MIS, the constraints are the edges $`x_u + x_v \le 1`$; the graph of a node keeps the free vertices and the edges between two free vertices (an edge with a fixed end constrains nothing). A vertex starts from its candidate features (zero for a free vertex that is not a candidate) and from six vertex inputs: its state (free at 0, free at 1, fractional), LP value, degree and number of free neighbours; a constraint starts from its slack $`1 - x_u - x_v`$, whether it is tight, and how many of its ends are fractional. The `--hidden` layers embed the vertices, one layer embeds the constraints, then each round updates the constraints from their two vertices and the vertices from their constraints,
 
-\[
+```math
 t' = \mathrm{ReLU}\Big(P\, \operatorname{mean}_{s}\, \mathrm{ReLU}(L t + R s + b_h) + Q t + b\Big),
-\]
+```
 
 and a linear layer scores each candidate from its vertex state. The vertex states are read from the raw samples (`data/raw/strong_branching/X` for the features of `data/processed/features/X`), so no new collection is needed. Such a model is written in version 3 of the model format. The constraint duals, which Gasse et al. also use, are not recorded in the samples.
 
@@ -74,8 +74,8 @@ and a linear layer scores each candidate from its vertex state. The vertex state
 
 With strong branching, the best candidate of a node is often one of the second-best candidates of its parent (the lookback property, Gupta et al. 2022). In the validation samples, this holds for 15 to 20% of the parent–child pairs, and the perceptrons pick one of the parent's second-best candidates at only a quarter of those nodes. Two options of the training script, from that paper, take it into account:
 
-- `--smoothing ε` replaces the one-hot target by \(1 - \varepsilon\) on the expert's choice and \(\varepsilon\) shared by the second-best candidates of the node (ties with the best included);
-- `--lookback-weight λ` adds, on the samples whose expert choice is one of the parent's second-best candidates, \(\lambda\) times the cross-entropy between the child's distribution and the model's own distribution at the parent, restricted to the child's candidates (the Parent-as-Target term; the parent's scores are a fixed target, without gradient, and the term is averaged over the samples where it applies).
+- `--smoothing ε` replaces the one-hot target by $`1 - \varepsilon`$ on the expert's choice and $`\varepsilon`$ shared by the second-best candidates of the node (ties with the best included);
+- `--lookback-weight λ` adds, on the samples whose expert choice is one of the parent's second-best candidates, $`\lambda`$ times the cross-entropy between the child's distribution and the model's own distribution at the parent, restricted to the child's candidates (the Parent-as-Target term; the parent's scores are a fixed target, without gradient, and the term is averaged over the samples where it applies).
 
 The parent of a sample is found through the node identifiers of the raw samples (`data/raw/strong_branching/X`). With both options at 0, the default, the loss is the plain cross-entropy.
 
@@ -94,7 +94,7 @@ The `mislearned` rule loads a model file and evaluates it in C at every node. A 
     --output experiments/er125_p01/results/test_learned_mlp32.csv
 ```
 
-The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about \(10^{-14}\) for a graph model and \(10^{-7}\) for a bipartite one (whose constraint inputs are rounded to single precision in Python), with the same choice at every node; tests solve an instance with each kind of model while an independent implementation recomputes every score.
+The rule scores all the candidates of a node at once (`MISevaluateBranchingModelOnNode`), which graph models need; a multilayer perceptron gives the same scores as before, bit for bit. On real samples, the scores computed in C agree with those of the Python model file to about $`10^{-14}`$ for a graph model and $`10^{-7}`$ for a bipartite one (whose constraint inputs are rounded to single precision in Python), with the same choice at every node; tests solve an instance with each kind of model while an independent implementation recomputes every score.
 
 With `--strong-branching K`, the rule runs strong branching, as the `misfullstrong` expert does, on the K candidates the model scores highest, then branches on the best of them by strong branching score, or prunes the node when strong branching proves that its bound reaches the cutoff. The candidates are evaluated in the order of the LP candidates and the first best one wins, so that with as many candidates as the node has the rule makes the expert's decisions exactly (a test checks it). Strong branching costs two LP solves per evaluated candidate; it gives back the pruning that a learned rule alone cannot do (see [results.md](results.md#how-far-imitation-can-go)).
 

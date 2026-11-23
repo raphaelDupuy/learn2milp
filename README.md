@@ -89,29 +89,29 @@ Details are in [Results](docs/results.md) and the status of each research questi
 
 ## Maximum Independent Set
 
-For a graph \(G=(V,E)\), the Maximum Independent Set problem is formulated as a binary linear program.
+For a graph $`G=(V,E)`$, the Maximum Independent Set problem is formulated as a binary linear program.
 
-Each vertex \(v\) is associated with a binary variable \(x_v\).
+Each vertex $`v`$ is associated with a binary variable $`x_v`$.
 
 The objective is:
 
-\[
+```math
 \max \sum_{v \in V} x_v
-\]
+```
 
 subject to:
 
-\[
+```math
 x_u + x_v \leq 1
 \qquad \forall (u,v) \in E
-\]
+```
 
 and:
 
-\[
+```math
 x_v \in \{0,1\}
 \qquad \forall v \in V.
-\]
+```
 
 The implementation generates random graphs of two families, builds the corresponding MILP model, and solves it exactly using SCIP. In the final configuration, SCIP's clique lifting (`constraints/setppc/cliquelifting`) turns the edge constraints into clique constraints.
 
