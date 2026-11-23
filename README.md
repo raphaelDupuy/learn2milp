@@ -11,7 +11,7 @@ The project initially focuses on two components of Branch-and-Cut:
 - branching decisions;
 - cutting-plane selection.
 
-The first problem considered is the Maximum Independent Set (MIS). The framework is intended to be extended later to the Job-Shop Scheduling Problem (JSSP).
+The first problem considered is the Maximum Independent Set (MIS). The second is the Job-Shop Scheduling Problem (JSSP), at the pilot stage.
 
 ## Research questions
 
@@ -34,7 +34,7 @@ A later direction is to compare policies trained to imitate local solver decisio
 | [Command line tools](docs/command-line-tools.md) | `mis-generator`, `mis-collector`, `mis-featurizer`, `mis-benchmark`, dataset scripts |
 | [Data formats](docs/data-format.md) | instances, strong branching samples, training tables, benchmark results |
 | [Learning a branching rule](docs/learning-to-branch.md) | features, training, the `mislearned` rule, on-policy samples |
-| [Results](docs/results.md) | learned rules against SCIP's default on Erdős–Rényi and Barabási–Albert graphs |
+| [Results](docs/results.md) | MIS: learned branching, cutting planes, solver settings, time profiles, final run |
 | [Project notes](docs/project-notes.md) | research questions, status on MIS, next steps |
 
 ## Quick start
@@ -47,34 +47,45 @@ After [installing SCIP and building the project](docs/installation.md):
 ./build/mis-benchmark --instances data/instances --rules relpscost,mislearned \
     --model experiments/er125_p01/models/mlp32_h2.model --output results.csv
 
+# The same with the settings of the final configuration (cuts at the nodes)
+./build/mis-benchmark --instances data/instances --rules relpscost,mislearned \
+    --model experiments/er125_p01/models/mlp32_h2.model \
+    --parameters experiments/cuts/settings/oddcycle_cliquelifting_nogomory.set \
+    --output results.csv
+
 # Or do the same, and more, from the interactive menu
 ./build/learn2milp
 ```
 
 ## Current status
 
-The current version provides an experimental framework for learning to branch on the Maximum Independent Set problem.
+The experiments on MIS are done. The JSSP pilot is in progress (`experiments/jssp/pilot/`).
 
 ### Implemented
 
-- C++17 project using CMake, integrated with SCIP;
+- C++17 project using CMake, integrated with SCIP 10.1;
 - MILP formulation of Maximum Independent Set;
 - reproducible instance generation (Erdős–Rényi and Barabási–Albert graphs) using explicit random seeds, one instance at a time or in batches;
 - full strong branching rule for SCIP that records every branching decision, checked node by node against SCIP's own `vanillafullstrong` rule;
 - learning-to-branch datasets, from the expert's search and on-policy (`mis-collector`);
-- benchmark of branching rules on a set of instances (`mis-benchmark`);
-- a learned branching rule: candidate features, training of a small ranking model in Python (a multilayer perceptron, a graph neural network over the candidates or a bipartite model of variables and constraints after Gasse et al. 2019, trained on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`);
+- a learned branching rule: candidate features in C, training of a small ranking model in Python (a multilayer perceptron, a graph neural network over the candidates or a bipartite model of variables and constraints after Gasse et al. 2019, trained on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`), optionally with strong branching on the model's first candidates;
+- cutting-plane experiments: separator settings, a lookahead cut selector (Paulus et al. 2022), a separation gate and node logs (SCIP plugins);
+- benchmark of rules and settings on a set of instances, with SCIP's statistics and an optimal-solution oracle for the primal heuristics (`mis-benchmark`);
 - an interactive menu to try rules and models and to inspect datasets (`learn2milp`).
 
-Learned rules explore 25 to 30% fewer nodes than SCIP's default rule on the Erdős–Rényi graphs they were trained on, and the model using the search history keeps up with it on Barabási–Albert graphs never seen in training, about twice as fast. Graph models imitate the expert as well or better than the perceptron offline but explore 5 to 12% more nodes. Running strong branching on the model's first candidates gives trees smaller than SCIP's with its default settings, at a cost in time; on one candidate, it beats SCIP's default rule on both nodes and time on Barabási–Albert graphs. On larger graphs, the models still save nodes but their gain in time shrinks with the size; see [Results](docs/results.md).
+### Results on MIS
+
+- **Branching.** The learned perceptron is faster than SCIP's `relpscost` on every test set, and on graphs up to 1.6 times larger than in training without retraining. Graph neural networks imitate the expert better offline but give larger trees in SCIP.
+- **Cutting planes.** Learned cut selection has no room on MIS: selection at the root closes no more gap than SCIP's, and choosing the separators per instance gains only a few percent over the best fixed choice. The gain comes from fixed settings: no Gomory cuts, odd-cycle cuts at the nodes, and SCIP's clique lifting.
+- **Together.** The learned rule with these settings takes 0.14 to 0.30 of the time of SCIP as shipped, and 0.18 to 0.67 of the time of the best SCIP configuration, on nine test sets. Features and inference take 2 to 7% of its time.
+
+Details are in [Results](docs/results.md) and the status of each research question in [Project notes](docs/project-notes.md).
 
 ### Planned
 
-- training signals other than node-by-node imitation of strong branching (tree-level objectives), and strong branching restricted to the candidates a learned model ranks first;
-- learning-to-cut;
-- comparison of classical and learned Branch-and-Cut configurations;
-- experiments on generalization across instance distributions;
-- extension to Job-Shop Scheduling.
+- extension to Job-Shop Scheduling: generator, formulation, and whether strong branching is worth imitating when the LP bound is weak;
+- evaluation of the MIS models on other graph families;
+- comparison of imitation with training signals tied to the whole search (tree-level objectives).
 
 ## Maximum Independent Set
 
@@ -102,7 +113,7 @@ x_v \in \{0,1\}
 \qquad \forall v \in V.
 \]
 
-The implementation generates random graphs of two families, builds the corresponding MILP model, and solves it exactly using SCIP.
+The implementation generates random graphs of two families, builds the corresponding MILP model, and solves it exactly using SCIP. In the final configuration, SCIP's clique lifting (`constraints/setppc/cliquelifting`) turns the edge constraints into clique constraints.
 
 ## Project structure
 
@@ -112,7 +123,7 @@ learn2milp/
 ├── README.md
 ├── docs/            documentation
 ├── data/            instances and datasets (not versioned)
-├── experiments/     dataset recipes, trained models and result tables
+├── experiments/     dataset recipes, trained models, settings, result tables, JSSP pilot
 ├── include/
 │   ├── branching/   SCIP branching rules (expert, learned)
 │   ├── cuts/        cut selector, separation gate and node logs (SCIP plugins)
