@@ -624,3 +624,19 @@ Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100)
 
 This is more room than for the separators (1 to 7% for an oracle over five fixed configurations), and the only lever left of that size in these settings, but a modest one: the branching decisions are within 0 to 16% of the nodes of a perfect imitation, and the remaining time goes to the node LPs.
 
+
+## Job-shop pilot
+
+`experiments/jssp/pilot/jssp_pilot.py` generates Taillard-style instances, writes them as MILPs and solves them with the `scip` binary, SCIP seed 0, four runs at a time (node counts are reliable, times only indicative). Results are in `experiments/jssp/results/`.
+
+**Formulation.** Manne's disjunctive formulation with the makespan of a greedy dispatching rule as big-M and as horizon, and head and tail bounds on the start times. Rectangular instances (10×5, 15×5) are hard for it only because the LP misses the one-machine bound: their optimum equals that bound in 9 cases out of 10, but the root LP reaches 0.47 to 0.62 of it, and SCIP solves 2 of 10 in 300 s. With the bound on the makespan (`bounded`), the root bound is the optimum and the 10×5 instances take 0.7 to 42 s; what is left is finding a schedule, a primal problem. Square instances are where the trees prove optimality: the one-machine bound is 0.80 to 0.84 of the optimum. The time-indexed formulation already takes 15 s of presolving at 4×4.
+
+**Branching rules** (`bounded`, no restarts, 20 instances 10×10, time limit 900 s; shifted geometric means of nodes):
+
+| Rule | Solved | Nodes | Seconds |
+|---|---|---|---|
+| `relpscost` (SCIP's default) | 20 | 9,583 | 41 |
+| full strong branching (`fullstrong`) | 19 | 648 | 99 |
+| its choices only (`vanillafullstrong`) | 15 | ≥ 3,721 | 213 |
+
+`vanillafullstrong` makes the choices of full strong branching without its side effects: it fixes no variable when a child is infeasible and prunes no node. It is the tree that a perfect imitation of the expert's choices could reach. On the 15 instances all three rules solve, it explores 0.48 of the nodes of `relpscost` (geometric mean of the per-instance ratios), about the margin of the expert without pruning on G(125, 0.1), but with a wide spread: fewer nodes on 9 of the 15 instances only. The five instances it does not solve are the hardest, where it seems furthest ahead. On 8×8 instances, it explores more nodes than `relpscost` (1,138 against 470 on 5 instances). **Full strong branching explores 15 times fewer nodes than `relpscost`, but mostly through its side effects**, which no imitation of its choices recovers; strong branching on the first candidates of a learned rule can recover part of them.

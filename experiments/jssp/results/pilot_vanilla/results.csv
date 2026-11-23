@@ -1,0 +1,11 @@
+instance,jobs,machines,trivial_lb,dispatch,formulation,rule,binaries,status,time,nodes,primal,dual,root_first_lp,root_dual,lp_iterations
+j10x10_s1,10,10,663,870,bounded,vanillafullstrong,450,problem is solved [optimal solution found],72.62,620,+7.84000000000000e+02,+7.84000000000000e+02,+6.78000000000000e+02,+7.32145777942381e+02,63021
+j10x10_s2,10,10,620,907,bounded,vanillafullstrong,450,problem is solved [optimal solution found],186.42,1647,+8.03000000000000e+02,+8.03000000000000e+02,+6.75000000000000e+02,+7.18358403509256e+02,124581
+j10x10_s3,10,10,723,992,bounded,vanillafullstrong,450,solving was interrupted [time limit reached],600.00,6870,+8.61000000000000e+02,+8.19000000000000e+02,+7.41000000000000e+02,+7.54900366246810e+02,433360
+j10x10_s4,10,10,590,850,bounded,vanillafullstrong,450,problem is solved [optimal solution found],113.26,8011,+7.90000000000000e+02,+7.90000000000000e+02,+6.41000000000000e+02,+6.77446275232412e+02,101521
+j10x10_s5,10,10,621,890,bounded,vanillafullstrong,450,problem is solved [optimal solution found],111.27,856,+7.77000000000000e+02,+7.77000000000000e+02,+6.36000000000000e+02,+7.08698434522390e+02,106436
+j8x8_s1,8,8,538,840,bounded,vanillafullstrong,224,problem is solved [optimal solution found],25.48,1069,+6.75000000000000e+02,+6.75000000000000e+02,+6.14000000000000e+02,+6.14000000000000e+02,51660
+j8x8_s2,8,8,507,719,bounded,vanillafullstrong,224,problem is solved [optimal solution found],9.57,1591,+6.73000000000000e+02,+6.73000000000000e+02,+6.19000000000000e+02,+6.19000000000000e+02,14267
+j8x8_s3,8,8,549,762,bounded,vanillafullstrong,224,problem is solved [optimal solution found],8.74,119,+6.77000000000000e+02,+6.77000000000000e+02,+5.68000000000000e+02,+6.09408559539843e+02,26236
+j8x8_s4,8,8,489,706,bounded,vanillafullstrong,224,problem is solved [optimal solution found],18.25,1389,+6.36000000000000e+02,+6.36000000000000e+02,+5.84000000000000e+02,-,21800
+j8x8_s5,8,8,618,733,bounded,vanillafullstrong,224,problem is solved [optimal solution found],52.95,4414,+6.72000000000000e+02,+6.72000000000000e+02,+6.46000000000000e+02,+6.46000000000000e+02,59857
