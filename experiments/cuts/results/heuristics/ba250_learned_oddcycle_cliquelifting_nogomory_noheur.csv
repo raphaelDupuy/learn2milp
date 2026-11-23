@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n250_k8_seed81.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,668,75401,3.26272,83,83,95.5179,91.0439,736,0,0,0,0,0.089868,0.044305
+barabasi_albert_n250_k8_seed82.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2392,447814,19.4079,80,80,95.9412,83.9606,2497,0,0,0,0,0.498444,0.234396
+barabasi_albert_n250_k8_seed83.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,451,61796,2.69564,84,84,95.8824,91.4438,673,0,0,0,0,0.074088,0.034315
+barabasi_albert_n250_k8_seed84.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1312,143822,6.06946,82,82,96,91.2986,2005,0,0,0,0,0.168426,0.082384
+barabasi_albert_n250_k8_seed85.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1802,210576,9.20481,80,80,95.0015,90.5198,3612,0,0,0,0,0.231264,0.115968
+barabasi_albert_n250_k8_seed86.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,428,55116,2.52081,83,83,94.5,90.3049,589,0,0,0,0,0.065373,0.029707
+barabasi_albert_n250_k8_seed87.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,598,57750,2.42377,83,83,93.9176,90.2389,652,0,0,0,0,0.076364,0.038671
+barabasi_albert_n250_k8_seed88.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2168,254866,10.9035,81,81,96.25,91.0238,4953,0,0,0,0,0.258495,0.136169
+barabasi_albert_n250_k8_seed89.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1000,108194,4.24168,82,82,95.125,89.6284,706,0,0,0,0,0.139625,0.070759
+barabasi_albert_n250_k8_seed90.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,630,87529,4.111,83,83,95.9231,90.8219,2006,0,0,0,0,0.087387,0.042879

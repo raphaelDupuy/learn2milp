@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1443,88091,3.19192,41,41,51.1789,49.3499,2305,0,0,0,0,0.100619,0.051013
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1793,117439,4.40375,42,42,53.2857,51.9108,3760,0,0,0,0,0.118246,0.063197
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2546,148757,4.94447,40,40,51.0906,49.6624,3647,0,0,0,0,0.161805,0.086194
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,3415,207123,6.96175,40,40,51.9496,50.5212,5113,0,0,0,0,0.218212,0.114577
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2979,182445,6.13861,40,40,51.6466,50.2624,4072,0,0,0,0,0.199017,0.102042
+erdos_renyi_n150_p0_083_seed86.mis,150,969,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,3457,210944,6.88895,40,40,52.739,51.2864,5001,0,0,0,0,0.22262,0.116074
+erdos_renyi_n150_p0_083_seed87.mis,150,875,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1099,71738,2.37911,43,43,53.8308,50.9065,1602,0,0,0,0,0.072521,0.038863
+erdos_renyi_n150_p0_083_seed88.mis,150,935,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2191,130398,4.36428,41,41,52.304,51.2766,3244,0,0,0,0,0.148518,0.075835
+erdos_renyi_n150_p0_083_seed89.mis,150,916,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2155,126002,4.15583,41,41,51.938,50.7274,3317,0,0,0,0,0.134638,0.07261
+erdos_renyi_n150_p0_083_seed90.mis,150,868,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1305,89838,3.36397,43,43,53.6718,51.547,2425,0,0,0,0,0.087236,0.047429

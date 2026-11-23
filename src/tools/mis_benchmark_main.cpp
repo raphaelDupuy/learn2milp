@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,7 +29,8 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << " [--time-limit SECONDS]\n"
         << "      [--parameters FILE] [--cut-selector NAME] [--model PATH]\n"
         << "      [--strong-branching K] [--node-log-dir DIR]"
-        << " [--statistics-dir DIR]\n\n"
+        << " [--statistics-dir DIR]\n"
+        << "      [--primal-oracle on|off]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
@@ -69,6 +71,11 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "                statistics as JSON (INSTANCE__RULE__sSEED\n"
         << "                .stats.json, never overwritten): the time of\n"
         << "                every part of the solver, among others\n"
+        << "  --primal-oracle\n"
+        << "                on: every run starts from an optimal solution,\n"
+        << "                found by a first solve with the same settings,\n"
+        << "                which is not measured (an oracle for the primal\n"
+        << "                heuristics; default off)\n"
         << "  -h, --help    Show this help and exit\n";
 }
 
@@ -93,6 +100,7 @@ int main(int argc, char* argv[])
     std::string cutSelector;
     std::string nodeLogDirectory;
     std::string statisticsDirectory;
+    bool primalOracle = false;
     int strongBranching = 0;
 
     try
@@ -101,7 +109,7 @@ int main(int argc, char* argv[])
             "--instances", "--rules", "--output", "--seeds",
             "--settings", "--parameters", "--cut-selector", "--model",
             "--time-limit", "--strong-branching", "--node-log-dir",
-            "--statistics-dir"});
+            "--statistics-dir", "--primal-oracle"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -127,6 +135,17 @@ int main(int argc, char* argv[])
 
         if (options.has("--statistics-dir"))
             statisticsDirectory = options.text("--statistics-dir");
+
+        if (options.has("--primal-oracle"))
+        {
+            const std::string& value = options.text("--primal-oracle");
+
+            if (value != "on" && value != "off")
+                throw CommandLineError(
+                    "--primal-oracle must be on or off: '" + value + "'");
+
+            primalOracle = value == "on";
+        }
 
         strongBranching = options.get(
             "--strong-branching", parseNonNegativeInt, strongBranching);
@@ -313,6 +332,39 @@ int main(int argc, char* argv[])
                 config.cutSelector = cutSelector;
                 config.timeLimitSeconds = timeLimit;
                 config.scipSeed = seed;
+
+                // The oracle's solution comes from a first solve with the
+                // same settings, without its node log and statistics.
+                if (primalOracle)
+                {
+                    MISBenchmarkConfig first = config;
+                    first.nodeLogPath.clear();
+                    first.statisticsPath.clear();
+
+                    if (rule == "mislearned")
+                    {
+                        first.learnedModelPath = modelPath;
+                        first.learnedStrongBranchingCandidates =
+                            strongBranching;
+                    }
+
+                    MISBenchmarkResult firstResult;
+
+                    if (!benchmarkMIS(
+                            loaded.instance, first, firstResult, errorMessage)
+                        || !firstResult.solved)
+                    {
+                        std::cerr << "First solve of the primal oracle "
+                                  << "failed (" << name << ", " << rule
+                                  << ", seed " << seed << "): "
+                                  << (errorMessage.empty()
+                                      ? firstResult.status : errorMessage)
+                                  << '\n';
+                        return 1;
+                    }
+
+                    config.startSolution = firstResult.selectedVertices;
+                }
                 config.nodeLogPath = runFilePath(
                     nodeLogDirectory, ".nodes.csv", instancePath, rule, seed);
                 config.statisticsPath = runFilePath(

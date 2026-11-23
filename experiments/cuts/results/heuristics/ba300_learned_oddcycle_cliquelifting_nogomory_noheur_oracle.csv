@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n300_k8_seed81.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,515,97696,5.4711,102,102,116.3,110.307,1014,0,0,0,0,0.129363,0.041694
+barabasi_albert_n300_k8_seed82.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2241,396265,20.108,99,99,117.833,110.634,4095,0,0,0,0,0.542199,0.173609
+barabasi_albert_n300_k8_seed83.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1007,185063,9.47955,100,100,116.061,100,1962,0,0,0,0,0.251038,0.080949
+barabasi_albert_n300_k8_seed84.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,639,113458,5.99514,103,103,117.88,112.306,1083,0,0,0,0,0.140717,0.050232
+barabasi_albert_n300_k8_seed85.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1061,193824,10.2498,99,99,115.746,110.105,2323,0,0,0,0,0.24171,0.083563
+barabasi_albert_n300_k8_seed86.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,843,137085,6.90113,100,100,115.436,110.036,1491,0,0,0,0,0.178368,0.065222
+barabasi_albert_n300_k8_seed87.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,997,183332,9.44118,100,100,115.448,109.76,2465,0,0,0,0,0.237172,0.079651
+barabasi_albert_n300_k8_seed88.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,3261,627464,32.9955,98,98,117.257,110.913,7949,0,0,0,0,0.752143,0.252278
+barabasi_albert_n300_k8_seed89.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,4347,707857,34.2557,96,96,115.029,109.056,8726,0,0,0,0,0.905571,0.325862
+barabasi_albert_n300_k8_seed90.mis,300,2336,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1981,336427,16.6714,98,98,116.75,98,4009,0,0,0,0,0.411532,0.150132

@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n250_k6_seed81.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,112,15583,0.820558,95,95,104.5,99.2578,276,0,0,0,0,0.015762,0.008346
+barabasi_albert_n250_k6_seed82.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,120,16290,0.754671,94,94,101.789,97.4278,221,0,0,0,0,0.01987,0.010536
+barabasi_albert_n250_k6_seed83.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,42,8529,0.449432,97,97,104.417,99.5857,119,0,0,0,0,0.007786,0.003659
+barabasi_albert_n250_k6_seed84.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,65,11464,0.628364,95,95,104.042,99.0121,184,0,0,0,0,0.012451,0.00611
+barabasi_albert_n250_k6_seed85.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,14,3531,0.298717,100,100,104.16,100.494,88,0,0,0,0,0.003682,0.001679
+barabasi_albert_n250_k6_seed86.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,139,15495,0.793769,94,94,102.25,97.722,161,0,0,0,0,0.018786,0.00999
+barabasi_albert_n250_k6_seed87.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,134,22339,1.20381,94,94,102.958,97.7585,451,0,0,0,0,0.022088,0.011168
+barabasi_albert_n250_k6_seed88.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,104,17327,0.817217,94,94,104.583,98.6206,195,0,0,0,0,0.018415,0.009247
+barabasi_albert_n250_k6_seed89.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,165,21085,1.17487,94,94,102.818,98.5444,412,0,0,0,0,0.02409,0.012125
+barabasi_albert_n250_k6_seed90.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,265,33318,1.72725,91,91,100.921,96.5661,711,0,0,0,0,0.034788,0.018344

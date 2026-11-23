@@ -83,6 +83,14 @@ struct MISBenchmarkConfig
      */
     std::filesystem::path statisticsPath;
 
+    /*
+     * Vertices of an independent set given to SCIP before the solve, as
+     * its first incumbent. With an optimal set, the run only has to prove
+     * that none is larger: an oracle for the primal heuristics. Empty for
+     * none.
+     */
+    std::vector<int> startSolution;
+
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
 
     // SCIP randomization/randomseedshift.

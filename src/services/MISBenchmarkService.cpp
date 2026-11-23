@@ -619,6 +619,36 @@ bool benchmarkMIS(
         if (!config.parameterFile.empty())
             applyParameterFile(scip, config.parameterFile);
 
+        if (!config.startSolution.empty())
+        {
+            SCIP_SOL* start = nullptr;
+            SCIP_Bool stored = FALSE;
+            require(
+                SCIPcreateOrigSol(scip, &start, nullptr),
+                "create the start solution"
+            );
+
+            for (const int v : config.startSolution)
+            {
+                if (v < 0 || v >= static_cast<int>(vars.size()))
+                {
+                    SCIPfreeSol(scip, &start);
+                    throw std::invalid_argument(
+                        "Start solution: no vertex " + std::to_string(v));
+                }
+
+                require(
+                    SCIPsetSolVal(scip, start, vars[v], 1.0),
+                    "set a value of the start solution"
+                );
+            }
+
+            require(
+                SCIPaddSolFree(scip, &start, &stored),
+                "add the start solution"
+            );
+        }
+
         require(
             SCIPsetRealParam(
                 scip, "limits/time", config.timeLimitSeconds),

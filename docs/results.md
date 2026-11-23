@@ -567,3 +567,60 @@ Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100)
 
 **Strong branching recovers the expert's pruning, but costs more than it saves.** With K = 2, the trees come down to those of the expert (shifted geometric means of 443, 141, 1,321 and 433 nodes on G(125, 0.1), BA(200, 8), G(150, 0.083) and BA(250, 8), against 430, 168, 1,280 and 407 for the expert in the [headroom](#headroom-of-imitation-in-the-deployed-settings) runs), yet the time rises by 1.5 to 2.3 times; with K = 1, the trees are 6 to 29% smaller and the time 1.2 to 1.7 times longer, the more so on the larger sets. The learned rule alone stays the fastest configuration everywhere, as in the study settings. With the expert's tree within reach of an imitation (0 to 16% of the nodes) and its pruning too dear, the branching decisions are no longer what limits the solving time in these settings: the node LPs are.
 
+## Final run
+
+The configurations of the last sections come from sessions weeks apart. `EXPERIMENT=final` runs the ten main ones again in one session, interleaved on each instance, on the nine test sets (the six sets and the three sparse points of the density sweep), SCIP seed 0, time limit 3,600 s, with SCIP's statistics; all 1,100 runs are solved, in 9.6 hours.
+
+Ratio of the times to SCIP as shipped (`default`, unshifted geometric mean of the per-instance ratios):
+
+| Set | `study` | `no_node_gomory` | `oddcycle` | learned, `study` | learned, `no_node_gomory` | `oddcycle`, lifted | `oddcycle`, lifted, without Gomory | learned, `oddcycle`, lifted | learned, `oddcycle`, lifted, without Gomory |
+|---|---|---|---|---|---|---|---|---|---|
+| G(150, 0.040) | 0.90 | 0.92 | 1.05 | 0.49 | 0.50 | 0.98 | 0.71 | 0.52 | 0.20 |
+| G(150, 0.054) | 0.43 | 0.43 | 0.47 | 0.24 | 0.23 | 0.43 | 0.35 | 0.24 | 0.16 |
+| BA(250, 6) | 0.74 | 0.75 | 0.84 | 0.32 | 0.33 | 0.76 | 0.52 | 0.26 | 0.14 |
+| G(125, 0.1) | 0.40 | 0.38 | 0.40 | 0.25 | 0.23 | 0.36 | 0.32 | 0.22 | 0.15 |
+| BA(200, 8) | 0.61 | 0.60 | 0.65 | 0.27 | 0.27 | 0.54 | 0.46 | 0.22 | 0.16 |
+| G(150, 0.083) | 0.45 | 0.39 | 0.43 | 0.30 | 0.24 | 0.35 | 0.30 | 0.22 | 0.19 |
+| BA(250, 8) | 0.62 | 0.61 | 0.54 | 0.35 | 0.28 | 0.44 | 0.42 | 0.20 | 0.18 |
+| G(200, 0.0625) | 1.03 | 0.61 | 0.57 | 0.87 | 0.46 | 0.45 | 0.45 | 0.31 | 0.30 |
+| BA(300, 8) | 0.91 | 0.70 | 0.62 | 0.68 | 0.43 | 0.48 | 0.50 | 0.23 | 0.21 |
+
+The learned rule with `oddcycle`, lifted, without Gomory cuts, against three references (95% bootstrap interval):
+
+| Set | / `default` | / `oddcycle`, lifted (`relpscost`) | / `relpscost`, same settings | learned / `relpscost`, study settings |
+|---|---|---|---|---|
+| G(150, 0.040) | 0.20 [0.18, 0.24] | 0.21 [0.18, 0.24] | 0.29 [0.25, 0.35] | 0.54 [0.46, 0.62] |
+| G(150, 0.054) | 0.16 [0.15, 0.19] | 0.38 [0.35, 0.43] | 0.47 [0.41, 0.52] | 0.56 [0.47, 0.64] |
+| BA(250, 6) | 0.14 [0.10, 0.18] | 0.18 [0.15, 0.22] | 0.26 [0.20, 0.38] | 0.43 [0.36, 0.51] |
+| G(125, 0.1) | 0.15 [0.14, 0.17] | 0.43 [0.39, 0.48] | 0.48 [0.45, 0.52] | 0.62 [0.59, 0.66] |
+| BA(200, 8) | 0.16 [0.14, 0.18] | 0.29 [0.26, 0.33] | 0.35 [0.32, 0.38] | 0.44 [0.40, 0.48] |
+| G(150, 0.083) | 0.19 [0.17, 0.22] | 0.55 [0.50, 0.59] | 0.63 [0.55, 0.71] | 0.67 [0.60, 0.74] |
+| BA(250, 8) | 0.18 [0.16, 0.20] | 0.41 [0.34, 0.50] | 0.43 [0.37, 0.50] | 0.57 [0.52, 0.62] |
+| G(200, 0.0625) | 0.30 [0.28, 0.32] | 0.67 [0.63, 0.73] | 0.67 [0.61, 0.73] | 0.85 [0.79, 0.90] |
+| BA(300, 8) | 0.21 [0.19, 0.25] | 0.44 [0.39, 0.51] | 0.43 [0.39, 0.47] | 0.74 [0.62, 0.89] |
+
+**The final configuration takes 0.14 to 0.30 of the time of SCIP as shipped, and 0.18 to 0.67 of the time of the best configuration of SCIP**, on every set. Its lead over `relpscost` at equal settings shrinks with the size much less than in the study settings (0.67 against 0.85 at G(200, 0.0625), 0.43 against 0.74 at BA(300, 8)): the learned branching and the cuts at the nodes complement each other.
+
+**The earlier sessions stand.** Against the same configurations in their earlier sessions, the trees are identical on every instance (ratio of nodes 1.00), the times of SCIP's configurations within 3% (16% faster for `default` on G(125, 0.1)), and those of the learned configurations 5 to 9% faster, which is the gain of the faster features and inference ([Cheaper features and inference](#cheaper-features-and-inference)), made in between.
+
+## Primal heuristics
+
+In the deployed settings, the primal heuristics take 8 to 19% of the time with the learned rule on all sets but G(200, 0.0625) (3 to 9% with `relpscost`), spread over a dozen of them, while the incumbents come mostly from integral LP solutions, strong branching and the trivial and clique heuristics before the root LP (SCIP's statistics of the [final run](#final-run)). Learning when to run which heuristic (Khalil et al. 2017, Chmiela et al. 2021) can gain at most what an oracle gains: `EXPERIMENT=heuristics` runs, for both rules, the deployed settings, the same without primal heuristics (`oddcycle_cliquelifting_nogomory_noheur.set`: SCIP's "heuristics emphasis off", but the trivial and clique heuristics and `trysol`), and the same starting from an optimal solution (`mis-benchmark --primal-oracle on`: a first solve with the same settings, not measured, gives the solution, which the measured run gets as its first incumbent). Test instances, one session, interleaved on each instance, SCIP seed 0; all 600 runs are solved.
+
+Ratio of the times (unshifted, 95% bootstrap interval) · nodes (shifted by 100):
+
+| Set | learned: without heuristics / deployed | learned: oracle / without heuristics | learned: oracle / deployed | `relpscost`: without heuristics / deployed | `relpscost`: oracle / deployed |
+|---|---|---|---|---|---|
+| G(150, 0.040) | 0.87 [0.80, 0.94] · 1.15 | 0.81 [0.74, 0.89] · 0.88 | 0.70 [0.66, 0.75] · 1.02 | 1.13 [1.01, 1.31] · 1.00 | 0.69 [0.47, 0.91] · 0.83 |
+| G(150, 0.054) | 0.84 [0.78, 0.92] · 1.00 | 0.87 [0.74, 1.00] · 0.96 | 0.73 [0.62, 0.82] · 0.96 | 1.09 [1.00, 1.21] · 1.44 | 0.96 [0.83, 1.06] · 0.84 |
+| BA(250, 6) | 1.03 [0.87, 1.23] · 1.26 | 0.66 [0.59, 0.73] · 0.82 | 0.67 [0.59, 0.77] · 1.04 | 0.96 [0.93, 0.99] · 1.01 | 0.79 [0.69, 0.90] · 0.79 |
+| G(125, 0.1) | 0.90 [0.82, 1.00] · 1.11 | 0.89 [0.80, 0.99] · 0.89 | 0.80 [0.74, 0.87] · 0.98 | 0.90 [0.84, 0.96] · 0.97 | 0.88 [0.82, 0.94] · 0.65 |
+| BA(200, 8) | 0.87 [0.80, 0.95] · 1.13 | 0.80 [0.72, 0.88] · 0.82 | 0.70 [0.64, 0.76] · 0.92 | 0.95 [0.91, 0.99] · 1.05 | 0.93 [0.87, 0.98] · 0.77 |
+| G(150, 0.083) | 0.86 [0.77, 0.96] · 1.05 | 0.97 [0.88, 1.07] · 0.89 | 0.83 [0.74, 0.94] · 0.93 | 0.97 [0.86, 1.08] · 1.11 | 0.83 [0.72, 0.92] · 0.76 |
+| BA(250, 8) | 1.00 [0.89, 1.13] · 1.32 | 0.81 [0.67, 0.96] · 0.68 | 0.81 [0.72, 0.91] · 0.89 | 0.97 [0.88, 1.08] · 1.02 | 0.91 [0.80, 1.04] · 0.80 |
+| BA(300, 8) | 1.20 [0.99, 1.46] · 1.19 | 0.68 [0.54, 0.86] · 0.69 | 0.82 [0.71, 0.94] · 0.82 | 0.96 [0.82, 1.09] · 0.98 | 0.89 [0.81, 0.97] · 0.82 |
+
+**The heuristics pay on some sets and cost on others, and no fixed choice gets close to the oracle.** Without heuristics, the learned rule is faster on the Erdős–Rényi sets and on BA(200, 8) (0.84 to 0.90 of the time), but its trees grow (5 to 32% more nodes) and it is no faster on BA(250, 6) and BA(250, 8), slower on BA(300, 8) (1.20, interval reaching 0.99): there, the heuristics find the optimum earlier than the LP solutions would. With `relpscost`, removing them changes little (0.90 to 1.13). The oracle bounds what any policy could gain: 0.67 to 0.83 of the time of the deployed settings with the learned rule, 0.69 to 0.96 with `relpscost`. Against the better of the two fixed choices on each set, 3 to 33% of the time is left (the most on the Barabási–Albert sets, where the heuristics both cost and help) to a policy that would find the optimum at once and never spend a heuristic call after it; a learned policy would recover part of that at best, since it has to find the solution, and the oracle also spares the learned rule the noise of an incumbent that changes during the search.
+
+This is more room than for the separators (1 to 7% for an oracle over five fixed configurations), and the only lever left of that size in these settings, but a modest one: the branching decisions are within 0 to 16% of the nodes of a perfect imitation, and the remaining time goes to the node LPs.
+

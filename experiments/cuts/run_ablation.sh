@@ -99,7 +99,8 @@ ALL_SETS=(
 
 # Configurations: name, preset, parameter file (- for none), rule, cut
 # selector (- or omitted: SCIP's own), candidates of the learned rule
-# evaluated by strong branching (omitted: none).
+# evaluated by strong branching (- or omitted: none), and "oracle" for runs
+# that start from an optimal solution (mis-benchmark --primal-oracle on).
 ALL_CONFIGS=(
     "study study - relpscost"
     "default default - relpscost"
@@ -135,6 +136,12 @@ ALL_CONFIGS=(
     # prune like the expert.
     "learned_sb1_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned - 1"
     "learned_sb2_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory mislearned - 2"
+    # Without primal heuristics, then also starting from an optimal
+    # solution: what any policy of the heuristics could gain at most.
+    "oddcycle_cliquelifting_nogomory_noheur default oddcycle_cliquelifting_nogomory_noheur relpscost"
+    "oddcycle_cliquelifting_nogomory_noheur_oracle default oddcycle_cliquelifting_nogomory_noheur relpscost - - oracle"
+    "learned_oddcycle_cliquelifting_nogomory_noheur default oddcycle_cliquelifting_nogomory_noheur mislearned"
+    "learned_oddcycle_cliquelifting_nogomory_noheur_oracle default oddcycle_cliquelifting_nogomory_noheur mislearned - - oracle"
     # The expert in the deployed settings, for the headroom of the learned
     # rule: with and without its strong branching pruning.
     "fullstrong_oddcycle_cliquelifting_nogomory default oddcycle_cliquelifting_nogomory misfullstrong"
@@ -207,7 +214,7 @@ for entry in "${ALL_SETS[@]}"; do
         [[ -e "$instance.meta" ]] && ln -sf "$ROOT/$instance.meta" "$single/"
 
         for config in "${ALL_CONFIGS[@]}"; do
-            read -r config_name preset parameters rule selector strong <<< "$config"
+            read -r config_name preset parameters rule selector strong oracle <<< "$config"
             selected "$config_name" "$SELECTED_CONFIGS" || continue
 
             for seed in ${SEEDS//,/ }; do
@@ -219,7 +226,8 @@ for entry in "${ALL_SETS[@]}"; do
                 [[ "$parameters" != - ]] && options+=(--parameters "$SETTINGS/$parameters.set")
                 [[ "$rule" == mislearned ]] && options+=(--model "$model")
                 [[ "${selector:--}" != - ]] && options+=(--cut-selector "$selector")
-                [[ -n "${strong:-}" ]] && options+=(--strong-branching "$strong")
+                [[ "${strong:--}" != - ]] && options+=(--strong-branching "$strong")
+                [[ "${oracle:-}" == oracle ]] && options+=(--primal-oracle on)
 
                 # The node log of a run that was not completed is stale.
                 if [[ "${NODE_LOGS:-0}" == 1 ]]; then

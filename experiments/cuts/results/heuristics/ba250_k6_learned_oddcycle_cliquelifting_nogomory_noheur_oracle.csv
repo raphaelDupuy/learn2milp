@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n250_k6_seed81.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,81,10282,0.554953,95,95,104.5,99.2578,124,0,0,0,0,0.012653,0.005536
+barabasi_albert_n250_k6_seed82.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,67,7996,0.43947,94,94,101.789,97.4278,107,0,0,0,0,0.011204,0.004581
+barabasi_albert_n250_k6_seed83.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,31,5562,0.361268,97,97,104.417,99.5219,107,0,0,0,0,0.005403,0.002112
+barabasi_albert_n250_k6_seed84.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,45,8074,0.507825,95,95,104.042,99.0121,154,0,0,0,0,0.007899,0.003084
+barabasi_albert_n250_k6_seed85.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1,1686,0.15957,100,100,104.16,100,53,0,0,0,0,0,0
+barabasi_albert_n250_k6_seed86.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,95,11400,0.649786,94,94,102.25,97.722,140,0,0,0,0,0.017135,0.006592
+barabasi_albert_n250_k6_seed87.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,95,12134,0.581412,94,94,102.958,97.7585,115,0,0,0,0,0.016687,0.006689
+barabasi_albert_n250_k6_seed88.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,97,12479,0.596211,94,94,104.583,98.6206,137,0,0,0,0,0.015047,0.00641
+barabasi_albert_n250_k6_seed89.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,77,12403,0.766271,94,94,102.818,98.5444,235,0,0,0,0,0.012329,0.005179
+barabasi_albert_n250_k6_seed90.mis,250,1464,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,153,19908,1.02818,91,91,100.921,96.5661,219,0,0,0,0,0.025929,0.010588

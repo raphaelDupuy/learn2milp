@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -91,6 +92,41 @@ int main(int argc, char* argv[])
         && std::fabs(reference.primalBound - reference.dualBound) < 1e-6,
         "SCIP as shipped solves the instance"
     );
+
+    // A start solution is SCIP's first incumbent (the primal oracle).
+    {
+        MISBenchmarkConfig started;
+        started.branchingRule = "relpscost";
+        started.settings = MISBenchmarkSettings::Default;
+        started.startSolution = reference.selectedVertices;
+        started.statisticsPath = workDir / "started.stats.json";
+
+        MISBenchmarkResult result;
+        std::string error;
+        const bool ok = benchmarkMIS(instance, started, result, error);
+
+        std::ifstream statistics(started.statisticsPath);
+        const std::string json(
+            (std::istreambuf_iterator<char>(statistics)),
+            std::istreambuf_iterator<char>());
+        const std::string firstBound = "\"first_primal_bound\": "
+            + std::to_string(static_cast<int>(reference.primalBound)) + ".0";
+
+        check(
+            ok && result.solved
+            && std::fabs(result.primalBound - reference.primalBound) < 1e-6
+            && json.find(firstBound) != std::string::npos,
+            "A start solution is the first incumbent " + error
+        );
+
+        started.startSolution = {instance.n};
+        started.statisticsPath.clear();
+
+        check(
+            !benchmarkMIS(instance, started, result, error),
+            "A start solution with an unknown vertex is rejected"
+        );
+    }
 
     for (const char* rule : {
             "relpscost", "pscost", "vanillafullstrong", "misfullstrong"})

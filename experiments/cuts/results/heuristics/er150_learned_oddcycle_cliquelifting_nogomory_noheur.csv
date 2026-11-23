@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_083_seed81.mis,150,941,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1299,75647,2.58118,41,41,51.1789,49.3499,1793,0,0,0,0,0.088365,0.047546
+erdos_renyi_n150_p0_083_seed82.mis,150,905,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2107,121938,4.25123,42,42,53.2857,51.9108,3783,0,0,0,0,0.12021,0.071037
+erdos_renyi_n150_p0_083_seed83.mis,150,942,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,4150,205997,6.8097,40,40,51.0906,49.6624,5274,0,0,0,0,0.240153,0.13675
+erdos_renyi_n150_p0_083_seed84.mis,150,941,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,3702,219959,7.20978,40,40,51.9496,50.5212,6203,0,0,0,0,0.224153,0.125575
+erdos_renyi_n150_p0_083_seed85.mis,150,962,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2713,161885,5.28108,40,40,51.6466,50.2624,4059,0,0,0,0,0.169799,0.094321
+erdos_renyi_n150_p0_083_seed86.mis,150,969,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,4227,224719,7.31308,40,40,52.739,51.2864,5563,0,0,0,0,0.247809,0.137679
+erdos_renyi_n150_p0_083_seed87.mis,150,875,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1352,82108,2.67807,43,43,53.8308,50.9065,2225,0,0,0,0,0.08331,0.047255
+erdos_renyi_n150_p0_083_seed88.mis,150,935,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2257,126587,4.33797,41,41,52.304,51.2766,3627,0,0,0,0,0.141469,0.077312
+erdos_renyi_n150_p0_083_seed89.mis,150,916,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,2797,151066,5.246,41,41,51.938,50.7274,4212,0,0,0,0,0.166152,0.091714
+erdos_renyi_n150_p0_083_seed90.mis,150,868,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1312,83900,3.13925,43,43,53.6718,51.547,2082,0,0,0,0,0.088476,0.049782

@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+barabasi_albert_n250_k8_seed81.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,493,77218,3.87493,83,83,95.5179,91.0439,1143,0,0,0,0,0.091438,0.031768
+barabasi_albert_n250_k8_seed82.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1483,186522,8.31202,80,80,95.9412,91.3952,2146,0,0,0,0,0.218208,0.090939
+barabasi_albert_n250_k8_seed83.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,269,46361,2.45958,84,84,95.8824,91.4438,658,0,0,0,0,0.05427,0.018435
+barabasi_albert_n250_k8_seed84.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,831,116102,5.54003,82,82,96,91.2986,1741,0,0,0,0,0.136724,0.053283
+barabasi_albert_n250_k8_seed85.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1631,213902,9.77236,80,80,95.0015,90.5198,2471,0,0,0,0,0.266964,0.102669
+barabasi_albert_n250_k8_seed86.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,291,40941,1.91751,83,83,94.5,90.3049,384,0,0,0,0,0.050796,0.018757
+barabasi_albert_n250_k8_seed87.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,451,55272,2.57583,83,83,93.9176,90.2389,591,0,0,0,0,0.076311,0.028965
+barabasi_albert_n250_k8_seed88.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,1039,158462,7.36708,81,81,96.25,91.0238,2735,0,0,0,0,0.173444,0.066654
+barabasi_albert_n250_k8_seed89.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,433,68685,3.26088,82,82,95.125,89.6284,874,0,0,0,0,0.083869,0.028713
+barabasi_albert_n250_k8_seed90.mis,250,1936,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,447,59042,2.69145,83,83,95.9231,90.8219,837,0,0,0,0,0.073048,0.028678

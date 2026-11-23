@@ -1,0 +1,11 @@
+instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds
+erdos_renyi_n150_p0_054_seed81.mis,150,625,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,787,42023,1.5664,50,50,61,57.5761,1724,0,0,0,0,0.035748,0.026722
+erdos_renyi_n150_p0_054_seed82.mis,150,579,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,303,17806,0.637499,53,53,62.5,57.9365,551,0,0,0,0,0.016819,0.013133
+erdos_renyi_n150_p0_054_seed83.mis,150,639,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,593,45585,1.73047,49,49,60.5,56.4774,2067,0,0,0,0,0.034635,0.024419
+erdos_renyi_n150_p0_054_seed84.mis,150,592,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,381,25019,0.851929,52,52,62.5,52,561,0,0,0,0,0.020242,0.015115
+erdos_renyi_n150_p0_054_seed85.mis,150,622,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,627,35006,1.37041,50,50,59.6429,56.213,1346,0,0,0,0,0.030854,0.022665
+erdos_renyi_n150_p0_054_seed86.mis,150,614,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,463,27943,1.0179,52,52,63.5,59.2322,846,0,0,0,0,0.02224,0.016935
+erdos_renyi_n150_p0_054_seed87.mis,150,558,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,85,7000,0.332968,57,57,63.5,60.2324,227,0,0,0,0,0.006586,0.004884
+erdos_renyi_n150_p0_054_seed88.mis,150,589,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,519,27366,0.971823,52,52,62.75,58.0973,873,0,0,0,0,0.024173,0.018683
+erdos_renyi_n150_p0_054_seed89.mis,150,602,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,490,31601,1.20263,51,51,61.6,57.4481,1132,0,0,0,0,0.025999,0.019377
+erdos_renyi_n150_p0_054_seed90.mis,150,562,default+oddcycle_cliquelifting_nogomory_noheur,mislearned,0,OPTIMAL,1,215,15622,0.552725,53,53,62.5,58.2634,478,0,0,0,0,0.011438,0.008922
