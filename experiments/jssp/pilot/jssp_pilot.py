@@ -245,11 +245,19 @@ STATS = {
 }
 
 
-def solve(lp_file, rule, seed, time_limit, log_file, restarts=True):
-    commands = [*([] if restarts else ["set presolving maxrestarts 0"]),"set display verblevel 3", f"set limits time {time_limit}",
+def solve(lp_file, rule, seed, time_limit, log_file, restarts=True,
+          start_solution=None, write_solution=None):
+    """Solves one MILP with the scip binary. start_solution: a .sol file
+    read before solving, the first incumbent (the primal oracle);
+    write_solution: where to write the best solution found."""
+    commands = [*([] if restarts else ["set presolving maxrestarts 0"]),
+                "set display verblevel 3", f"set limits time {time_limit}",
                 f"set randomization randomseedshift {seed}",
                 "set limits memory 2500", *RULES[rule], f"read {lp_file}",
-                "optimize", "display statistics", "quit"]
+                *([f"read {start_solution}"] if start_solution else []),
+                "optimize",
+                *([f"write solution {write_solution}"] if write_solution else []),
+                "display statistics", "quit"]
     with open(log_file, "w") as log:
         subprocess.run(["scip", "-c", " ".join(commands)], stdout=log,
                        stderr=subprocess.STDOUT, check=False)
@@ -368,10 +376,24 @@ def command_run(args):
     report([f"{out}: {len(tasks)} runs, {args.jobs} at a time, "
             f"time limit {args.time_limit} s", "", *table.header()])
 
+    if args.write_solutions:
+        Path(args.write_solutions).mkdir(parents=True, exist_ok=True)
+
+    def solution_file(directory, info):
+        return Path(directory) / f"{info['instance']}_{info['formulation']}.sol"
+
     def work(task):
         info, lp_file, log = task
+        start = solution_file(args.oracle, info) if args.oracle else None
+        if start is not None and not start.exists():
+            raise FileNotFoundError(f"no oracle solution {start}")
+        written = (solution_file(args.write_solutions, info)
+                   if args.write_solutions else None)
         row = dict(info, **solve(lp_file, info["rule"], 0, args.time_limit, log,
-                                     restarts=not args.no_restarts))
+                                     restarts=not args.no_restarts,
+                                     start_solution=start,
+                                     write_solution=written))
+        row["oracle"] = int(start is not None)
         with lock:
             line = table.row(info["instance"], info["formulation"], info["rule"],
                              row["status"], row["time"], row["nodes"])
@@ -450,6 +472,11 @@ def main():
     run.add_argument("--jobs", type=int, default=4)
     run.add_argument("--progress-log", default="data/logs/jssp_pilot.log",
                      help="file that scripts/watch_progress.sh can follow")
+    run.add_argument("--write-solutions", metavar="DIR",
+                     help="write the best solution of every run to DIR")
+    run.add_argument("--oracle", metavar="DIR",
+                     help="start every run from the solution in DIR "
+                          "(written by --write-solutions): the primal oracle")
     run.add_argument("--no-restarts", action="store_true",
                      help="set presolving/maxrestarts to 0")
     run.add_argument("--output", required=True)

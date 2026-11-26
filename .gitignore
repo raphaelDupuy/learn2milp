@@ -45,3 +45,4 @@ Thumbs.db
 /experiments/cuts/results/*/nodes/
 /experiments/cuts/results/*/stats/
 /experiments/jssp/results/*/lp/
+/experiments/jssp/results/*/sol/
