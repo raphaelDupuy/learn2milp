@@ -1,6 +1,6 @@
 # Results
 
-Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`. The last two sections turn to the cutting planes: which separators are worth calling at the nodes, and what a better selection of the cuts at the root would be worth.
+Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`. Later sections turn to the cutting planes, the solver settings and the primal heuristics; the last one is the pilot on the job shop.
 
 ## Erdős–Rényi G(125, 0.1)
 
@@ -640,3 +640,41 @@ This is more room than for the separators (1 to 7% for an oracle over five fixed
 | its choices only (`vanillafullstrong`) | 15 | ≥ 3,721 | 213 |
 
 `vanillafullstrong` makes the choices of full strong branching without its side effects: it fixes no variable when a child is infeasible and prunes no node. It is the tree that a perfect imitation of the expert's choices could reach. On the 15 instances all three rules solve, it explores 0.48 of the nodes of `relpscost` (geometric mean of the per-instance ratios), about the margin of the expert without pruning on G(125, 0.1), but with a wide spread: fewer nodes on 9 of the 15 instances only. The five instances it does not solve are the hardest, where it seems furthest ahead. On 8×8 instances, it explores more nodes than `relpscost` (1,138 against 470 on 5 instances). **Full strong branching explores 15 times fewer nodes than `relpscost`, but mostly through its side effects**, which no imitation of its choices recovers; strong branching on the first candidates of a learned rule can recover part of them.
+
+**A primal oracle.** The 20 instances are solved again from their optimal solution, given as the first incumbent (`--oracle`). `relpscost` then explores 1,843 nodes instead of 9,583, in 12.1 s instead of 40.8 s. With the optimum known, `vanillafullstrong` and `relpscost` make trees of the same size (906 and 855 nodes on the 16 instances solved by all rules, a per-instance ratio of 1.02): the lead of the expert's choices came from finding good schedules sooner, not from smaller proofs. Full strong branching keeps its side effects, 48 nodes. In its statistics, it is called 9 times per branched node on average (15 with the oracle): each time a child is infeasible, it fixes the variable, solves the LP again and starts over. It fixes 27 to 42 of the 450 order variables per node, against 0.1 for `relpscost`.
+
+**A tabu search start.** A tabu search with the N5 neighbourhood of Nowicki and Smutnicki (1996), in Python, 10 s per instance (`experiments/jssp/pilot/jssp_tabu.py`), finds the optimum of 14 of the 20 instances and is within 0.2 to 0.9% on five more (3% on the last). Started from its schedules, SCIP does almost as well as from the optimum:
+
+| Start | `relpscost` nodes | seconds | `fullstrong` nodes | seconds |
+|---|---|---|---|---|
+| none | 9,583 | 40.8 | 559 | 87.9 |
+| tabu search | 1,960 | 13.4 | 129 | 18.4 |
+| optimum | 1,843 | 12.1 | 112 | 13.6 |
+
+(19 instances for `fullstrong`.) The primal side of the job shop at this size is covered by a classical heuristic.
+
+**Integer times and machine constraints.** Two changes to the model, from the tabu search start (`experiments/jssp/results/pilot10_disjunctive`). In `boundedint`, start times and makespan are integer variables, so SCIP knows that the objective is integral and that a new solution must improve by at least 1; branching stays on the order variables (`branching/preferbinary`). `disjunctive` adds one `cumulative` constraint of capacity 1 per machine on the start times. It only propagates (no cuts): from the time windows of all the operations of a machine together, it deduces orders that the big-M rows, which only see pairs, miss. `disjunctive_ef` turns on SCIP's edge finding as well. The LP is the same in all three.
+
+| Model | Rule | Solved | Nodes | Seconds |
+|---|---|---|---|---|
+| `bounded` | `relpscost` | 20 | 1,601 | 11.9 |
+| `bounded` | `fullstrong` | 19 | 129 | 18.4 |
+| `boundedint` | `relpscost` | 20 | 362 | 2.7 |
+| `boundedint` | `fullstrong` | 19 | 131 | 5.1 |
+| `disjunctive` | `relpscost` | 20 | 16 | 3.7 |
+| `disjunctive` | `fullstrong` | 20 | 10 | 3.9 |
+| `disjunctive_ef` | `relpscost` | 20 | 21 | 4.2 |
+
+(Means over the 19 instances solved by all.) Integer times alone divide the time by 5. With the machine constraints, 11 instances are solved at the root and the longest takes 19 s instead of 54 s; on the easy ones, the propagation costs about a second. Full strong branching gains nothing more: the propagation finds the fixings it found. Edge finding adds nothing to the time-table edge finding that `cumulative` uses by default.
+
+**15×15.** 20 instances, the `disjunctive` model, a 30 s tabu search start, 900 s (`experiments/jssp/results/pilot15_*`). The gap is measured from the dual bound to the best solution found by any rule:
+
+| Rule | Solved | Mean gap | Nodes in 900 s |
+|---|---|---|---|
+| `relpscost` | 5 | 11.2% | 25,000 to 50,000 |
+| `fullstrong` | 2 | 11.9% | 550 to 1,060 |
+| `vanillafullstrong` | 1 | 12.8% | 380 to 1,460 |
+
+On the 15 instances no rule solves, the gaps are about equal (full strong branching and its choices alone each have a smaller gap than `relpscost` on 5). The dual bound hardly moves from the root, where it is close to the one-machine bound, and the tabu search is within 0 to 3% of the best solution found. Full strong branching makes trees 5 to 20 times smaller on the solved instances, but at about one node per second it solves fewer.
+
+**Verdict.** On the job shop, what the MILP lacks is not better branching choices. At 10×10, a complete model (integer times, machine constraints) and a tabu search leave trees of about ten nodes. At 15×15, the bound limits the search, and no branching rule raises it; imitating full strong branching does worse than `relpscost`. There is nothing for a learned branching rule to gain, so no data was collected. Limits: SCIP only, Taillard-style random instances, 10×10 and 15×15.

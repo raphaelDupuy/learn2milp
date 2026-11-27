@@ -11,7 +11,7 @@ The project initially focuses on two components of Branch-and-Cut:
 - branching decisions;
 - cutting-plane selection.
 
-The first problem considered is the Maximum Independent Set (MIS). The second is the Job-Shop Scheduling Problem (JSSP), at the pilot stage.
+The first problem considered is the Maximum Independent Set (MIS). The second, the Job-Shop Scheduling Problem (JSSP), stopped at a pilot: there was nothing for learned branching to gain.
 
 ## Research questions
 
@@ -31,11 +31,11 @@ A later direction is to compare policies trained to imitate local solver decisio
 |---|---|
 | [Installation](docs/installation.md) | SCIP 10.1 from source, build, tests, Python environment |
 | [Interactive menu](docs/interactive-menu.md) | `learn2milp`: generate, solve, compare rules, inspect datasets, file browser |
-| [Command line tools](docs/command-line-tools.md) | `mis-generator`, `mis-collector`, `mis-featurizer`, `mis-benchmark`, dataset scripts |
+| [Command line tools](docs/command-line-tools.md) | `mis-generator`, `mis-collector`, `mis-featurizer`, `mis-benchmark`, `jssp-generator`, dataset scripts |
 | [Data formats](docs/data-format.md) | instances, strong branching samples, training tables, benchmark results |
 | [Learning a branching rule](docs/learning-to-branch.md) | features, training, the `mislearned` rule, on-policy samples |
-| [Results](docs/results.md) | MIS: learned branching, cutting planes, solver settings, time profiles, final run |
-| [Project notes](docs/project-notes.md) | research questions, status on MIS, next steps |
+| [Results](docs/results.md) | MIS: learned branching, cutting planes, solver settings, time profiles, final run; job-shop pilot |
+| [Project notes](docs/project-notes.md) | research questions and their status |
 
 ## Quick start
 
@@ -59,7 +59,7 @@ After [installing SCIP and building the project](docs/installation.md):
 
 ## Current status
 
-The experiments on MIS are done. The JSSP pilot is in progress (`experiments/jssp/pilot/`).
+The experiments on MIS and the JSSP pilot are done.
 
 ### Implemented
 
@@ -71,7 +71,8 @@ The experiments on MIS are done. The JSSP pilot is in progress (`experiments/jss
 - a learned branching rule: candidate features in C, training of a small ranking model in Python (a multilayer perceptron, a graph neural network over the candidates or a bipartite model of variables and constraints after Gasse et al. 2019, trained on the CPU or a GPU), and its evaluation inside SCIP (`mislearned`), optionally with strong branching on the model's first candidates;
 - cutting-plane experiments: separator settings, a lookahead cut selector (Paulus et al. 2022), a separation gate and node logs (SCIP plugins);
 - benchmark of rules and settings on a set of instances, with SCIP's statistics and an optimal-solution oracle for the primal heuristics (`mis-benchmark`);
-- an interactive menu to try rules and models and to inspect datasets (`learn2milp`).
+- an interactive menu to try rules and models and to inspect datasets (`learn2milp`);
+- the job shop: Taillard's generator (`jssp-generator`), the `.jsp` format, the disjunctive model, and the pilot scripts (`experiments/jssp/pilot/`).
 
 ### Results on MIS
 
@@ -79,11 +80,14 @@ The experiments on MIS are done. The JSSP pilot is in progress (`experiments/jss
 - **Cutting planes.** Learned cut selection has no room on MIS: selection at the root closes no more gap than SCIP's, and choosing the separators per instance gains only a few percent over the best fixed choice. The gain comes from fixed settings: no Gomory cuts, odd-cycle cuts at the nodes, and SCIP's clique lifting.
 - **Together.** The learned rule with these settings takes 0.14 to 0.30 of the time of SCIP as shipped, and 0.18 to 0.67 of the time of the best SCIP configuration, on nine test sets. Features and inference take 2 to 7% of its time.
 
+### Results on the job shop
+
+The pilot (`experiments/jssp/pilot/`) first showed a large margin for imitating full strong branching, then lost it. Given the optimum as first solution, the expert's choices do no better than `relpscost`, and a tabu search gives almost the same start. With integer start times and one `cumulative` constraint per machine, SCIP solves 10×10 instances in about ten nodes. On 15×15 instances, the bound limits the search, and no branching rule raises it. What the MILP lacks on the job shop is propagation and a primal heuristic, not branching choices.
+
 Details are in [Results](docs/results.md) and the status of each research question in [Project notes](docs/project-notes.md).
 
 ### Planned
 
-- extension to Job-Shop Scheduling: generator, formulation, and whether strong branching is worth imitating when the LP bound is weak;
 - evaluation of the MIS models on other graph families;
 - comparison of imitation with training signals tied to the whole search (tree-level objectives).
 
