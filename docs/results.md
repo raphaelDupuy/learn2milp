@@ -1,6 +1,6 @@
 # Results
 
-Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`. Later sections turn to the cutting planes, the solver settings and the primal heuristics; the last one is the pilot on the job shop.
+Learned branching rules (see [learning-to-branch.md](learning-to-branch.md)) compared with SCIP's default rule, `relpscost`. All figures are shifted geometric means over the instances and SCIP seeds, as computed by `mis-benchmark`; models and result tables are in `experiments/`. Later sections turn to the cutting planes, the solver settings and the primal heuristics; the last two are pilots on other problems: the job shop, then minimum dominating set and set cover.
 
 ## Erdős–Rényi G(125, 0.1)
 
@@ -678,3 +678,33 @@ This is more room than for the separators (1 to 7% for an oracle over five fixed
 On the 15 instances no rule solves, the gaps are about equal (full strong branching and its choices alone each have a smaller gap than `relpscost` on 5). The dual bound hardly moves from the root, where it is close to the one-machine bound, and the tabu search is within 0 to 3% of the best solution found. Full strong branching makes trees 5 to 20 times smaller on the solved instances, but at about one node per second it solves fewer.
 
 **Verdict.** On the job shop, what the MILP lacks is not better branching choices. At 10×10, a complete model (integer times, machine constraints) and a tabu search leave trees of about ten nodes. At 15×15, the bound limits the search, and no branching rule raises it; imitating full strong branching does worse than `relpscost`. There is nothing for a learned branching rule to gain, so no data was collected. Limits: SCIP only, Taillard-style random instances, 10×10 and 15×15.
+
+## Covering pilot
+
+After the job shop, two covering problems, with the same test: does imitating full strong branching keep its margin over `relpscost` when the optimum is given first? `experiments/covering/pilot/covering_pilot.py` writes the instances as MILPs and solves them with the `scip` binary in the settings of the study (no restarts, cuts at the root only), SCIP seed 0, four runs at a time, 900 s; `experiments/covering/run_pilot.sh` runs the whole pilot, and the results are in `experiments/covering/results/`.
+
+- **Minimum dominating set**: min $\sum_v x_v$ subject to $x_v + \sum_{u \in N(v)} x_u \ge 1$ for every vertex $v$, on graphs from `mis-generator`. On Barabási–Albert graphs, SCIP solves it at the root. On Erdős–Rényi graphs, G(125, 0.1) gives about 500 nodes with `relpscost`, G(200, 0.05) about 23,000 (2,000 to 120,000); the pilot uses G(150, 0.067), mean degree 10, 760 to 5,100 nodes.
+- **Set cover**: the generator of Gasse et al. (2019), after Balas and Ho (1980), 1,000 columns of costs 1 to 100, density 0.05. With 500 or 750 rows, `relpscost` needs fewer than 300 nodes; the pilot uses 1,000 rows, Gasse et al.'s medium size.
+
+20 instances of each. Nodes are on the instances that all three rules solve; the ratio is the geometric mean of the per-instance ratios to `relpscost`:
+
+| Problem | Start | Rule | Solved | Nodes | Seconds | Ratio |
+|---|---|---|---|---|---|---|
+| dominating set | none | `relpscost` | 20 | 1,375 | 6.4 | 1 |
+| | | `fullstrong` | 20 | 272 | 41.5 | 0.19 |
+| | | `vanillafullstrong` | 20 | 478 | 61.0 | 0.34 |
+| | optimum | `relpscost` | 20 | 782 | 5.5 | 1 |
+| | | `fullstrong` | 20 | 156 | 24.3 | 0.19 |
+| | | `vanillafullstrong` | 20 | 267 | 35.0 | 0.35 |
+| set cover | none | `relpscost` | 20 | 536 | 27.3 | 1 |
+| | | `fullstrong` | 11 | 74 | 118.6 | 0.13 |
+| | | `vanillafullstrong` | 8 | 151 | 171.7 | 0.28 |
+| | optimum | `relpscost` | 20 | 669 | 27.9 | 1 |
+| | | `fullstrong` | 14 | 76 | 122.8 | 0.11 |
+| | | `vanillafullstrong` | 9 | 152 | 174.9 | 0.23 |
+
+**Dominating set.** The choices of full strong branching alone explore fewer nodes than `relpscost` on all 20 instances (0.17 to 0.78 of them). The optimum given first halves the trees of every rule (`relpscost`: 0.48 of the nodes, per instance), and the margin of the choices stays the same, 0.35. On G(125, 0.1), the margin of the expert without pruning on maximum independent set was about 0.53. The root bound is 0.82 to 0.84 of the optimum.
+
+**Set cover.** `relpscost` solves all 20 instances, 3,095 nodes and 71 s on average; full strong branching makes about one node per second and solves 11, its choices alone 8. The ratios are on these 8 instances (9 with the optimum), the easiest ones: `relpscost` needs 536 nodes on them. The optimum given first hardly changes the trees (0.95 of the nodes of `relpscost`): the search is all in the proof. The margin on the hardest instances is unknown.
+
+**Verdict.** Both problems keep the margin that the job shop lost with the primal oracle: a perfect imitation of the expert's choices would explore about a third of the nodes of `relpscost` on the dominating set and a quarter on set cover. The dominating set is the next problem for the chain: it is posed on the same graphs as maximum independent set, with one variable per vertex. On set cover, each node costs about 20 ms of LP with up to 1,000 candidates, so the features will have to stay cheap.
