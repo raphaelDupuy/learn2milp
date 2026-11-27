@@ -49,7 +49,12 @@ struct JSSPModel
  * as big-M, head(j, k) is the work of job j before operation k and
  * tail(j, k) the work from operation k to the end of the job. The bounds
  * on C carry the one-machine bound, which the LP of the big-M formulation
- * does not see. Start times and C are continuous.
+ * does not see. Start times and C are integers (the durations are), so
+ * that scip knows the objective is integral: a new solution must improve
+ * by at least 1, which prunes far more nodes than continuous times (5
+ * times less time on the 10x10 pilot instances). They get a branching
+ * priority below that of the order variables, on which scip branches
+ * first.
  *
  * Returns SCIP_INVALIDDATA, without creating anything, if the instance is
  * not valid (validateJSSPInstance()).

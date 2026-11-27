@@ -211,6 +211,36 @@ void testFt06()
     check(ordered, "order variables name the smaller job first");
 }
 
+void testVariableTypes()
+{
+    const JSSPInstance instance =
+        TaillardGenerator{}.generate(taillardConfigFromSeed(4, 3, 1)).instance;
+
+    SCIP* scip = nullptr;
+    SCIPcreate(&scip);
+    SCIPincludeDefaultPlugins(scip);
+
+    JSSPModel model;
+    check(buildJSSPModel(scip, instance, model) == SCIP_OKAY, "the model is built");
+
+    bool integral = SCIPvarGetType(model.makespan) == SCIP_VARTYPE_INTEGER;
+    bool after = SCIPvarGetBranchPriority(model.makespan) < 0;
+
+    for (SCIP_VAR* start : model.startTimes)
+    {
+        integral = integral && SCIPvarGetType(start) == SCIP_VARTYPE_INTEGER;
+        after = after && SCIPvarGetBranchPriority(start) < 0;
+    }
+
+    for (const JSSPOrderVariable& order : model.orders)
+        after = after && SCIPvarGetBranchPriority(order.var) == 0;
+
+    check(integral, "start times and makespan are integers");
+    check(after, "branching takes the order variables first");
+
+    SCIPfree(&scip);
+}
+
 void testInvalidInstance()
 {
     JSSPInstance instance;
@@ -235,6 +265,7 @@ int main()
 {
     testAgainstEnumeration();
     testFt06();
+    testVariableTypes();
     testInvalidInstance();
 
     if (failures != 0)

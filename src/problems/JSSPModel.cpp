@@ -88,7 +88,8 @@ SCIP_RETCODE buildJSSPModel(
 
     SCIP_CALL(addVariable(
         scip, "cmax", built.lowerBound, horizon, 1.0,
-        SCIP_VARTYPE_CONTINUOUS, built.makespan));
+        SCIP_VARTYPE_INTEGER, built.makespan));
+    SCIP_CALL(SCIPchgVarBranchPriority(scip, built.makespan, -1));
 
     built.startTimes.resize(static_cast<std::size_t>(jobs) * machines, nullptr);
 
@@ -104,8 +105,9 @@ SCIP_RETCODE buildJSSPModel(
                 heads[index],
                 horizon - tails[index],
                 0.0,
-                SCIP_VARTYPE_CONTINUOUS,
+                SCIP_VARTYPE_INTEGER,
                 built.startTimes[index]));
+            SCIP_CALL(SCIPchgVarBranchPriority(scip, built.startTimes[index], -1));
         }
     }
 
