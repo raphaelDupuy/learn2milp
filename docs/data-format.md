@@ -47,7 +47,7 @@ Main columns of the candidate table:
 - `expert_selected`: 1 for the candidate the expert branched on;
 - `pseudocost_down`, `pseudocost_up`, `pseudocost_count_*`, `inferences_*`, `cutoffs_*`, `conflict_score`: what the search has learned about the vertex before the node is branched, as kept by SCIP. Strong branching does not change these statistics: a rule without strong branching sees the same kind of values.
 
-On-policy collections (`--policy-model`) have the same tables. Their metadata records the model (`branching_policy`, `policy_model`), the number of branching decisions it took and how many of them agree with the expert (`policy_decisions`, `policy_expert_agreements`).
+The metadata also names the problem solved on the graph (`problem`: `mis` or `dominating`). On-policy collections (`--policy-model`) have the same tables. Their metadata records the model (`branching_policy`, `policy_model`), the number of branching decisions it took and how many of them agree with the expert (`policy_decisions`, `policy_expert_agreements`).
 
 Conventions:
 

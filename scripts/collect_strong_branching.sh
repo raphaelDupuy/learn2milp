@@ -14,6 +14,9 @@
 #   POLICY_MODEL  branching model driving the search instead of the expert
 #                 (default: none, the search follows the expert)
 #
+# The environment variable PROBLEM chooses the problem posed on each graph:
+# mis (default) or dominating.
+#
 # The script can be interrupted and restarted: an instance whose .sb.meta
 # file already exists is skipped. The collected tables do not depend on
 # JOBS, but a run stopped by the time limit depends on the machine load.
@@ -21,7 +24,7 @@
 set -euo pipefail
 
 if [[ $# -lt 3 || $# -gt 6 ]]; then
-    sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 fi
 
@@ -31,6 +34,7 @@ OUTPUT_DIR="$3"
 JOBS="${4:-4}"
 TIME_LIMIT="${5:-3600}"
 POLICY_MODEL="${6:-}"
+PROBLEM="${PROBLEM:-mis}"
 
 if [[ ! -x "$COLLECTOR" ]]; then
     echo "Collector not found or not executable: $COLLECTOR" >&2
@@ -69,6 +73,7 @@ collect_one() {
         --instance "$instance" \
         --output-dir "$OUTPUT_DIR" \
         --time-limit "$TIME_LIMIT" \
+        --problem "$PROBLEM" \
         "${policy[@]}" \
         >"$OUTPUT_DIR/logs/$name.log" 2>&1; then
         echo "done  $name"

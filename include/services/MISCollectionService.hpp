@@ -5,6 +5,7 @@
 #include <string>
 
 #include "io/MISStrongBranchingSampleIO.hpp"
+#include "problems/GraphProblem.hpp"
 #include "problems/MIS.hpp"
 #include "services/MISSolverLimits.hpp"
 
@@ -43,6 +44,9 @@ struct MISCollectionConfig
     // Identifies the instance in the metadata file (e.g. its file name).
     std::string instanceName;
 
+    // Problem posed on the graph of the instance.
+    GraphProblem problem = GraphProblem::MaximumIndependentSet;
+
     // Limits on the solving process. A run stopped by a limit still
     // produces a valid, but truncated, dataset.
     double timeLimitSeconds = MIS_DEFAULT_TIME_LIMIT_SECONDS;
@@ -77,7 +81,7 @@ struct MISCollectionResult
 
     double solvingTimeSeconds = 0.0;
 
-    // Bounds on the size of a maximum independent set.
+    // Bounds on the optimal objective value (the size of the set).
     bool hasSolution = false;
     double primalBound = 0.0;
     double dualBound = 0.0;

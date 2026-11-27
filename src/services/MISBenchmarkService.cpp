@@ -604,8 +604,8 @@ bool benchmarkMIS(
 
         std::vector<SCIP_VAR*> vars;
         require(
-            buildMISModel(scip, instance, vars),
-            "build the MIS model"
+            buildGraphProblemModel(scip, config.problem, instance, vars),
+            "build the model"
         );
 
         if (config.settings == MISBenchmarkSettings::Study)

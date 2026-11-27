@@ -416,8 +416,8 @@ bool collectMISStrongBranchingSamples(
 
         std::vector<SCIP_VAR*> vars;
         require(
-            buildMISModel(scip, instance, vars),
-            "build the MIS model"
+            buildGraphProblemModel(scip, config.problem, instance, vars),
+            "build the model"
         );
 
         // Collection settings (see the header).
@@ -545,6 +545,7 @@ bool collectMISStrongBranchingSamples(
                 << "MIS_SB_DATASET 2\n"
                 << "instance_name "
                 << std::quoted(config.instanceName) << '\n'
+                << "problem \"" << graphProblemName(config.problem) << "\"\n"
                 << "number_of_vertices " << instance.n << '\n'
                 << "number_of_edges " << instance.edges.size() << '\n'
                 << "scip_version \""

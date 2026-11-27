@@ -50,7 +50,7 @@ Batch instances are named after their size and seed (`taillard_j10_m10_seed81`).
     --time-limit 600
 ```
 
-Optional limits are `--time-limit SECONDS` (default 3600), `--node-limit N` and `--scip-seed S`. With `--policy-model MODEL`, a trained model drives the search while strong branching still labels every visited node (on-policy samples, see [learning-to-branch.md](learning-to-branch.md#4-on-policy-samples)).
+Optional limits are `--time-limit SECONDS` (default 3600), `--node-limit N` and `--scip-seed S`. `--problem dominating` poses the minimum dominating set problem on the graph instead of maximum independent set (`--problem mis`, the default): $`\min \sum_v x_v`$ subject to $`x_v + \sum_{u \in N(v)} x_u \ge 1`$ for every vertex. The variables are still one per vertex, so the samples, the features and the learned rule are the same. With `--policy-model MODEL`, a trained model drives the search while strong branching still labels every visited node (on-policy samples, see [learning-to-branch.md](learning-to-branch.md#4-on-policy-samples)).
 
 For an instance `NAME.mis`, the collector writes `NAME.sb.nodes.csv`, `NAME.sb.candidates.csv` and `NAME.sb.meta` (see [data-format.md](data-format.md#strong-branching-samples)).
 
@@ -70,7 +70,7 @@ The same SCIP settings, called the study settings, are used to collect the data 
 scripts/collect_strong_branching.sh build/mis-collector INSTANCE_DIR OUTPUT_DIR 4
 ```
 
-Two more optional arguments give the time limit per instance and a policy model.
+Two more optional arguments give the time limit per instance and a policy model; the environment variable `PROBLEM` (`mis` or `dominating`) is passed to `--problem`.
 
 `experiments/er125_p01/build_dataset.sh` is the recipe of the first dataset: Erdős–Rényi graphs G(125, 0.1) split into training (60 graphs), validation (20) and test (20) sets, plus 20 graphs G(150, 0.05) to measure generalization. Samples are collected for the training and validation sets only; the other two sets are used to evaluate the solver.
 
@@ -78,7 +78,7 @@ Two more optional arguments give the time limit per instance and a policy model.
 experiments/er125_p01/build_dataset.sh build 4
 ```
 
-`experiments/ba200_k8/build_dataset.sh` does the same with Barabási–Albert graphs (200 vertices, $`k = 8`$), with the same splits and seeds. `scripts/collect_on_policy.sh` adds [on-policy samples](learning-to-branch.md#4-on-policy-samples) to either dataset.
+`experiments/ba200_k8/build_dataset.sh` does the same with Barabási–Albert graphs (200 vertices, $`k = 8`$), with the same splits and seeds, and `experiments/dom_er150/build_dataset.sh` with the minimum dominating set on G(150, 0.067) (no transfer set). `scripts/collect_on_policy.sh` adds [on-policy samples](learning-to-branch.md#4-on-policy-samples) to either dataset.
 
 ## `mis-featurizer`: training tables
 
@@ -116,6 +116,7 @@ The features are described in [learning-to-branch.md](learning-to-branch.md#1-fe
 - `--settings study` (the default) uses the [study settings](#solver-settings), so that rules are compared in the conditions they were learned in; `--settings default` runs SCIP with no parameter changed, as an outside reference;
 - `--parameters FILE` applies a SCIP settings file after `--settings` (SCIP's format: one `name = value` per line, `#` for comments), for instance to choose which separators run at the nodes; every parameter it names must exist, so that a misspelled name is an error rather than a silent no-op, and the time limit and seed of the run take precedence over it. The `settings` column of the results then reads `default+FILE_STEM`. Such a file can also turn on the separation gate of the project (`src/cuts/MISSeparationGate.c`), which runs chosen separators only at the nodes whose LP bound, after the node's first LP, is close to the cutoff bound: `separating/misgate/freq = 1` turns it on (it is off by default and then changes nothing), `separating/misgate/maxgap` is the largest gap (cutoff bound − LP bound) at which they run (default 0.5), and `separating/misgate/separators` names them, comma-separated (default `oddcycle`); the columns `gate_separated` and `gate_skipped` count its decisions;
 - `--cut-selector lookahead` replaces SCIP's cut selection at the root by the lookahead expert of Paulus et al. (2022): every candidate cut is scored by the increase of the LP bound when it alone is added to the LP (one LP solve per candidate, in diving mode), and the cuts are taken in decreasing order of score with the parallelism limits of SCIP's hybrid selector; outside the root, SCIP's selector decides. It is an expert to measure what a better selection is worth, not a fast rule;
+- `--problem dominating` solves the minimum dominating set of each graph instead of its maximum independent set (`--problem mis`, the default); the `problem` column of the results names it;
 - `--time-limit SECONDS` limits each run (default 3600);
 - `--node-log-dir DIR` makes every run write one CSV line per node solved, to `DIR/INSTANCE__RULE__sSEED.nodes.csv`: the LP bound before and after the node's cut loop, what the loop cost, and how the node ended ([data-format.md](data-format.md#node-logs)). Reading these values does not change the search; existing logs are never overwritten;
 - `--statistics-dir DIR` makes every run write SCIP's statistics as JSON to `DIR/INSTANCE__RULE__sSEED.stats.json` ([data-format.md](data-format.md#solver-statistics)), from which `experiments/profile/time_breakdown.py` computes where the solving time goes; existing files are never overwritten;

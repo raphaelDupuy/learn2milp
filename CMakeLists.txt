@@ -72,6 +72,8 @@ target_link_libraries(mis_cutting
 add_executable(learn2milp
     src/main.cpp
     src/problems/MIS.cpp
+    src/problems/GraphProblem.cpp
+    src/problems/DominatingSet.cpp
     src/generators/BarabasiAlbertGenerator.cpp
     src/generators/ErdosRenyiGenerator.cpp
     src/generators/MISGenerator.cpp
@@ -150,6 +152,8 @@ target_link_libraries(jssp-generator
 add_executable(mis-collector
     src/tools/mis_collector_main.cpp
     src/problems/MIS.cpp
+    src/problems/GraphProblem.cpp
+    src/problems/DominatingSet.cpp
     src/io/MISInstanceIO.cpp
     src/io/InstanceMetadataIO.cpp
     src/io/MISStrongBranchingSampleIO.cpp
@@ -170,6 +174,8 @@ target_link_libraries(mis-collector
 add_executable(mis-benchmark
     src/tools/mis_benchmark_main.cpp
     src/problems/MIS.cpp
+    src/problems/GraphProblem.cpp
+    src/problems/DominatingSet.cpp
     src/io/MISInstanceIO.cpp
     src/io/InstanceMetadataIO.cpp
     src/services/MISInstanceLoadingService.cpp
@@ -239,6 +245,8 @@ if(BUILD_TESTING)
     add_executable(test_MISFullstrongOracle
         tests/test_MISFullstrongOracle.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/ErdosRenyiGenerator.cpp
     )
 
@@ -287,6 +295,8 @@ if(BUILD_TESTING)
     add_executable(test_MISLearnedBranchrule
         tests/test_MISLearnedBranchrule.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISBranchingModelIO.cpp
         src/learning/MISAdjacency.cpp
@@ -321,6 +331,8 @@ if(BUILD_TESTING)
     add_executable(test_MISFeaturizationService
         tests/test_MISFeaturizationService.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/io/CsvReader.cpp
         src/io/MISInstanceIO.cpp
@@ -360,6 +372,8 @@ if(BUILD_TESTING)
     add_executable(test_MISCollectionService
         tests/test_MISCollectionService.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISInstanceIO.cpp
         src/io/MISStrongBranchingSampleIO.cpp
@@ -384,6 +398,8 @@ if(BUILD_TESTING)
     add_executable(test_MISDatasetInspectionService
         tests/test_MISDatasetInspectionService.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/BarabasiAlbertGenerator.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/generators/MISGenerator.cpp
@@ -416,6 +432,8 @@ if(BUILD_TESTING)
     add_executable(test_MISBenchmarkService
         tests/test_MISBenchmarkService.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/BarabasiAlbertGenerator.cpp
         src/generators/ErdosRenyiGenerator.cpp
         src/io/MISInstanceIO.cpp
@@ -438,6 +456,34 @@ if(BUILD_TESTING)
         NAME MISBenchmarkService
         COMMAND test_MISBenchmarkService
             ${PROJECT_BINARY_DIR}/test_mis_benchmark_service
+    )
+
+    add_executable(test_DominatingSet
+        tests/test_DominatingSet.cpp
+        src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
+        src/generators/ErdosRenyiGenerator.cpp
+        src/io/MISInstanceIO.cpp
+        src/io/MISStrongBranchingSampleIO.cpp
+        src/io/MISBranchingModelIO.cpp
+        src/learning/MISAdjacency.cpp
+        src/services/MISBenchmarkService.cpp
+        src/services/MISCollectionService.cpp
+        src/services/MISSolverSettings.cpp
+        src/services/SCIPStatusName.cpp
+    )
+
+    target_link_libraries(test_DominatingSet
+        PRIVATE
+        mis_branching
+        mis_cutting
+    )
+
+    add_test(
+        NAME DominatingSet
+        COMMAND test_DominatingSet
+            ${PROJECT_BINARY_DIR}/test_dominating_set
     )
 
     add_test(
@@ -525,6 +571,8 @@ if(BUILD_TESTING)
         src/io/MISBranchingModelIO.cpp
         src/learning/MISAdjacency.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
     )
 
     target_include_directories(test_MISSolvingService
@@ -546,6 +594,8 @@ if(BUILD_TESTING)
     add_executable(test_MISLookaheadCutsel
         tests/test_MISLookaheadCutsel.cpp
         src/problems/MIS.cpp
+        src/problems/GraphProblem.cpp
+        src/problems/DominatingSet.cpp
         src/generators/ErdosRenyiGenerator.cpp
     )
 

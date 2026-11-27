@@ -28,7 +28,7 @@ RESULTS="$WORK_DIR/results.csv"
 
 # One row per (instance, seed, rule), plus the header.
 head -n 1 "$RESULTS" |
-    grep -qx 'instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds'
+    grep -qx 'instance,n,m,settings,rule,seed,status,solved,nodes,lp_iterations,time_seconds,primal_bound,dual_bound,root_first_lp_bound,root_dual_bound,cuts_applied,lookahead_scored,lookahead_improving,gate_separated,gate_skipped,features_seconds,inference_seconds,problem'
 
 test "$(wc -l <"$RESULTS")" -eq 9
 test "$(grep -c ',study,relpscost,' "$RESULTS")" -eq 4

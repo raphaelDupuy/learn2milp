@@ -17,8 +17,9 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  " << program
         << " --instance PATH --output-dir DIR"
         << " [--time-limit SECONDS] [--node-limit N] [--scip-seed S]"
-        << " [--policy-model PATH]\n\n"
-        << "Solves one MIS instance with full strong branching and records\n"
+        << " [--policy-model PATH]\n"
+        << "  [--problem mis|dominating]\n\n"
+        << "Solves one instance with full strong branching and records\n"
         << "one sample per branching decision.\n\n"
         << "Options:\n"
         << "  --instance    Path of the .mis instance"
@@ -30,6 +31,9 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "  --node-limit  Maximum number of explored nodes"
         << " (default: none)\n"
         << "  --scip-seed   SCIP random seed shift (default 0)\n"
+        << "  --problem     Problem posed on the graph: mis, maximum\n"
+        << "                independent set (default), or dominating,\n"
+        << "                minimum dominating set\n"
         << "  --policy-model  Branching model file: the search follows\n"
         << "                this model instead of the expert, and strong\n"
         << "                branching still labels every visited node\n"
@@ -53,7 +57,7 @@ int main(int argc, char* argv[])
     {
         const CommandLineOptions options(argc, argv, 1, {
             "--instance", "--output-dir", "--time-limit", "--node-limit",
-            "--scip-seed", "--policy-model"});
+            "--scip-seed", "--policy-model", "--problem"});
 
         instancePath = options.text("--instance");
         outputDirectory = options.text("--output-dir");
@@ -63,6 +67,8 @@ int main(int argc, char* argv[])
             "--node-limit", parsePositiveInteger, config.nodeLimit);
         config.scipSeed = options.get(
             "--scip-seed", parseSCIPSeed, config.scipSeed);
+        config.problem = options.get(
+            "--problem", parseGraphProblem, config.problem);
 
         if (options.has("--policy-model"))
             config.policyModelPath = options.text("--policy-model");
@@ -114,6 +120,7 @@ int main(int argc, char* argv[])
     std::cout
         << "Collected strong branching samples\n"
         << "  instance: " << config.instanceName << '\n'
+        << "  problem: " << graphProblemName(config.problem) << '\n'
         << "  status: " << result.status
         << (result.complete ? "" : " (truncated search tree)") << '\n'
         << "  explored nodes: " << result.exploredNodes << '\n'

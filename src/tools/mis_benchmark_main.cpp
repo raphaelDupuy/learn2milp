@@ -30,12 +30,15 @@ void printUsage(const char* program, std::ostream& out = std::cerr)
         << "      [--parameters FILE] [--cut-selector NAME] [--model PATH]\n"
         << "      [--strong-branching K] [--node-log-dir DIR]"
         << " [--statistics-dir DIR]\n"
-        << "      [--primal-oracle on|off]\n\n"
+        << "      [--primal-oracle on|off] [--problem mis|dominating]\n\n"
         << "Solves every .mis instance of a directory with each branching\n"
         << "rule and each SCIP seed, one run at a time, and writes one CSV\n"
         << "row per run.\n\n"
         << "Options:\n"
         << "  --instances   Directory containing the .mis instances\n"
+        << "  --problem     Problem posed on each graph: mis, maximum\n"
+        << "                independent set (default), or dominating,\n"
+        << "                minimum dominating set\n"
         << "  --rules       Comma-separated branching rules: SCIP rules such\n"
         << "                as relpscost, pscost, vanillafullstrong, or\n"
         << "                misfullstrong (the data collection expert),\n"
@@ -102,6 +105,7 @@ int main(int argc, char* argv[])
     std::string statisticsDirectory;
     bool primalOracle = false;
     int strongBranching = 0;
+    GraphProblem problem = GraphProblem::MaximumIndependentSet;
 
     try
     {
@@ -109,7 +113,7 @@ int main(int argc, char* argv[])
             "--instances", "--rules", "--output", "--seeds",
             "--settings", "--parameters", "--cut-selector", "--model",
             "--time-limit", "--strong-branching", "--node-log-dir",
-            "--statistics-dir", "--primal-oracle"});
+            "--statistics-dir", "--primal-oracle", "--problem"});
 
         instanceDirectory = options.text("--instances");
         rules = options.list<std::string>("--rules", parseText);
@@ -117,6 +121,7 @@ int main(int argc, char* argv[])
         settings = options.get(
             "--settings", parseMISBenchmarkSettings, settings);
         timeLimit = options.get("--time-limit", parsePositiveDouble, timeLimit);
+        problem = options.get("--problem", parseGraphProblem, problem);
 
         if (options.has("--seeds"))
             seeds = options.list<unsigned int>("--seeds", parseSCIPSeed);
@@ -298,7 +303,7 @@ int main(int argc, char* argv[])
         << "lp_iterations,time_seconds,primal_bound,dual_bound,"
         << "root_first_lp_bound,root_dual_bound,cuts_applied,"
         << "lookahead_scored,lookahead_improving,gate_separated,gate_skipped,"
-        << "features_seconds,inference_seconds\n";
+        << "features_seconds,inference_seconds,problem\n";
 
     const std::size_t totalRuns =
         instancePaths.size() * seeds.size() * rules.size();
@@ -326,6 +331,7 @@ int main(int argc, char* argv[])
             for (const std::string& rule : rules)
             {
                 MISBenchmarkConfig config;
+                config.problem = problem;
                 config.branchingRule = rule;
                 config.settings = settings;
                 config.parameterFile = parameterFile;
@@ -418,7 +424,8 @@ int main(int argc, char* argv[])
                     << ',' << result.gateSeparated
                     << ',' << result.gateSkipped
                     << ',' << result.learnedFeatureSeconds
-                    << ',' << result.learnedModelSeconds << '\n';
+                    << ',' << result.learnedModelSeconds
+                    << ',' << graphProblemName(problem) << '\n';
                 output.flush();
 
                 if (!output)
@@ -443,7 +450,8 @@ int main(int argc, char* argv[])
 
     // Summary, in the order the rules were given.
     std::cout
-        << "\nSettings: " << settingsLabel
+        << "\nProblem: " << graphProblemName(problem)
+        << ", settings: " << settingsLabel
         << ", " << instancePaths.size() << " instances, "
         << seeds.size() << " seed(s), time limit " << timeLimit << " s\n"
         << "Shifted geometric means: nodes (shift 100),"

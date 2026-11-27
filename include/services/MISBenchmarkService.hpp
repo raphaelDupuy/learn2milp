@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "problems/GraphProblem.hpp"
 #include "problems/MIS.hpp"
 #include "services/MISSolverLimits.hpp"
 
@@ -27,6 +28,9 @@ enum class MISBenchmarkSettings
 
 struct MISBenchmarkConfig
 {
+    // Problem posed on the graph of the instance.
+    GraphProblem problem = GraphProblem::MaximumIndependentSet;
+
     /*
      * Name of the branching rule to give the highest priority to:
      *
@@ -84,10 +88,10 @@ struct MISBenchmarkConfig
     std::filesystem::path statisticsPath;
 
     /*
-     * Vertices of an independent set given to SCIP before the solve, as
-     * its first incumbent. With an optimal set, the run only has to prove
-     * that none is larger: an oracle for the primal heuristics. Empty for
-     * none.
+     * Vertices of a solution (an independent set, a dominating set) given
+     * to SCIP before the solve, as its first incumbent. With an optimal
+     * solution, the run only has to prove that none is better: an oracle
+     * for the primal heuristics. Empty for none.
      */
     std::vector<int> startSolution;
 
@@ -108,7 +112,7 @@ struct MISBenchmarkResult
     long long lpIterations = 0;
     double solvingTimeSeconds = 0.0;
 
-    // Bounds on the size of a maximum independent set.
+    // Bounds on the optimal objective value (the size of the set).
     bool hasSolution = false;
     double primalBound = 0.0;
     double dualBound = 0.0;
