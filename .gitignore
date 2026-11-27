@@ -46,3 +46,5 @@ Thumbs.db
 /experiments/cuts/results/*/stats/
 /experiments/jssp/results/*/lp/
 /experiments/jssp/results/*/sol/
+/experiments/covering/results/**/lp/
+/experiments/covering/results/**/sol/
