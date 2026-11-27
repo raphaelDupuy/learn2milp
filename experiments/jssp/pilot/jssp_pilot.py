@@ -1,7 +1,7 @@
 """JSSP pilot: is learning to branch in SCIP worth it on the job shop?
 
 Generates Taillard-style instances (explicit seeds), writes them as MILPs in
-three formulations, solves them with the scip binary under a few branching
+several formulations, solves them with the scip binary under a few branching
 rules and summarizes nodes, time and root bounds.
 
     uv run python experiments/jssp/pilot/jssp_pilot.py generate ...
@@ -124,12 +124,13 @@ def machine_bound(instance):
     return max(bound, max(sum(p for _, p in job) for job in instance))
 
 
-def write_disjunctive(path, instance, tight, bounded=False):
+def write_disjunctive(path, instance, tight, bounded=False, integer=False):
     """Manne's disjunctive formulation. y_j_l_m = 1 if job j precedes job l
     on machine m (j < l). Naive: big-M = sum of all durations, no bounds.
     Tight: big-M and bounds from the makespan H of a dispatching rule,
     head <= s <= H - tail. Bounded: also cmax >= the one-machine bound,
-    which the LP of the big-M formulation does not see."""
+    which the LP of the big-M formulation does not see. Integer: start
+    times and cmax are integer variables (the durations are integers)."""
     heads, tails = heads_and_tails(instance)
     total = sum(p for job in instance for _, p in job)
     horizon = dispatch_makespan(instance) if tight else total
@@ -159,8 +160,37 @@ def write_disjunctive(path, instance, tight, bounded=False):
     with open(path, "w") as out:
         out.write("Minimize\n obj: cmax\nSubject To\n")
         out.write("\n".join(rows) + "\nBounds\n" + "\n".join(bounds))
+        if integer:
+            starts = [f"s_{j}_{k}" for j, job in enumerate(instance)
+                      for k in range(len(job))]
+            out.write("\nGeneral\n" + "\n".join(f" {v}" for v in starts + ["cmax"]))
         out.write("\nBinary\n" + "\n".join(f" {b}" for b in binaries) + "\nEnd\n")
     return len(binaries)
+
+
+def write_with_machines(path, instance):
+    """The bounded formulation with integer start times, plus one
+    cumulative constraint of capacity 1 per machine: SCIP then reasons on
+    the time windows of all the operations of a machine together (time
+    tabling, edge finding), not only pair by pair through the big-M rows.
+    The LP is unchanged. Written in SCIP's CIP format, the LP file being
+    converted by the scip binary."""
+    path = Path(path)
+    base = path.with_suffix(".base.lp")
+    binaries = write_disjunctive(base, instance, tight=True, bounded=True,
+                                 integer=True)
+    subprocess.run(["scip", "-c", f"read {base} write problem {path} quit"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=True)
+    text = path.read_text()
+    machines = []
+    for m, ops in enumerate(operations_by_machine(instance)):
+        jobs = ", ".join(f"<s_{j}_{k}>({p})[1]" for j, k, p in ops)
+        machines.append(f"  [cumulative] <machine_{m}>: cumulative({jobs})"
+                        f"[0,{dispatch_makespan(instance)}) <= 1;")
+    end = text.rindex("END")
+    path.write_text(text[:end] + "\n".join(machines) + "\n" + text[end:])
+    base.unlink()
+    return binaries
 
 
 def write_time_indexed(path, instance):
@@ -215,6 +245,26 @@ FORMULATIONS = {
     "bounded": lambda path, inst: write_disjunctive(path, inst, tight=True,
                                                     bounded=True),
     "timeidx": write_time_indexed,
+    "boundedint": lambda path, inst: write_disjunctive(path, inst, tight=True,
+                                                       bounded=True, integer=True),
+    "disjunctive": write_with_machines,
+    "disjunctive_ef": write_with_machines,
+}
+
+# File format of each formulation (LP by default).
+FORMULATION_FORMAT = {"disjunctive": "cip", "disjunctive_ef": "cip"}
+
+# SCIP settings that go with a formulation. With integer start times,
+# branching keeps to the order variables. The cumulative constraints only
+# propagate: no cuts, and no extra disjunctive constraints from presolving.
+_MACHINES = ["set branching preferbinary TRUE",
+             "set constraints cumulative sepafreq -1",
+             "set constraints cumulative disjunctive FALSE"]
+FORMULATION_SETTINGS = {
+    "boundedint": ["set branching preferbinary TRUE"],
+    "disjunctive": _MACHINES,
+    "disjunctive_ef": _MACHINES + ["set constraints cumulative efcheck TRUE",
+                                   "set constraints cumulative efinfer TRUE"],
 }
 
 
@@ -246,11 +296,13 @@ STATS = {
 
 
 def solve(lp_file, rule, seed, time_limit, log_file, restarts=True,
-          start_solution=None, write_solution=None):
+          start_solution=None, write_solution=None, settings=()):
     """Solves one MILP with the scip binary. start_solution: a .sol file
     read before solving, the first incumbent (the primal oracle);
-    write_solution: where to write the best solution found."""
+    write_solution: where to write the best solution found; settings:
+    more scip commands, run before reading the problem."""
     commands = [*([] if restarts else ["set presolving maxrestarts 0"]),
+                *settings,
                 "set display verblevel 3", f"set limits time {time_limit}",
                 f"set randomization randomseedshift {seed}",
                 "set limits memory 2500", *RULES[rule], f"read {lp_file}",
@@ -349,7 +401,8 @@ def command_run(args):
                 "trivial_lb": trivial_lower_bound(instance),
                 "dispatch": dispatch_makespan(instance)}
         for formulation in args.formulations:
-            lp_file = out / "lp" / f"{path.stem}_{formulation}.lp"
+            extension = FORMULATION_FORMAT.get(formulation, "lp")
+            lp_file = out / "lp" / f"{path.stem}_{formulation}.{extension}"
             binaries = FORMULATIONS[formulation](lp_file, instance)
             for rule in args.rules:
                 log = out / "logs" / f"{path.stem}_{formulation}_{rule}.log"
@@ -379,12 +432,14 @@ def command_run(args):
     if args.write_solutions:
         Path(args.write_solutions).mkdir(parents=True, exist_ok=True)
 
-    def solution_file(directory, info):
-        return Path(directory) / f"{info['instance']}_{info['formulation']}.sol"
+    def solution_file(directory, info, formulation=None):
+        formulation = formulation or info["formulation"]
+        return Path(directory) / f"{info['instance']}_{formulation}.sol"
 
     def work(task):
         info, lp_file, log = task
-        start = solution_file(args.oracle, info) if args.oracle else None
+        start = (solution_file(args.oracle, info, args.oracle_formulation)
+                 if args.oracle else None)
         if start is not None and not start.exists():
             raise FileNotFoundError(f"no oracle solution {start}")
         written = (solution_file(args.write_solutions, info)
@@ -392,7 +447,9 @@ def command_run(args):
         row = dict(info, **solve(lp_file, info["rule"], 0, args.time_limit, log,
                                      restarts=not args.no_restarts,
                                      start_solution=start,
-                                     write_solution=written))
+                                     write_solution=written,
+                                     settings=FORMULATION_SETTINGS.get(
+                                         info["formulation"], [])))
         row["oracle"] = int(start is not None)
         with lock:
             line = table.row(info["instance"], info["formulation"], info["rule"],
@@ -477,6 +534,10 @@ def main():
     run.add_argument("--oracle", metavar="DIR",
                      help="start every run from the solution in DIR "
                           "(written by --write-solutions): the primal oracle")
+    run.add_argument("--oracle-formulation", metavar="NAME",
+                     help="read the oracle solutions written for this "
+                          "formulation (the variables are the same in all "
+                          "the disjunctive ones)")
     run.add_argument("--no-restarts", action="store_true",
                      help="set presolving/maxrestarts to 0")
     run.add_argument("--output", required=True)
